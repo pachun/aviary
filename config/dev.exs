@@ -16,7 +16,22 @@ config :aviary, AviaryWeb.Endpoint,
   secret_key_base: "gfPGBD0yjJJqiwx1pEwiXn6/ACvFKipifNNRjOO84Vmz5HkLrqmK/JZSyk7ZYxst",
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:aviary, ~w(--sourcemap=inline --watch)]},
-    tailwind: {Tailwind, :install_and_run, [:aviary, ~w(--watch)]}
+    # Tailwind v4's standalone binary probes for watchman as its
+    # preferred file watcher and emits `sh: line 1: watchman: command
+    # not found` to stderr once per build when it isn't installed.
+    # Its bundled parcel-watcher fallback then runs and builds finish
+    # normally — the line is purely cosmetic, but it lands in the dev
+    # log on every reload and drowns out real errors over time.
+    #
+    # We can't install watchman to silence it the "right" way on
+    # aarch64: watchman-bin in AUR ships an x86_64 binary, and the
+    # source PKGBUILD's dep `fizz` is missing from AUR entirely. So we
+    # wrap the mix task in bash and filter that one stderr line. When
+    # the watchman-on-aarch64 situation is resolved (or Tailwind stops
+    # auto-probing for it), revert to the upstream form:
+    #
+    #   tailwind: {Tailwind, :install_and_run, [:aviary, ~w(--watch)]}
+    bash: ["-c", "mix tailwind aviary --watch 2>&1 | grep --line-buffered -v 'watchman: command not found'"]
   ]
 
 # ## SSL Support
