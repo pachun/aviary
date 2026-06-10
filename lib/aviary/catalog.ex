@@ -22,13 +22,34 @@ defmodule Aviary.Catalog do
   def list_shows do
     Aviary.Jellyfin.list_shows()
     |> Enum.map(&to_show/1)
+    |> enrich_with_ratings(:tv)
     |> Enum.sort_by(&sort_key/1)
   end
 
   def list_movies do
     Aviary.Jellyfin.list_movies()
     |> Enum.map(&to_movie/1)
+    |> enrich_with_ratings(:movie)
     |> Enum.sort_by(&sort_key/1)
+  end
+
+  # Fan out RT lookups across items. Cache hits return instantly; cache
+  # misses do an HTTP fetch, so concurrency keeps page load under
+  # control on first-render-after-restart. Failures (item not on RT,
+  # network blip) just leave the rating slot nil.
+  defp enrich_with_ratings(items, type) do
+    items
+    |> Task.async_stream(
+      fn item -> Map.put(item, :rating, Aviary.RottenTomatoes.fetch(item.title, type)) end,
+      max_concurrency: 8,
+      timeout: 10_000,
+      on_timeout: :kill_task
+    )
+    |> Enum.map(fn
+      {:ok, item} -> item
+      _ -> nil
+    end)
+    |> Enum.reject(&is_nil/1)
   end
 
   defp to_show(item) do

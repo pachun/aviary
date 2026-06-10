@@ -11,8 +11,7 @@ defmodule Aviary.Application do
       AviaryWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:aviary, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Aviary.PubSub},
-      # Start a worker by calling: Aviary.Worker.start_link(arg)
-      # {Aviary.Worker, arg},
+      Aviary.RottenTomatoes,
       # Start to serve requests, typically the last entry
       AviaryWeb.Endpoint
     ]

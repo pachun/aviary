@@ -38,7 +38,42 @@ defmodule AviaryWeb.Components.CatalogGrid do
           "group-hover:ring-oxblood group-focus-visible:ring-oxblood"
         ]}
       />
+      <.rotten_tomatoes :if={@item.rating} rating={@item.rating} />
     </a>
+    """
+  end
+
+  attr :rating, :map, required: true
+
+  # RT scoring threshold: fresh ≥ 60, rotten < 60 — mirrors RT's
+  # own cutoff. Inlined as 60 below because module attributes collide
+  # with HEEx's `@name` (which means `assigns.name`).
+  #
+  # Layout: centered cluster beneath the poster, two icon+number pairs
+  # reading as a single typographic caption — like a museum object
+  # label rather than appended dashboard chrome. Sizing tuned so the
+  # numbers register at-a-glance from a normal viewing distance without
+  # competing with the artwork for hero status.
+  defp rotten_tomatoes(assigns) do
+    ~H"""
+    <div class="mt-3 flex items-center justify-center gap-6 sm:gap-8 font-sans tabular-nums text-lg">
+      <span class="flex items-center gap-2">
+        <img
+          src={if @rating.critic >= 60, do: "/images/rt_fresh.svg", else: "/images/rt_rotten.svg"}
+          alt={if @rating.critic >= 60, do: "Fresh", else: "Rotten"}
+          class="size-5 shrink-0"
+        />
+        <span class="text-ink leading-none font-medium">{@rating.critic}%</span>
+      </span>
+      <span class="flex items-center gap-2">
+        <img
+          src={if @rating.audience >= 60, do: "/images/rt_aud_fresh.svg", else: "/images/rt_aud_rotten.svg"}
+          alt={if @rating.audience >= 60, do: "Audience Liked", else: "Audience Disliked"}
+          class="size-5 shrink-0"
+        />
+        <span class="text-ink leading-none font-medium">{@rating.audience}%</span>
+      </span>
+    </div>
     """
   end
 
