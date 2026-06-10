@@ -29,7 +29,7 @@ defmodule AviaryWeb.Components.CatalogGrid do
     ~H"""
     <a href="#" class="group block focus:outline-none">
       <img
-        src={@item.poster_url}
+        src={"/image/#{@item.id}"}
         alt={@item.title}
         loading="lazy"
         class={[

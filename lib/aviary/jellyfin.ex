@@ -31,13 +31,32 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
-  Browser-loadable poster URL for an item. Embeds the API key in the
-  query string so <img src> can hit it directly without proxying.
+  Fetches a poster image as bytes + content-type. Used by AviaryWeb's
+  image proxy controller — the browser can't reach the Jellyfin URL
+  directly in deployed environments (host.docker.internal is
+  container-only), so we proxy through aviary's own endpoint.
   """
-  def poster_url(item_id, opts \\ []) do
+  def fetch_poster(item_id, opts \\ []) do
     max_width = Keyword.get(opts, :max_width, 400)
+    url = "#{base_url()}/Items/#{item_id}/Images/Primary?maxWidth=#{max_width}"
 
-    "#{base_url()}/Items/#{item_id}/Images/Primary?api_key=#{api_key()}&maxWidth=#{max_width}"
+    case Req.get(url,
+           headers: [{"x-emby-token", api_key()}],
+           receive_timeout: 15_000
+         ) do
+      {:ok, %Req.Response{status: 200, body: body, headers: headers}} ->
+        {:ok, body, content_type(headers)}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp content_type(headers) do
+    case Map.get(headers, "content-type") do
+      [value | _] -> value
+      _ -> "image/jpeg"
+    end
   end
 
   defp get!(path, params) do

@@ -7,12 +7,16 @@ defmodule Aviary.Catalog do
       %{
         id: String.t(),
         title: String.t(),
-        year: integer() | {integer(), integer() | nil},
-        poster_url: String.t()
+        year: integer() | {integer(), integer() | nil}
       }
 
   Year is an integer for movies, a `{start, finish}` tuple for shows
-  (finish is nil for ongoing series).
+  (finish is nil for ongoing series). Poster URLs aren't on the item;
+  the view builds them as `/image/:id` paths through aviary's own
+  proxy controller, which avoids leaking the Jellyfin URL + API key
+  to the browser and works in deployed environments where the
+  container reaches Jellyfin over host.docker.internal but the
+  browser can't.
   """
 
   def list_shows do
@@ -31,8 +35,7 @@ defmodule Aviary.Catalog do
     %{
       id: item["Id"],
       title: item["Name"],
-      year: show_year(item),
-      poster_url: Aviary.Jellyfin.poster_url(item["Id"])
+      year: show_year(item)
     }
   end
 
@@ -40,8 +43,7 @@ defmodule Aviary.Catalog do
     %{
       id: item["Id"],
       title: item["Name"],
-      year: item["ProductionYear"],
-      poster_url: Aviary.Jellyfin.poster_url(item["Id"])
+      year: item["ProductionYear"]
     }
   end
 
