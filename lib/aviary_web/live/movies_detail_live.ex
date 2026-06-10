@@ -112,7 +112,7 @@ defmodule AviaryWeb.MoviesDetailLive do
                   <button
                     type="button"
                     phx-click="play"
-                    class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                    class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     Play
                   </button>
@@ -183,7 +183,7 @@ defmodule AviaryWeb.MoviesDetailLive do
           type="button"
           phx-click="close_player"
           aria-label="Close player"
-          class="absolute top-4 right-4 z-10 font-sans text-xs tracking-[0.18em] uppercase font-medium text-white/80 hover:text-white transition-colors px-4 py-2 rounded-sm bg-black/40 backdrop-blur-sm"
+          class="absolute top-4 right-4 z-10 font-sans text-xs tracking-[0.18em] uppercase font-medium text-white/80 hover:text-white cursor-pointer transition-colors px-4 py-2 rounded-sm bg-black/40 backdrop-blur-sm"
         >
           Close ✕
         </button>

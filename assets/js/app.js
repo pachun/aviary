@@ -30,6 +30,16 @@ import topbar from "../vendor/topbar"
 // rendering when AirPlay devices are present on the network. Every
 // other browser needs HLS.js to consume the manifest and feed MSE.
 //
+// On iOS specifically, we trigger the system video player via
+// webkitEnterFullScreen() rather than relying on the inline HTML5
+// controls. The system player gives us:
+//   * Safe-area-aware controls (no clipping behind rounded corners)
+//   * Native AirPlay picker
+//   * Picture-in-picture
+//   * The same UI as Apple TV+/Safari, so it feels native
+// When the user dismisses it (Done button or swipe), we push a
+// close_player event back to LiveView to tear the overlay down.
+//
 // The HLS instance is destroyed on hook teardown so closing the player
 // stops the stream and releases the bandwidth.
 const HlsPlayer = {
@@ -45,13 +55,40 @@ const HlsPlayer = {
       hls.attachMedia(video)
       this.hls = hls
     } else {
-      // Best-effort fallback for ancient browsers.
       video.src = src
+    }
+
+    if (this.isIOS() && video.webkitEnterFullScreen) {
+      const enterNativeFullscreen = () => {
+        try {
+          video.webkitEnterFullScreen()
+        } catch (e) {
+          // Fullscreen request can fail if not invoked from a user
+          // gesture chain — falls back to the inline HTML5 controls.
+          console.warn("iOS native fullscreen unavailable:", e)
+        }
+      }
+
+      // webkitEnterFullScreen only works once the video has metadata.
+      if (video.readyState >= 1) {
+        enterNativeFullscreen()
+      } else {
+        video.addEventListener("loadedmetadata", enterNativeFullscreen, {once: true})
+      }
+
+      video.addEventListener("webkitendfullscreen", () => {
+        this.pushEvent("close_player", {})
+      })
     }
   },
 
   destroyed() {
     if (this.hls) this.hls.destroy()
+  },
+
+  isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
   },
 }
 
