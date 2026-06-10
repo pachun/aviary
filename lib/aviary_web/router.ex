@@ -29,6 +29,7 @@ defmodule AviaryWeb.Router do
 
     live "/shows", ShowsLive, :index
     live "/movies", MoviesLive, :index
+    live "/movies/:id", MoviesDetailLive, :show
 
     # Poster image proxy — keeps Jellyfin's URL + API key server-side.
     get "/image/:item_id", ImageController, :show

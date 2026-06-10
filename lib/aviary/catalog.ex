@@ -33,6 +33,58 @@ defmodule Aviary.Catalog do
     |> Enum.sort_by(&sort_key/1)
   end
 
+  @doc """
+  Fetch a single movie with the fuller shape the detail page renders —
+  title, year, runtime, MPAA rating, synopsis, trailer URL, RT scores.
+  Returns `{:ok, movie}` or `:error` if the item doesn't exist.
+  """
+  def get_movie(id) do
+    case Aviary.Jellyfin.get_item(id) do
+      {:ok, item} ->
+        movie =
+          item
+          |> to_movie_detail()
+          |> Map.put(:rating, Aviary.RottenTomatoes.fetch(item["Name"], :movie))
+
+        {:ok, movie}
+
+      :error ->
+        :error
+    end
+  end
+
+  defp to_movie_detail(item) do
+    %{
+      id: item["Id"],
+      title: item["Name"],
+      year: item["ProductionYear"],
+      runtime_minutes: runtime_minutes(item["RunTimeTicks"]),
+      official_rating: item["OfficialRating"],
+      genre: first_genre(item["Genres"]),
+      synopsis: item["Overview"],
+      trailer_url: first_trailer_url(item["RemoteTrailers"])
+    }
+  end
+
+  # First genre only — keeps the metadata line tight. Jellyfin returns
+  # Genres as a list of strings ordered by primary classification.
+  defp first_genre([genre | _]) when is_binary(genre), do: genre
+  defp first_genre(_), do: nil
+
+  # Jellyfin runtime is in 100ns ticks (1 minute = 600M ticks).
+  defp runtime_minutes(nil), do: nil
+  defp runtime_minutes(ticks) when is_integer(ticks), do: div(ticks, 600_000_000)
+  defp runtime_minutes(_), do: nil
+
+  defp first_trailer_url(trailers) when is_list(trailers) do
+    case trailers do
+      [%{"Url" => url} | _] -> url
+      _ -> nil
+    end
+  end
+
+  defp first_trailer_url(_), do: nil
+
   # Fan out RT lookups across items. Cache hits return instantly; cache
   # misses do an HTTP fetch, so concurrency keeps page load under
   # control on first-render-after-restart. Failures (item not on RT,
@@ -54,6 +106,7 @@ defmodule Aviary.Catalog do
 
   defp to_show(item) do
     %{
+      type: :show,
       id: item["Id"],
       title: item["Name"],
       year: show_year(item)
@@ -62,6 +115,7 @@ defmodule Aviary.Catalog do
 
   defp to_movie(item) do
     %{
+      type: :movie,
       id: item["Id"],
       title: item["Name"],
       year: item["ProductionYear"]

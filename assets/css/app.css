@@ -51,6 +51,10 @@
 
   --font-display: "Fraunces", Georgia, "Times New Roman", serif;
   --font-sans:    "Instrument Sans", system-ui, -apple-system, sans-serif;
+  /* Display headings — Newsreader is cut for editorial title sizes
+     where Fraunces gets too curly. Used for h1s on detail pages and
+     wherever a hero text moment needs more confidence than warmth. */
+  --font-heading: "Newsreader", "Fraunces", Georgia, serif;
 }
 
 /* Body styles. Setting these directly so every page inherits without

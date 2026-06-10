@@ -27,7 +27,7 @@ defmodule AviaryWeb.Components.CatalogGrid do
 
   defp item(assigns) do
     ~H"""
-    <a href="#" class="group block focus:outline-none">
+    <a href={item_href(@item)} class="group block focus:outline-none">
       <img
         src={"/image/#{@item.id}"}
         alt={@item.title}
@@ -43,20 +43,29 @@ defmodule AviaryWeb.Components.CatalogGrid do
     """
   end
 
+  @doc """
+  Rotten Tomatoes critic + audience badge cluster — reused by the
+  detail page so the visual treatment stays identical wherever
+  ratings show up.
+
+  `:center` defaults true because the grid is the dominant caller and
+  wants the cluster centered under each poster. The detail page sits
+  in a flush-left info column and passes `center={false}` so the
+  badges anchor to the same left edge as the title, metadata, and
+  synopsis.
+  """
   attr :rating, :map, required: true
+  attr :center, :boolean, default: true
 
   # RT scoring threshold: fresh ≥ 60, rotten < 60 — mirrors RT's
   # own cutoff. Inlined as 60 below because module attributes collide
   # with HEEx's `@name` (which means `assigns.name`).
-  #
-  # Layout: centered cluster beneath the poster, two icon+number pairs
-  # reading as a single typographic caption — like a museum object
-  # label rather than appended dashboard chrome. Sizing tuned so the
-  # numbers register at-a-glance from a normal viewing distance without
-  # competing with the artwork for hero status.
-  defp rotten_tomatoes(assigns) do
+  def rotten_tomatoes(assigns) do
     ~H"""
-    <div class="mt-3 flex items-center justify-center gap-6 sm:gap-8 font-sans tabular-nums text-lg">
+    <div class={[
+      "mt-3 flex items-center gap-6 sm:gap-8 font-sans tabular-nums text-lg",
+      @center && "justify-center"
+    ]}>
       <span class="flex items-center gap-2">
         <img
           src={if @rating.critic >= 60, do: "/images/rt_fresh.svg", else: "/images/rt_rotten.svg"}
@@ -77,4 +86,9 @@ defmodule AviaryWeb.Components.CatalogGrid do
     """
   end
 
+  # Movies link to their detail page; shows don't have one yet so they
+  # render as non-navigating links. When ShowsDetailLive lands, this
+  # second clause becomes the symmetric `/shows/:id` pattern.
+  defp item_href(%{type: :movie, id: id}), do: "/movies/#{id}"
+  defp item_href(_), do: "#"
 end

@@ -31,6 +31,26 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
+  Fetch a single item by id with the fuller field set the detail page
+  needs — overview, MPAA rating, runtime, remote trailers, etc. List
+  endpoints keep their lean Fields because we don't need this stuff
+  for grid rendering.
+  """
+  def get_item(id) do
+    result =
+      get!(@api_path,
+        Ids: id,
+        Fields:
+          "Overview,OfficialRating,RunTimeTicks,RemoteTrailers,PremiereDate,EndDate,Status,ProductionYear,Genres"
+      )
+
+    case result["Items"] do
+      [item | _] -> {:ok, item}
+      _ -> :error
+    end
+  end
+
+  @doc """
   Fetches a poster image as bytes + content-type. Used by AviaryWeb's
   image proxy controller — the browser can't reach the Jellyfin URL
   directly in deployed environments (host.docker.internal is
