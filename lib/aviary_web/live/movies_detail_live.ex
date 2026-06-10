@@ -25,7 +25,15 @@ defmodule AviaryWeb.MoviesDetailLive do
     <Layouts.app flash={@flash}>
       <article>
         <div class="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-8 pt-4">
-          <div class="w-full max-w-[300px] mx-auto md:mx-0">
+          <%!--
+            Poster only shows on tablet and up. On phone the 2:3 aspect
+            takes the entire viewport and pushes the kicker / title /
+            metadata / RT / trailer below the fold — the YouTube
+            thumbnail and the title in Newsreader carry enough visual
+            identity on mobile that the poster's aesthetic contribution
+            isn't worth its real-estate cost there.
+          --%>
+          <div class="hidden md:block">
             <img
               src={"/image/#{@movie.id}"}
               alt={@movie.title}
