@@ -25,11 +25,41 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/aviary"
 import topbar from "../vendor/topbar"
 
+// HLS playback hook. Safari (incl. iOS) plays HLS natively — just set
+// the src and the browser handles the rest, including AirPlay button
+// rendering when AirPlay devices are present on the network. Every
+// other browser needs HLS.js to consume the manifest and feed MSE.
+//
+// The HLS instance is destroyed on hook teardown so closing the player
+// stops the stream and releases the bandwidth.
+const HlsPlayer = {
+  mounted() {
+    const video = this.el
+    const src = video.dataset.src
+
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = src
+    } else if (window.Hls && window.Hls.isSupported()) {
+      const hls = new window.Hls()
+      hls.loadSource(src)
+      hls.attachMedia(video)
+      this.hls = hls
+    } else {
+      // Best-effort fallback for ancient browsers.
+      video.src = src
+    }
+  },
+
+  destroyed() {
+    if (this.hls) this.hls.destroy()
+  },
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {...colocatedHooks, HlsPlayer},
 })
 
 // Show progress bar on live navigation and form submits

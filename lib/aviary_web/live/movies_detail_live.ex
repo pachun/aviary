@@ -9,7 +9,8 @@ defmodule AviaryWeb.MoviesDetailLive do
         {:ok,
          assign(socket,
            page_title: "#{movie.title} · Aviary",
-           movie: movie
+           movie: movie,
+           playing: false
          )}
 
       :error ->
@@ -18,6 +19,14 @@ defmodule AviaryWeb.MoviesDetailLive do
          |> put_flash(:error, "Movie not found")
          |> push_navigate(to: ~p"/movies")}
     end
+  end
+
+  def handle_event("play", _, socket) do
+    {:noreply, assign(socket, :playing, true)}
+  end
+
+  def handle_event("close_player", _, socket) do
+    {:noreply, assign(socket, :playing, false)}
   end
 
   def render(assigns) do
@@ -102,6 +111,7 @@ defmodule AviaryWeb.MoviesDetailLive do
                 <div>
                   <button
                     type="button"
+                    phx-click="play"
                     class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     Play
@@ -135,6 +145,49 @@ defmodule AviaryWeb.MoviesDetailLive do
           </div>
         </div>
       </article>
+
+      <%!--
+        Full-viewport player overlay. Mounted only when @playing is
+        true; closing the overlay removes the <video> element entirely
+        so the HLS stream is torn down (HlsPlayer hook's destroyed
+        callback releases the player).
+
+        Native browser <video> controls — gives us play/pause, seek,
+        fullscreen, picture-in-picture, subtitle selection, and (in
+        Safari) AirPlay automatically. `x-webkit-airplay="allow"` is
+        the magic attribute Safari needs to show the AirPlay button.
+
+        ESC and the close button both close the overlay. We don't close
+        on backdrop click because the entire backdrop IS the video — a
+        misclick on the player would yank the user out.
+      --%>
+      <div
+        :if={@playing}
+        class="fixed inset-0 z-50 bg-black flex items-center justify-center"
+        phx-window-keydown="close_player"
+        phx-key="Escape"
+      >
+        <video
+          id={"player-#{@movie.id}"}
+          phx-hook="HlsPlayer"
+          data-src={Aviary.Jellyfin.hls_url(@movie.id)}
+          controls
+          autoplay
+          playsinline
+          x-webkit-airplay="allow"
+          class="w-full h-full max-w-screen max-h-screen object-contain"
+        >
+        </video>
+
+        <button
+          type="button"
+          phx-click="close_player"
+          aria-label="Close player"
+          class="absolute top-4 right-4 z-10 font-sans text-xs tracking-[0.18em] uppercase font-medium text-white/80 hover:text-white transition-colors px-4 py-2 rounded-sm bg-black/40 backdrop-blur-sm"
+        >
+          Close ✕
+        </button>
+      </div>
     </Layouts.app>
     """
   end

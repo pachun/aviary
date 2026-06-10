@@ -87,6 +87,44 @@ defmodule Aviary.Jellyfin do
     ).body
   end
 
+  @doc """
+  Returns an HLS master playlist URL the browser can open directly.
+  Built against the public-facing Jellyfin URL (Tailscale-served HTTPS
+  in deployed environments) rather than the internal API URL — the
+  `<video>` element fetches this URL from the user's device, which
+  can't reach `host.docker.internal`.
+
+  Auth via `api_key=` query param (HTML5 video can't carry headers).
+  Random `PlaySessionId` so concurrent sessions don't collide on
+  Jellyfin's side.
+  """
+  def hls_url(item_id) do
+    session_id = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
+
+    params =
+      URI.encode_query(%{
+        "api_key" => api_key(),
+        "MediaSourceId" => item_id,
+        "PlaySessionId" => session_id,
+        "DeviceId" => "aviary-web",
+        "VideoCodec" => "h264",
+        "AudioCodec" => "aac",
+        "SegmentContainer" => "ts",
+        "MaxAudioChannels" => "2",
+        "TranscodingMaxAudioChannels" => "2"
+      })
+
+    "#{public_url()}/Videos/#{item_id}/master.m3u8?#{params}"
+  end
+
+  defp public_url do
+    case Application.get_env(:aviary, :jellyfin_public_url) do
+      nil -> base_url()
+      "" -> base_url()
+      url -> String.trim_trailing(url, "/")
+    end
+  end
+
   defp base_url do
     case Application.fetch_env!(:aviary, :jellyfin_url) do
       nil ->

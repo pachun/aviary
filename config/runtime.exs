@@ -30,7 +30,16 @@ config :aviary, AviaryWeb.Endpoint,
 # Application.fetch_env!/2.
 config :aviary,
   jellyfin_url: System.get_env("JELLYFIN_URL"),
-  jellyfin_api_key: System.get_env("JELLYFIN_API_KEY")
+  jellyfin_api_key: System.get_env("JELLYFIN_API_KEY"),
+  # Browser-facing Jellyfin URL — must be reachable from the
+  # laptop/phone running the player, not just from inside the docker
+  # network. In dev, JELLYFIN_URL already points at the Tailscale
+  # address so it doubles for both. In prod, JELLYFIN_URL is the
+  # internal host.docker.internal but the browser still needs the
+  # Tailscale URL, so JELLYFIN_PUBLIC_URL is set separately by
+  # depot's configure.sh. Falls back to JELLYFIN_URL when unset.
+  jellyfin_public_url:
+    System.get_env("JELLYFIN_PUBLIC_URL") || System.get_env("JELLYFIN_URL")
 
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
