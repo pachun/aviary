@@ -20,7 +20,13 @@ defmodule AviaryWeb.Router do
     # Root is Shows — there's no "home" page. Single source of truth
     # for the section nav: the masthead links here and the user's
     # mental model is "I opened Aviary, here are the shows."
-    live "/", ShowsLive, :index
+    # Bare root just redirects to /shows so there's exactly one
+    # canonical URL per section. The nav link in the masthead points
+    # at /shows directly; iOS's PWA scope check then sees consistent
+    # URLs whether the user landed via the home-screen icon or any
+    # in-app nav. The redirect is for direct visits / shared links.
+    get "/", PageController, :home
+
     live "/shows", ShowsLive, :index
     live "/movies", MoviesLive, :index
 
