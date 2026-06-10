@@ -56,14 +56,16 @@ defmodule AviaryWeb.MoviesDetailLive do
             ]}>
               <div class="flex flex-col gap-4">
                 <%!--
-                  Editorial kicker above the title: doubles as orientation
-                  ("you're in the Movies section") and back link ("click to
-                  return to the list"). The masthead's MOVIES nav is the
-                  global wayfinding; this is the local back affordance.
+                  Back link, styled as the outlined sibling of the
+                  Play button below. Same typographic family (Instrument
+                  Sans, small caps, tracking, font-medium, rounded-sm)
+                  and same oxblood color — differentiated by outline vs
+                  fill and slightly smaller size, signaling secondary
+                  action. Forms a coherent button family with Play.
                 --%>
                 <.link
                   navigate={~p"/movies"}
-                  class="w-fit font-sans text-[0.72rem] tracking-[0.18em] uppercase text-oxblood underline decoration-oxblood decoration-1 underline-offset-[5px] hover:opacity-75 transition-opacity duration-200"
+                  class="w-fit font-sans text-xs tracking-[0.18em] uppercase font-medium px-5 py-2 rounded-sm border border-oxblood text-oxblood transition-colors hover:bg-oxblood/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                 >
                   ← Movies
                 </.link>
@@ -90,6 +92,21 @@ defmodule AviaryWeb.MoviesDetailLive do
                   rating={@movie.rating}
                   center={false}
                 />
+
+                <%!--
+                  Play button lives with the decision-relevant info
+                  (title, metadata, RT) rather than below the synopsis.
+                  Keeps it above the fold and pairs it visually with the
+                  RT scores it sits next to.
+                --%>
+                <div>
+                  <button
+                    type="button"
+                    class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                  >
+                    Play
+                  </button>
+                </div>
               </div>
 
               <div
@@ -115,15 +132,6 @@ defmodule AviaryWeb.MoviesDetailLive do
             >
               {@movie.synopsis}
             </p>
-
-            <div class="pt-3">
-              <button
-                type="button"
-                class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-              >
-                Play
-              </button>
-            </div>
           </div>
         </div>
       </article>
