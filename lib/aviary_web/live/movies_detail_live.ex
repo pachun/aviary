@@ -24,7 +24,7 @@ defmodule AviaryWeb.MoviesDetailLive do
     ~H"""
     <Layouts.app flash={@flash}>
       <article>
-        <div class="grid md:grid-cols-[260px_1fr] lg:grid-cols-[300px_1fr] gap-8 md:gap-12 pt-4">
+        <div class="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-8 pt-4">
           <div class="w-full max-w-[300px] mx-auto md:mx-0">
             <img
               src={"/image/#{@movie.id}"}
@@ -33,42 +33,82 @@ defmodule AviaryWeb.MoviesDetailLive do
             />
           </div>
 
-          <div class="flex flex-col gap-5">
+          <div class="flex flex-col gap-4">
             <%!--
-              Editorial kicker above the title: doubles as orientation
-              ("you're in the Movies section") and back link ("click to
-              return to the list"). The masthead's MOVIES nav is the
-              global wayfinding; this is the local back affordance.
+              Top section. At lg+, splits into two columns: text info
+              on the left (kicker/title/metadata/RT) and the trailer
+              on the right. Below lg they stack — text info on top,
+              trailer below it. The split only happens when there's
+              actually a trailer; otherwise stays single column so
+              there's no dead 360px space on the right.
             --%>
-            <.link
-              navigate={~p"/movies"}
-              class="w-fit font-sans text-[0.72rem] tracking-[0.18em] uppercase text-oxblood underline decoration-oxblood decoration-1 underline-offset-[5px] hover:opacity-75 transition-opacity duration-200"
-            >
-              ← Movies
-            </.link>
+            <div class={[
+              "grid grid-cols-1 gap-4 lg:gap-6 lg:items-start",
+              trailer_embeddable?(@movie.trailer_url) && "lg:grid-cols-[1fr_360px]"
+            ]}>
+              <div class="flex flex-col gap-4">
+                <%!--
+                  Editorial kicker above the title: doubles as orientation
+                  ("you're in the Movies section") and back link ("click to
+                  return to the list"). The masthead's MOVIES nav is the
+                  global wayfinding; this is the local back affordance.
+                --%>
+                <.link
+                  navigate={~p"/movies"}
+                  class="w-fit font-sans text-[0.72rem] tracking-[0.18em] uppercase text-oxblood underline decoration-oxblood decoration-1 underline-offset-[5px] hover:opacity-75 transition-opacity duration-200"
+                >
+                  ← Movies
+                </.link>
 
-            <h1
-              class="font-heading text-ink tracking-tight leading-[1.05]"
-              style="font-size: clamp(2rem, 3.5vw + 0.75rem, 3.5rem); font-variation-settings: 'opsz' 72;"
-            >
-              {@movie.title}
-            </h1>
+                <%!--
+                  Title scaled down from the previous hero clamp because
+                  the poster already says what this is — the text serves
+                  as a confirming label, not a competing headline. Reads
+                  more museum-object-label than magazine-front-page.
+                --%>
+                <h1
+                  class="font-heading text-ink tracking-tight leading-[1.1]"
+                  style="font-size: clamp(1.5rem, 2.5vw + 0.25rem, 2.5rem); font-variation-settings: 'opsz' 36;"
+                >
+                  {@movie.title}
+                </h1>
 
-            <div class="font-sans text-[0.8rem] tracking-[0.14em] uppercase text-muted">
-              {metadata_line(@movie)}
+                <div class="font-sans text-[0.8rem] tracking-[0.14em] uppercase text-muted">
+                  {metadata_line(@movie)}
+                </div>
+
+                <CatalogGrid.rotten_tomatoes
+                  :if={@movie.rating}
+                  rating={@movie.rating}
+                  center={false}
+                />
+              </div>
+
+              <div
+                :if={trailer_embeddable?(@movie.trailer_url)}
+                class="aspect-video w-full bg-rule rounded-sm overflow-hidden"
+              >
+                <iframe
+                  src={trailer_embed_url(@movie.trailer_url)}
+                  class="w-full h-full"
+                  allow="encrypted-media; picture-in-picture; fullscreen"
+                  allowfullscreen
+                  loading="lazy"
+                  title={"#{@movie.title} trailer"}
+                >
+                </iframe>
+              </div>
             </div>
-
-            <CatalogGrid.rotten_tomatoes :if={@movie.rating} rating={@movie.rating} center={false} />
 
             <p
               :if={@movie.synopsis && @movie.synopsis != ""}
-              class="font-display text-ink/85 text-lg leading-relaxed max-w-[60ch] pt-2"
+              class="font-display text-ink/85 text-base md:text-lg leading-relaxed pt-1"
               style="font-variation-settings: 'opsz' 14;"
             >
               {@movie.synopsis}
             </p>
 
-            <div class="pt-4">
+            <div class="pt-3">
               <button
                 type="button"
                 class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
@@ -78,36 +118,6 @@ defmodule AviaryWeb.MoviesDetailLive do
             </div>
           </div>
         </div>
-
-        <%!--
-          Trailer embedded inline. Lazy-loaded so the YouTube iframe
-          doesn't load for every page view — only when scrolled into
-          range. No autoplay; user initiates playback by clicking
-          YouTube's own play overlay. No heading because the player
-          itself says what it is.
-        --%>
-        <%!--
-          Trailer is constrained to a deliberate ~16:9 size (max-w-lg
-          = 512px wide, 288px tall) rather than spanning the article
-          width. Two reasons: (1) full-width 620px-tall iframes push
-          everything else below the fold on most laptops; (2) a
-          contained player reads as "preview embedded in an article"
-          rather than a Netflix-style hero, which fits the editorial
-          aesthetic better.
-        --%>
-        <section :if={trailer_embeddable?(@movie.trailer_url)} class="mt-12 md:mt-14">
-          <div class="aspect-video w-full max-w-lg mx-auto bg-rule rounded-sm overflow-hidden">
-            <iframe
-              src={trailer_embed_url(@movie.trailer_url)}
-              class="w-full h-full"
-              allow="encrypted-media; picture-in-picture; fullscreen"
-              allowfullscreen
-              loading="lazy"
-              title={"#{@movie.title} trailer"}
-            >
-            </iframe>
-          </div>
-        </section>
       </article>
     </Layouts.app>
     """
