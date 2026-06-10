@@ -23,6 +23,15 @@ end
 config :aviary, AviaryWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Jellyfin integration — reads URL + API key from env vars in every
+# environment. Dev: source .env.local (or use direnv) and run mix
+# phx.server. Prod: depot's aviary/configure.sh writes them into the
+# container's env. Either way, Aviary.Jellyfin reaches for them via
+# Application.fetch_env!/2.
+config :aviary,
+  jellyfin_url: System.get_env("JELLYFIN_URL"),
+  jellyfin_api_key: System.get_env("JELLYFIN_API_KEY")
+
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

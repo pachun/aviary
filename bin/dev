@@ -1,0 +1,19 @@
+#!/bin/sh
+# Dev entrypoint: source .env.local for JELLYFIN_URL / JELLYFIN_API_KEY
+# / anything else, then start the Phoenix server. Keeps secrets out of
+# the shell history and out of a global rc file. Equivalent to running
+# `set -a; . ./.env.local; set +a; mix phx.server` by hand.
+set -e
+
+cd "$(dirname "$0")/.."
+
+if [ ! -f .env.local ]; then
+  echo "No .env.local — copy .env.local.example and fill it in." >&2
+  exit 1
+fi
+
+set -a
+. ./.env.local
+set +a
+
+exec mix phx.server

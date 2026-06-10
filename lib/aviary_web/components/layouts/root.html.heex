@@ -2,29 +2,58 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <.live_title default="Aviary" suffix=" · Phoenix Framework" phx-no-format>{assigns[:page_title]}</.live_title>
+
+    <%!--
+      iOS home-screen bookmark behavior. apple-mobile-web-app-capable
+      makes the page run fullscreen (no Safari chrome) when launched
+      from the home screen; the title shows under the icon. theme-color
+      switches with system appearance so the iOS status bar tints to
+      match day/night automatically.
+    --%>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Aviary" />
+    <link rel="apple-touch-icon" href={~p"/images/apple-touch-icon.png"} />
+    <link rel="icon" type="image/png" href={~p"/images/apple-touch-icon.png"} />
+    <meta name="theme-color" content="#F2F0E7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1B1B26" media="(prefers-color-scheme: dark)" />
+    <.live_title default="Aviary" phx-no-format>{assigns[:page_title]}</.live_title>
+
+    <%!--
+      Google Fonts — Fraunces (variable, with SOFT + WONK axes for
+      character on display text) for headlines + the wordmark;
+      Instrument Sans for everything else. preconnect early so the
+      first paint isn't fighting font latency.
+    --%>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..900,0..100,0..1;1,9..144,300..900,0..100,0..1&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap"
+    />
+
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
+
+    <%!--
+      Theme bootstrap: read the persisted choice from localStorage and
+      set data-theme on <html> before paint to avoid a flash of the
+      wrong palette. Default is "day". Also listens for storage events
+      (so a theme change in one tab propagates to others) and for
+      phx:set-theme (dispatched by the toggle button).
+    --%>
     <script>
       (() => {
         const setTheme = (theme) => {
-          if (theme === "system") {
-            localStorage.removeItem("phx:theme");
-            document.documentElement.removeAttribute("data-theme");
-          } else {
-            localStorage.setItem("phx:theme", theme);
-            document.documentElement.setAttribute("data-theme", theme);
-          }
+          localStorage.setItem("aviary:theme", theme);
+          document.documentElement.setAttribute("data-theme", theme);
         };
-        if (!document.documentElement.hasAttribute("data-theme")) {
-          setTheme(localStorage.getItem("phx:theme") || "system");
-        }
-        window.addEventListener("storage", (e) => e.key === "phx:theme" && setTheme(e.newValue || "system"));
-        
-        window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.phxTheme));
+        setTheme(localStorage.getItem("aviary:theme") || "day");
+        window.addEventListener("storage", (e) => e.key === "aviary:theme" && setTheme(e.newValue || "day"));
+        window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.theme));
       })();
     </script>
   </head>

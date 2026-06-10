@@ -1,84 +1,118 @@
 defmodule AviaryWeb.Layouts do
   @moduledoc """
-  This module holds layouts and related functionality
-  used by your application.
+  App-wide layouts: the masthead (with section nav + theme toggle) that
+  wraps every LiveView's content slot, plus flash group + theme toggle
+  components.
+
+  Visual language: editorial cabinet — Fraunces display serif, Instrument
+  Sans for UI, day/night themes via [data-theme] on <html>, single
+  oxblood accent. See assets/css/app.css for tokens.
   """
   use AviaryWeb, :html
 
-  # Embed all files in layouts/* within this module.
-  # The default root.html.heex file contains the HTML
-  # skeleton of your application, namely HTML headers
-  # and other static content.
   embed_templates "layouts/*"
 
-  @doc """
-  Renders your app layout.
-
-  This function is typically invoked from every template,
-  and it often contains your application menu, sidebar,
-  or similar.
-
-  ## Examples
-
-      <Layouts.app flash={@flash}>
-        <h1>Content</h1>
-      </Layouts.app>
-
-  """
   attr :flash, :map, required: true, doc: "the map of flash messages"
 
-  attr :current_scope, :map,
+  attr :current_section, :string,
     default: nil,
-    doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
+    doc: "which top-level section is active — \"shows\", \"movies\", or nil"
 
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
-        </a>
-      </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://hexdocs.pm/phoenix/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-    </header>
+    <div class="min-h-screen bg-paper text-ink antialiased">
+      <header class="px-4 sm:px-8 lg:px-12 pt-8 pb-10 sm:pt-10 sm:pb-12">
+        <div class="mx-auto max-w-[1100px] flex items-baseline justify-between gap-8">
+          <nav class="flex items-baseline gap-8 text-[0.78rem] font-sans tracking-[0.15em] uppercase">
+            <.section_link href={~p"/shows"} active={@current_section == "shows"}>
+              Shows
+            </.section_link>
+            <.section_link href={~p"/movies"} active={@current_section == "movies"}>
+              Movies
+            </.section_link>
+          </nav>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
-        {render_slot(@inner_block)}
-      </div>
-    </main>
+          <.theme_toggle />
+        </div>
+      </header>
 
-    <.flash_group flash={@flash} />
+      <main class="px-4 sm:px-8 lg:px-12 pb-24">
+        <div class="mx-auto max-w-[1100px]">
+          {render_slot(@inner_block)}
+        </div>
+      </main>
+
+      <.flash_group flash={@flash} />
+    </div>
+    """
+  end
+
+  attr :href, :string, required: true
+  attr :active, :boolean, default: false
+  slot :inner_block, required: true
+
+  defp section_link(assigns) do
+    ~H"""
+    <a
+      href={@href}
+      class={[
+        "transition-colors duration-200",
+        @active && "text-oxblood underline decoration-oxblood decoration-1 underline-offset-[6px]",
+        !@active && "text-muted hover:text-ink"
+      ]}
+    >
+      {render_slot(@inner_block)}
+    </a>
     """
   end
 
   @doc """
-  Shows the flash group with standard titles and content.
+  The day/night theme toggle — italic Fraunces text, oxblood for the
+  active state, separator is a vertical hairline. Replaces the typical
+  sun/moon icon button because the publication metaphor wants text.
 
-  ## Examples
-
-      <.flash_group flash={@flash} />
+  Implementation: each button dispatches `phx:set-theme` with its
+  data-theme; the root.html.heex bootstrap script catches the event
+  and updates <html data-theme> + localStorage. CSS selectors below
+  match `[data-theme=...]` on the document so the active state
+  reflects the current theme without any server state.
   """
+  def theme_toggle(assigns) do
+    ~H"""
+    <div class="font-display italic text-base leading-none flex items-center gap-2 select-none">
+      <button
+        type="button"
+        phx-click={JS.dispatch("phx:set-theme")}
+        data-theme="day"
+        aria-label="Switch to day theme"
+        class={[
+          "cursor-pointer transition-colors duration-200 focus:outline-none",
+          "[[data-theme=day]_&]:text-oxblood",
+          "[[data-theme=night]_&]:text-muted [[data-theme=night]_&]:hover:text-ink"
+        ]}
+      >
+        day
+      </button>
+      <span class="h-3 w-px bg-muted/60" aria-hidden="true"></span>
+      <button
+        type="button"
+        phx-click={JS.dispatch("phx:set-theme")}
+        data-theme="night"
+        aria-label="Switch to night theme"
+        class={[
+          "cursor-pointer transition-colors duration-200 focus:outline-none",
+          "[[data-theme=night]_&]:text-oxblood",
+          "[[data-theme=day]_&]:text-muted [[data-theme=day]_&]:hover:text-ink"
+        ]}
+      >
+        night
+      </button>
+    </div>
+    """
+  end
+
   attr :flash, :map, required: true, doc: "the map of flash messages"
   attr :id, :string, default: "flash-group", doc: "the optional id of flash container"
 
@@ -115,40 +149,4 @@ defmodule AviaryWeb.Layouts do
     """
   end
 
-  @doc """
-  Provides dark vs light theme toggle based on themes defined in app.css.
-
-  See <head> in root.html.heex which applies the theme before page load.
-  """
-  def theme_toggle(assigns) do
-    ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 transition-[left]" />
-
-      <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="system"
-      >
-        <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
-      </button>
-
-      <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="light"
-      >
-        <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
-      </button>
-
-      <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="dark"
-      >
-        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
-      </button>
-    </div>
-    """
-  end
 end

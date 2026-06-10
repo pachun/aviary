@@ -35,3 +35,6 @@ aviary-*.tar
 npm-debug.log
 /assets/node_modules/
 
+
+# Local dev env (Jellyfin URL + API key)
+.env.local

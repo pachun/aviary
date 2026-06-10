@@ -17,7 +17,12 @@ defmodule AviaryWeb.Router do
   scope "/", AviaryWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    # Root is Shows — there's no "home" page. Single source of truth
+    # for the section nav: the masthead links here and the user's
+    # mental model is "I opened Aviary, here are the shows."
+    live "/", ShowsLive, :index
+    live "/shows", ShowsLive, :index
+    live "/movies", MoviesLive, :index
   end
 
   # Other scopes may use custom stacks.
