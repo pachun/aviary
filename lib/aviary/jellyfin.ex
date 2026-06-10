@@ -32,22 +32,127 @@ defmodule Aviary.Jellyfin do
 
   @doc """
   Fetch a single item by id with the fuller field set the detail page
-  needs — overview, MPAA rating, runtime, remote trailers, etc. List
-  endpoints keep their lean Fields because we don't need this stuff
-  for grid rendering.
+  needs — overview, MPAA rating, runtime, remote trailers, plus
+  UserData (resume position, played state). UserData is populated only
+  when we pass userId, so we resolve the Jellyfin user first.
   """
   def get_item(id) do
     result =
       get!(@api_path,
         Ids: id,
+        userId: user_id(),
         Fields:
-          "Overview,OfficialRating,RunTimeTicks,RemoteTrailers,PremiereDate,EndDate,Status,ProductionYear,Genres"
+          "Overview,OfficialRating,RunTimeTicks,RemoteTrailers,PremiereDate,EndDate,Status,ProductionYear,Genres,UserData"
       )
 
     case result["Items"] do
       [item | _] -> {:ok, item}
       _ -> :error
     end
+  end
+
+  @doc """
+  Persists a playback position to the user's UserData. Used after every
+  progress report from the player.
+
+  We use `POST /UserItems/{id}/UserData?userId=X` rather than the
+  Sessions/Playing/* API because aviary authenticates with an admin
+  API key (not a user-bound session token). The Sessions endpoints
+  attribute their reports to the auth context's user, and admin API
+  keys have UserId="00000000-...", which means progress saved through
+  them never lands in any real user's UserData. The /UserItems
+  endpoint takes the userId explicitly via query param, which sidesteps
+  that and persists reliably.
+
+  `position_ticks` is in Jellyfin's 100ns units.
+  """
+  def save_position(item_id, position_ticks) do
+    case user_id() do
+      nil ->
+        :error
+
+      uid ->
+        Req.post(base_url() <> "/UserItems/" <> item_id <> "/UserData",
+          params: [userId: uid],
+          headers: [{"x-emby-token", api_key()}],
+          json: %{"PlaybackPositionTicks" => position_ticks},
+          receive_timeout: 5_000
+        )
+    end
+  rescue
+    _ -> :error
+  end
+
+  # Discovers and caches the Jellyfin user this aviary instance reports
+  # progress as. Single-user assumption — fine for the home media
+  # context aviary is built for. Cached in :persistent_term so it
+  # survives the BEAM scheduler across requests but resets on process
+  # restart (which is the right time to rediscover anyway).
+  defp user_id do
+    case :persistent_term.get({__MODULE__, :user_id}, nil) do
+      nil ->
+        case fetch_user_id() do
+          nil ->
+            nil
+
+          id ->
+            :persistent_term.put({__MODULE__, :user_id}, id)
+            id
+        end
+
+      id ->
+        id
+    end
+  end
+
+  # API keys in Jellyfin are tied to the user who generated them, and
+  # the Sessions/Playing endpoints save UserData against that user
+  # specifically. To make sure get_item queries the same user, we
+  # look up our specific API key in /Auth/Keys to find its owner.
+  # Falls back to first user from /Users if that path doesn't resolve.
+  defp fetch_user_id do
+    fetch_user_id_from_auth_keys() || fetch_user_id_from_users_list()
+  end
+
+  defp fetch_user_id_from_auth_keys do
+    case Req.get(base_url() <> "/Auth/Keys",
+           headers: [{"x-emby-token", api_key()}],
+           receive_timeout: 5_000
+         ) do
+      {:ok, %Req.Response{status: 200, body: %{"Items" => keys}}} when is_list(keys) ->
+        keys
+        |> Enum.find_value(fn key ->
+          if key["AccessToken"] == api_key(), do: key["UserId"]
+        end)
+        |> non_null_user_id()
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  # Admin-generated API keys report UserId as the all-zeros UUID,
+  # which is Jellyfin's "no real user" sentinel. Treat it as nil so
+  # discovery falls through to the /Users list (where a real user
+  # will be found).
+  defp non_null_user_id(nil), do: nil
+
+  defp non_null_user_id(uid) when is_binary(uid) do
+    if String.replace(uid, ~r/[-0]/, "") == "", do: nil, else: uid
+  end
+
+  defp fetch_user_id_from_users_list do
+    case Req.get(base_url() <> "/Users",
+           headers: [{"x-emby-token", api_key()}],
+           receive_timeout: 5_000
+         ) do
+      {:ok, %Req.Response{status: 200, body: [user | _]}} -> user["Id"]
+      _ -> nil
+    end
+  rescue
+    _ -> nil
   end
 
   @doc """

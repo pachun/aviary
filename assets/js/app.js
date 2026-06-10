@@ -46,6 +46,7 @@ const HlsPlayer = {
   mounted() {
     const video = this.el
     const src = video.dataset.src
+    const resumeAt = parseFloat(video.dataset.resumeAt || "0")
 
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = src
@@ -58,18 +59,41 @@ const HlsPlayer = {
       video.src = src
     }
 
+    // Seek to the saved resume position once the video has enough
+    // metadata to know its duration / seekable ranges.
+    if (resumeAt > 0) {
+      const seekToResume = () => {
+        try { video.currentTime = resumeAt } catch (e) { /* ignore */ }
+      }
+      if (video.readyState >= 1) {
+        seekToResume()
+      } else {
+        video.addEventListener("loadedmetadata", seekToResume, {once: true})
+      }
+    }
+
+    // Progress reporting: every 10 seconds while playing, plus on each
+    // pause (which catches close, seek, system fullscreen exit, etc).
+    // 1-second floor to ignore the initial transient.
+    const reportProgress = () => {
+      if (video.currentTime > 1) {
+        this.pushEvent("report_progress", {position: video.currentTime})
+      }
+    }
+    this.progressInterval = setInterval(() => {
+      if (!video.paused) reportProgress()
+    }, 10000)
+    video.addEventListener("pause", reportProgress)
+
     if (this.isIOS() && video.webkitEnterFullScreen) {
       const enterNativeFullscreen = () => {
         try {
           video.webkitEnterFullScreen()
         } catch (e) {
-          // Fullscreen request can fail if not invoked from a user
-          // gesture chain — falls back to the inline HTML5 controls.
           console.warn("iOS native fullscreen unavailable:", e)
         }
       }
 
-      // webkitEnterFullScreen only works once the video has metadata.
       if (video.readyState >= 1) {
         enterNativeFullscreen()
       } else {
@@ -83,6 +107,7 @@ const HlsPlayer = {
   },
 
   destroyed() {
+    if (this.progressInterval) clearInterval(this.progressInterval)
     if (this.hls) this.hls.destroy()
   },
 

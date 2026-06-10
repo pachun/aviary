@@ -62,9 +62,24 @@ defmodule Aviary.Catalog do
       official_rating: item["OfficialRating"],
       genre: first_genre(item["Genres"]),
       synopsis: item["Overview"],
-      trailer_url: first_trailer_url(item["RemoteTrailers"])
+      trailer_url: first_trailer_url(item["RemoteTrailers"]),
+      resume_seconds: resume_seconds(item["UserData"])
     }
   end
+
+  # Returns seconds to resume from, or nil if there's no in-progress
+  # playback worth resuming from. Jellyfin keeps a saved position even
+  # after the item is fully watched (Played=true); we treat that as
+  # "start over from the beginning" rather than offering a stale
+  # resume point.
+  defp resume_seconds(%{"PlaybackPositionTicks" => ticks, "Played" => true})
+       when is_integer(ticks),
+       do: nil
+
+  defp resume_seconds(%{"PlaybackPositionTicks" => ticks}) when is_integer(ticks) and ticks > 0,
+    do: ticks / 10_000_000
+
+  defp resume_seconds(_), do: nil
 
   # First genre only — keeps the metadata line tight. Jellyfin returns
   # Genres as a list of strings ordered by primary classification.

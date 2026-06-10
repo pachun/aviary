@@ -29,6 +29,18 @@ defmodule AviaryWeb.MoviesDetailLive do
     {:noreply, assign(socket, :playing, false)}
   end
 
+  # Hook reports every 10s while playing plus on every pause. Convert
+  # seconds (what JS hands us) to Jellyfin's 100ns ticks, then save
+  # directly to the user's UserData. Also live-update the in-memory
+  # resume_seconds so if the user closes the player and the page
+  # rerenders, the Resume button reflects the latest position without
+  # a roundtrip back to Jellyfin.
+  def handle_event("report_progress", %{"position" => position}, socket) do
+    position_ticks = trunc(position * 10_000_000)
+    Aviary.Jellyfin.save_position(socket.assigns.movie.id, position_ticks)
+    {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, position))}
+  end
+
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
@@ -114,7 +126,7 @@ defmodule AviaryWeb.MoviesDetailLive do
                     phx-click="play"
                     class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
-                    Play
+                    {if @movie.resume_seconds, do: "Resume", else: "Play"}
                   </button>
                 </div>
               </div>
@@ -171,6 +183,7 @@ defmodule AviaryWeb.MoviesDetailLive do
           id={"player-#{@movie.id}"}
           phx-hook="HlsPlayer"
           data-src={Aviary.Jellyfin.hls_url(@movie.id)}
+          data-resume-at={@movie.resume_seconds || 0}
           controls
           autoplay
           playsinline
