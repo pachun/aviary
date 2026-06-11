@@ -61,27 +61,29 @@ defmodule AviaryWeb.Components.ReleaseCalendar do
 
   defp calendar(assigns) do
     days = two_weeks_from_sunday(assigns.today)
+    target_in_this_week = same_sunday_week?(assigns.schedule.air_date, assigns.today)
 
     assigns =
       assigns
       |> assign(:row1, Enum.take(days, 7))
-      |> assign(:row2, Enum.drop(days, 7))
+      |> assign(:row2, if(target_in_this_week, do: nil, else: Enum.drop(days, 7)))
       |> assign(:caption, caption_phrase(assigns.schedule.air_date, assigns.today))
 
     ~H"""
     <%!--
-      Stripped to pure time-shape: 14 boxes, no day labels, no date
-      numbers. Today reads as outlined, target reads as filled — the
-      eye lands on the filled box first ("destination"), then locates
-      itself via the outlined one ("you are here"). The caption
-      beneath carries the actual day name and episode credit, so the
-      grid stays purely visual.
+      Pure time-shape: 7 or 14 boxes, no day labels, no date numbers.
+      Today reads as outlined, target reads as filled — eye lands on
+      the filled box first (destination), then locates itself via the
+      outlined one (you are here). Caption beneath carries the actual
+      day name + episode credit. Second row appears only when the
+      target spills into next week; one week's plenty when the drop
+      is imminent.
     --%>
     <div class="font-sans">
       <div class="grid grid-cols-7 gap-1.5">
         <.day_cell :for={d <- @row1} date={d} today={@today} target={@schedule.air_date} />
       </div>
-      <div class="grid grid-cols-7 gap-1.5 mt-1.5">
+      <div :if={@row2} class="grid grid-cols-7 gap-1.5 mt-1.5">
         <.day_cell :for={d <- @row2} date={d} today={@today} target={@schedule.air_date} />
       </div>
 
@@ -107,13 +109,11 @@ defmodule AviaryWeb.Components.ReleaseCalendar do
   defp day_cell(assigns) do
     is_today = Date.compare(assigns.date, assigns.today) == :eq
     is_target = Date.compare(assigns.date, assigns.target) == :eq
-    is_past = Date.compare(assigns.date, assigns.today) == :lt
 
     box_class =
       cond do
         is_target -> "bg-ink/85 border border-ink/85"
         is_today -> "bg-paper border-[1.5px] border-ink"
-        is_past -> "bg-transparent border border-rule opacity-40"
         true -> "bg-transparent border border-rule"
       end
 
@@ -168,27 +168,27 @@ defmodule AviaryWeb.Components.ReleaseCalendar do
 
   defp caption_phrase(air_date, today) do
     days = Date.diff(air_date, today)
+    day_name = Calendar.strftime(air_date, "%A")
 
     cond do
-      days == 0 -> "Next episode today"
-      days == 1 -> "Next episode tomorrow"
-      days <= 7 -> "Next episode #{day_name(air_date, today)}"
-      days <= 14 -> "Next episode next #{day_name(air_date, today)}"
+      days == 0 -> "Next episode today (#{day_name})"
+      days == 1 -> "Next episode tomorrow (#{day_name})"
+      days <= 14 -> "Next episode #{relative_day(air_date, today)}"
       true -> "Next episode #{Calendar.strftime(air_date, "%B %-d")}"
     end
   end
 
-  defp premiere_phrase(air_date) do
-    Calendar.strftime(air_date, "%A, %B %-d")
+  defp relative_day(date, today) do
+    name = Calendar.strftime(date, "%A")
+    if same_sunday_week?(date, today), do: "this #{name}", else: "next #{name}"
   end
 
-  defp day_name(date, today) do
-    same_week =
-      Date.beginning_of_week(date, :sunday) ==
-        Date.beginning_of_week(today, :sunday)
+  defp same_sunday_week?(a, b) do
+    Date.beginning_of_week(a, :sunday) == Date.beginning_of_week(b, :sunday)
+  end
 
-    name = Calendar.strftime(date, "%A")
-    if same_week, do: "this #{name}", else: name
+  defp premiere_phrase(air_date) do
+    Calendar.strftime(air_date, "%A, %B %-d")
   end
 
   defp pluralize_days(1), do: "day"
