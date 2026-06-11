@@ -22,10 +22,10 @@ defmodule AviaryWeb.UserAuth do
 
   @doc """
   Stores the user in the session and redirects to the post-login
-  destination (path stored under :return_to, or /shows by default).
+  destination (path stored under :return_to, or /home by default).
   """
   def log_in_user(conn, user) do
-    return_to = get_session(conn, :user_return_to) || ~p"/shows"
+    return_to = get_session(conn, :user_return_to) || ~p"/home"
 
     conn
     |> renew_session()
@@ -67,12 +67,12 @@ defmodule AviaryWeb.UserAuth do
   end
 
   @doc """
-  Redirects to /shows if a user is already logged in. Used on the
+  Redirects to /home if a user is already logged in. Used on the
   /login route so authenticated users don't hit the form again.
   """
   def redirect_if_user_is_authenticated(conn, _opts) do
     if conn.assigns[:current_user] do
-      conn |> redirect(to: ~p"/shows") |> halt()
+      conn |> redirect(to: ~p"/home") |> halt()
     else
       conn
     end

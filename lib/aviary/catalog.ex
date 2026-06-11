@@ -61,6 +61,13 @@ defmodule Aviary.Catalog do
               :none -> nil
             end
 
+        # Jellyseerr knows when the next episode is scheduled to air
+        # (TMDB sync). We use this on the detail page to swap the
+        # trailer for a release calendar when the show is in active
+        # rotation. Returns :none if no upcoming episode is known —
+        # in which case the trailer treatment takes over.
+        schedule = Aviary.Jellyseerr.get_tv_schedule(tmdb_id(item))
+
         show =
           item
           |> to_show_detail()
@@ -68,6 +75,7 @@ defmodule Aviary.Catalog do
           |> Map.put(:next_up, next_up)
           |> Map.put(:season_count, episodes_by_season |> Enum.map(&elem(&1, 0)) |> Enum.uniq() |> length())
           |> Map.put(:rating, Aviary.RottenTomatoes.fetch(item["Name"], :tv))
+          |> Map.put(:schedule, schedule)
 
         {:ok, show}
 
@@ -138,6 +146,9 @@ defmodule Aviary.Catalog do
 
   defp first_genre([genre | _]) when is_binary(genre), do: genre
   defp first_genre(_), do: nil
+
+  defp tmdb_id(%{"ProviderIds" => %{"Tmdb" => id}}) when is_binary(id) and id != "", do: id
+  defp tmdb_id(_), do: nil
 
   # Resume from saved position when there is one. We use PlayedPercentage
   # to skip items that are basically finished (>= 95% in) — Jellyfin

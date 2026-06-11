@@ -2,6 +2,7 @@ defmodule AviaryWeb.ShowsDetailLive do
   use AviaryWeb, :live_view
 
   alias AviaryWeb.Components.CatalogGrid
+  alias AviaryWeb.Components.ReleaseCalendar
   alias AviaryWeb.Components.VideoPlayer
 
   def mount(%{"id" => id} = params, _session, socket) do
@@ -82,7 +83,7 @@ defmodule AviaryWeb.ShowsDetailLive do
           <div class="flex flex-col gap-4">
             <div class={[
               "grid grid-cols-1 gap-4 lg:gap-6 lg:items-start",
-              trailer_embeddable?(@show.trailer_url) && "lg:grid-cols-[1fr_360px]"
+              upper_right_present?(@show) && "lg:grid-cols-[1fr_360px]"
             ]}>
               <div class="flex flex-col gap-4">
                 <.link
@@ -121,8 +122,20 @@ defmodule AviaryWeb.ShowsDetailLive do
                 </div>
               </div>
 
+              <%!--
+                Upper-right slot: release calendar takes priority over
+                trailer for in-rotation shows ("we're invested, the
+                trailer is no longer interesting"). Falls back to
+                trailer when no schedule is known — ended shows,
+                between-seasons-with-no-premiere-announced, or any
+                Jellyseerr lookup failure.
+              --%>
+              <div :if={@show.schedule != :none} class="w-full">
+                <ReleaseCalendar.widget schedule={@show.schedule} />
+              </div>
+
               <div
-                :if={trailer_embeddable?(@show.trailer_url)}
+                :if={@show.schedule == :none && trailer_embeddable?(@show.trailer_url)}
                 class="aspect-video w-full bg-rule rounded-sm overflow-hidden"
               >
                 <iframe
@@ -300,6 +313,10 @@ defmodule AviaryWeb.ShowsDetailLive do
 
   ## Trailer helpers (duplicate of MoviesDetailLive — small enough to
   ## not justify a shared module yet)
+
+  defp upper_right_present?(show) do
+    show.schedule != :none || trailer_embeddable?(show.trailer_url)
+  end
 
   defp trailer_embeddable?(nil), do: false
   defp trailer_embeddable?(url) when is_binary(url), do: youtube_id(url) != nil

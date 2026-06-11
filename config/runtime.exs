@@ -39,7 +39,13 @@ config :aviary,
   # Tailscale URL, so JELLYFIN_PUBLIC_URL is set separately by
   # depot's configure.sh. Falls back to JELLYFIN_URL when unset.
   jellyfin_public_url:
-    System.get_env("JELLYFIN_PUBLIC_URL") || System.get_env("JELLYFIN_URL")
+    System.get_env("JELLYFIN_PUBLIC_URL") || System.get_env("JELLYFIN_URL"),
+  # Jellyseerr feeds the release-calendar widget — next-episode air
+  # dates pulled via Jellyseerr's TMDB sync. Optional; when unset,
+  # the show detail page falls back to the trailer treatment in all
+  # cases.
+  jellyseerr_url: System.get_env("JELLYSEERR_URL"),
+  jellyseerr_api_key: System.get_env("JELLYSEERR_API_KEY")
 
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
