@@ -30,6 +30,9 @@ defmodule AviaryWeb.Layouts do
       <header class="px-4 sm:px-8 lg:px-12 pt-8 pb-10 sm:pt-10 sm:pb-12">
         <div class="mx-auto max-w-[1100px] flex items-baseline justify-between gap-8">
           <nav class="flex items-baseline gap-8 text-[0.78rem] font-sans tracking-[0.15em] uppercase">
+            <.section_link href={~p"/home"} active={@current_section == "home"}>
+              Home
+            </.section_link>
             <.section_link href={~p"/shows"} active={@current_section == "shows"}>
               Shows
             </.section_link>
@@ -38,10 +41,7 @@ defmodule AviaryWeb.Layouts do
             </.section_link>
           </nav>
 
-          <div class="flex items-baseline gap-5">
-            <.user_chip :if={@current_user} user={@current_user} />
-            <.theme_toggle />
-          </div>
+          <.bird_menu current_user={@current_user} />
         </div>
       </header>
 
@@ -56,27 +56,71 @@ defmodule AviaryWeb.Layouts do
     """
   end
 
-  attr :user, :map, required: true
+  @doc """
+  Bird-logo dropdown — appears in the top-right on every screen
+  (logged in or not). Hovering / tapping it opens a small menu:
+  the day/night theme toggle always, plus a Sign out row when a
+  user is signed in.
 
-  defp user_chip(assigns) do
+  Pure CSS open/close via :hover (desktop) and :focus-within
+  (touch — tapping the trigger focuses it, tapping outside blurs
+  it). No JS required.
+  """
+  attr :current_user, :any, default: nil
+
+  def bird_menu(assigns) do
     ~H"""
-    <details class="relative">
-      <summary class="list-none cursor-pointer font-sans text-[0.78rem] tracking-[0.15em] uppercase text-muted hover:text-ink transition-colors">
-        {@user.username}
-      </summary>
-      <div class="absolute right-0 mt-3 z-10 min-w-[140px] bg-surface border border-rule rounded-sm shadow-lg">
-        <.form for={%{}} action={~p"/logout"} method="post" class="contents">
-          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-          <input type="hidden" name="_method" value="delete" />
-          <button
-            type="submit"
-            class="w-full text-left px-4 py-3 font-sans text-[0.72rem] tracking-[0.15em] uppercase text-ink hover:text-oxblood cursor-pointer transition-colors"
+    <div class="group relative">
+      <button
+        type="button"
+        aria-haspopup="true"
+        aria-label="Menu"
+        class="block cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-sm"
+      >
+        <img
+          src={~p"/images/apple-touch-icon.png"}
+          alt="Aviary"
+          class="size-9 rounded-sm"
+        />
+      </button>
+
+      <%!--
+        Popup positioned at `top-full` with `pt-3` padding — the
+        visual gap to the trigger is *inside* the popup's box, so
+        the cursor stays within the hover region while crossing it.
+        Margin-based gaps (mt-3) broke this — the area outside the
+        popup wasn't a descendant of `.group` so :hover ended mid-flight.
+      --%>
+      <div class={[
+        "absolute right-0 top-full pt-3 z-20",
+        "invisible opacity-0 pointer-events-none transition-opacity duration-150",
+        "group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto",
+        "group-focus-within:visible group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
+      ]}>
+        <div class="min-w-[170px] bg-surface border border-rule rounded-sm shadow-lg overflow-hidden">
+          <div class="px-4 py-3 flex items-center justify-center border-b border-rule">
+            <.theme_toggle />
+          </div>
+
+          <.form
+            :if={@current_user}
+            for={%{}}
+            action={~p"/logout"}
+            method="post"
+            class="contents"
           >
-            Sign out
-          </button>
-        </.form>
+            <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+            <input type="hidden" name="_method" value="delete" />
+            <button
+              type="submit"
+              class="w-full text-center px-4 py-3 font-sans text-[0.72rem] tracking-[0.18em] uppercase text-ink hover:text-oxblood cursor-pointer transition-colors"
+            >
+              Sign out
+            </button>
+          </.form>
+        </div>
       </div>
-    </details>
+    </div>
     """
   end
 
@@ -100,47 +144,32 @@ defmodule AviaryWeb.Layouts do
   end
 
   @doc """
-  The day/night theme toggle — italic Fraunces text, oxblood for the
-  active state, separator is a vertical hairline. Replaces the typical
-  sun/moon icon button because the publication metaphor wants text.
+  Theme toggle — a small slider switch between light and dark, with
+  sun and moon glyphs at either end. Click anywhere on the row to
+  flip; the slider knob slides via CSS based on the current
+  `[data-theme]` value, no per-click round-trip needed.
 
-  Implementation: each button dispatches `phx:set-theme` with its
-  data-theme; the root.html.heex bootstrap script catches the event
-  and updates <html data-theme> + localStorage. CSS selectors below
-  match `[data-theme=...]` on the document so the active state
-  reflects the current theme without any server state.
+  The `phx:toggle-theme` event is handled by the bootstrap script in
+  root.html.heex — it reads the current theme and swaps it.
   """
   def theme_toggle(assigns) do
     ~H"""
-    <div class="font-display italic text-base leading-none flex items-center gap-2 select-none">
-      <button
-        type="button"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-theme="day"
-        aria-label="Switch to day theme"
-        class={[
-          "cursor-pointer transition-colors duration-200 focus:outline-none",
-          "[[data-theme=day]_&]:text-oxblood",
-          "[[data-theme=night]_&]:text-muted [[data-theme=night]_&]:hover:text-ink"
-        ]}
-      >
-        day
-      </button>
-      <span class="h-3 w-px bg-muted/60" aria-hidden="true"></span>
-      <button
-        type="button"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-theme="night"
-        aria-label="Switch to night theme"
-        class={[
-          "cursor-pointer transition-colors duration-200 focus:outline-none",
-          "[[data-theme=night]_&]:text-oxblood",
-          "[[data-theme=day]_&]:text-muted [[data-theme=day]_&]:hover:text-ink"
-        ]}
-      >
-        night
-      </button>
-    </div>
+    <button
+      type="button"
+      phx-click={JS.dispatch("phx:toggle-theme")}
+      aria-label="Toggle light/dark"
+      class="flex items-center gap-2 cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded"
+    >
+      <.icon name="hero-sun-micro" class="size-4 text-muted shrink-0" />
+      <span class="relative inline-block w-9 h-5 bg-rule rounded-full shrink-0">
+        <span class={[
+          "absolute top-0.5 left-0.5 size-4 rounded-full bg-oxblood transition-transform duration-200",
+          "[[data-theme=night]_&]:translate-x-4"
+        ]}>
+        </span>
+      </span>
+      <.icon name="hero-moon-micro" class="size-4 text-muted shrink-0" />
+    </button>
     """
   end
 

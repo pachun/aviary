@@ -2,15 +2,17 @@ defmodule AviaryWeb.MoviesDetailLive do
   use AviaryWeb, :live_view
 
   alias AviaryWeb.Components.CatalogGrid
+  alias AviaryWeb.Components.VideoPlayer
 
-  def mount(%{"id" => id}, _session, socket) do
+  def mount(%{"id" => id} = params, _session, socket) do
     case Aviary.Catalog.get_movie(id, socket.assigns.current_user) do
       {:ok, movie} ->
         {:ok,
          assign(socket,
            page_title: "#{movie.title} · Aviary",
            movie: movie,
-           playing: false
+           playing_item: nil,
+           kicker: kicker(params["from"], default: "movies")
          )}
 
       :error ->
@@ -21,12 +23,25 @@ defmodule AviaryWeb.MoviesDetailLive do
     end
   end
 
+  # Resolve the kicker (back link above the title) from the `from`
+  # query param. Detail pages can be reached from /home, /shows, or
+  # /movies — the kicker should send the user back to wherever they
+  # came from, labeled accordingly.
+  defp kicker(from, default: fallback) do
+    case from do
+      "home" -> %{label: "Home", path: "/home"}
+      "shows" -> %{label: "Shows", path: "/shows"}
+      "movies" -> %{label: "Movies", path: "/movies"}
+      _ -> kicker(fallback, default: fallback)
+    end
+  end
+
   def handle_event("play", _, socket) do
-    {:noreply, assign(socket, :playing, true)}
+    {:noreply, assign(socket, :playing_item, socket.assigns.movie)}
   end
 
   def handle_event("close_player", _, socket) do
-    {:noreply, assign(socket, :playing, false)}
+    {:noreply, assign(socket, :playing_item, nil)}
   end
 
   # Hook reports every 10s while playing plus on every pause. Convert
@@ -39,7 +54,7 @@ defmodule AviaryWeb.MoviesDetailLive do
     position_ticks = trunc(position * 10_000_000)
 
     Aviary.Jellyfin.save_position(
-      socket.assigns.movie.id,
+      socket.assigns.playing_item.id,
       position_ticks,
       socket.assigns.current_user
     )
@@ -91,10 +106,10 @@ defmodule AviaryWeb.MoviesDetailLive do
                   action. Forms a coherent button family with Play.
                 --%>
                 <.link
-                  navigate={~p"/movies"}
+                  navigate={@kicker.path}
                   class="w-fit font-sans text-xs tracking-[0.18em] uppercase font-medium px-5 py-2 rounded-sm border border-oxblood text-oxblood transition-colors hover:bg-oxblood/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                 >
-                  ← Movies
+                  ← {@kicker.label}
                 </.link>
 
                 <%!--
@@ -164,49 +179,12 @@ defmodule AviaryWeb.MoviesDetailLive do
         </div>
       </article>
 
-      <%!--
-        Full-viewport player overlay. Mounted only when @playing is
-        true; closing the overlay removes the <video> element entirely
-        so the HLS stream is torn down (HlsPlayer hook's destroyed
-        callback releases the player).
-
-        Native browser <video> controls — gives us play/pause, seek,
-        fullscreen, picture-in-picture, subtitle selection, and (in
-        Safari) AirPlay automatically. `x-webkit-airplay="allow"` is
-        the magic attribute Safari needs to show the AirPlay button.
-
-        ESC and the close button both close the overlay. We don't close
-        on backdrop click because the entire backdrop IS the video — a
-        misclick on the player would yank the user out.
-      --%>
-      <div
-        :if={@playing}
-        class="fixed inset-0 z-50 bg-black flex items-center justify-center"
-        phx-window-keydown="close_player"
-        phx-key="Escape"
-      >
-        <video
-          id={"player-#{@movie.id}"}
-          phx-hook="HlsPlayer"
-          data-src={Aviary.Jellyfin.hls_url(@movie.id, @current_user)}
-          data-resume-at={@movie.resume_seconds || 0}
-          controls
-          autoplay
-          playsinline
-          x-webkit-airplay="allow"
-          class="w-full h-full max-w-screen max-h-screen object-contain"
-        >
-        </video>
-
-        <button
-          type="button"
-          phx-click="close_player"
-          aria-label="Close player"
-          class="absolute top-4 right-4 z-10 font-sans text-xs tracking-[0.18em] uppercase font-medium text-white/80 hover:text-white cursor-pointer transition-colors px-4 py-2 rounded-sm bg-black/40 backdrop-blur-sm"
-        >
-          Close ✕
-        </button>
-      </div>
+      <VideoPlayer.overlay
+        :if={@playing_item}
+        item={@playing_item}
+        current_user={@current_user}
+        title={@movie.title}
+      />
     </Layouts.app>
     """
   end

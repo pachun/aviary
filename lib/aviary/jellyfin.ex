@@ -55,6 +55,133 @@ defmodule Aviary.Jellyfin do
     end
   end
 
+  @doc """
+  Lists all episodes for a series, including UserData (resume + played)
+  per-episode. Returned items have ParentIndexNumber (season number)
+  and IndexNumber (episode number within the season).
+  """
+  def list_episodes(series_id, auth) do
+    Req.get!(base_url() <> "/Shows/" <> series_id <> "/Episodes",
+      params: [
+        userId: auth.id,
+        Fields: "Overview,RunTimeTicks,UserData"
+      ],
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 15_000
+    ).body
+    |> case do
+      %{"Items" => items} when is_list(items) -> items
+      _ -> []
+    end
+  end
+
+  @doc """
+  Items the user is mid-watch on — movies with saved positions, plus
+  episodes in progress. Includes the SeriesId / SeriesName for
+  episodes so the home page can group by show.
+  """
+  def resume_items(auth) do
+    Req.get!(base_url() <> "/UserItems/Resume",
+      params: [
+        userId: auth.id,
+        Limit: 30,
+        MediaTypes: "Video",
+        Fields: "UserData,SeriesId,SeriesPrimaryImageTag,SeriesStudio"
+      ],
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 15_000
+    ).body
+    |> case do
+      %{"Items" => items} when is_list(items) -> items
+      _ -> []
+    end
+  end
+
+  @doc """
+  All-shows NextUp — across the user's whole library, return the next
+  episode to watch for each show with progress. Used by the home page
+  Continue Watching row.
+  """
+  def next_up_across_library(auth) do
+    Req.get!(base_url() <> "/Shows/NextUp",
+      params: [
+        userId: auth.id,
+        Limit: 50,
+        Fields: "UserData,SeriesPrimaryImageTag"
+      ],
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 15_000
+    ).body
+    |> case do
+      %{"Items" => items} when is_list(items) -> items
+      _ -> []
+    end
+  end
+
+  @doc """
+  Recently-added episodes — surfaces new episodes that arrived (via
+  Sonarr import) since the user last interacted with the show. Sort
+  by DateCreated descending on Jellyfin's side.
+  """
+  def latest_episodes(auth) do
+    Req.get!(base_url() <> "/Users/" <> auth.id <> "/Items/Latest",
+      params: [
+        IncludeItemTypes: "Episode",
+        Limit: 30,
+        Fields: "UserData,SeriesPrimaryImageTag,DateCreated"
+      ],
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 15_000
+    ).body
+    |> case do
+      items when is_list(items) -> items
+      _ -> []
+    end
+  end
+
+  @doc """
+  Browser-loadable backdrop (16:9) image URL — used on the home page
+  marquee where landscape thumbnails read better than 2:3 posters.
+  Falls back to the poster URL when the item has no backdrop.
+  """
+  def fetch_backdrop(item_id, auth, opts \\ []) do
+    max_width = Keyword.get(opts, :max_width, 600)
+    url = "#{base_url()}/Items/#{item_id}/Images/Backdrop/0?maxWidth=#{max_width}"
+
+    case Req.get(url,
+           headers: [{"x-emby-token", auth.token}],
+           receive_timeout: 15_000
+         ) do
+      {:ok, %Req.Response{status: 200, body: body, headers: headers}} ->
+        {:ok, body, content_type(headers)}
+
+      _ ->
+        fetch_poster(item_id, auth, opts)
+    end
+  end
+
+  @doc """
+  Returns the next-up episode for this user on the given series.
+  Returns `{:ok, episode}` when there is one, or `:none` if the user
+  has finished the series (or never started — both result in NextUp
+  returning an empty list).
+  """
+  def next_up(series_id, auth) do
+    Req.get!(base_url() <> "/Shows/NextUp",
+      params: [
+        userId: auth.id,
+        seriesId: series_id,
+        Fields: "UserData"
+      ],
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 15_000
+    ).body
+    |> case do
+      %{"Items" => [item | _]} -> {:ok, item}
+      _ -> :none
+    end
+  end
+
   ## Playback state
 
   @doc """

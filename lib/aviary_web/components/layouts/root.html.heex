@@ -64,6 +64,10 @@
         setTheme(localStorage.getItem("aviary:theme") || "day");
         window.addEventListener("storage", (e) => e.key === "aviary:theme" && setTheme(e.newValue || "day"));
         window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.theme));
+        window.addEventListener("phx:toggle-theme", () => {
+          const current = document.documentElement.getAttribute("data-theme") || "day";
+          setTheme(current === "day" ? "night" : "day");
+        });
       })();
     </script>
   </head>

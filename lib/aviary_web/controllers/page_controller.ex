@@ -8,6 +8,6 @@ defmodule AviaryWeb.PageController do
   use AviaryWeb, :controller
 
   def home(conn, _params) do
-    redirect(conn, to: ~p"/shows")
+    redirect(conn, to: ~p"/home")
   end
 end

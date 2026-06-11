@@ -86,9 +86,7 @@ defmodule AviaryWeb.Components.CatalogGrid do
     """
   end
 
-  # Movies link to their detail page; shows don't have one yet so they
-  # render as non-navigating links. When ShowsDetailLive lands, this
-  # second clause becomes the symmetric `/shows/:id` pattern.
-  defp item_href(%{type: :movie, id: id}), do: "/movies/#{id}"
+  defp item_href(%{type: :movie, id: id}), do: "/movies/#{id}?from=movies"
+  defp item_href(%{type: :show, id: id}), do: "/shows/#{id}?from=shows"
   defp item_href(_), do: "#"
 end

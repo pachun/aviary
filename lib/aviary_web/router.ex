@@ -46,7 +46,9 @@ defmodule AviaryWeb.Router do
 
     live_session :authenticated,
       on_mount: [{AviaryWeb.UserAuth, :require_authenticated}] do
+      live "/home", HomeLive, :index
       live "/shows", ShowsLive, :index
+      live "/shows/:id", ShowsDetailLive, :show
       live "/movies", MoviesLive, :index
       live "/movies/:id", MoviesDetailLive, :show
     end

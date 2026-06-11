@@ -1,17 +1,18 @@
 defmodule AviaryWeb.ImageController do
   @moduledoc """
-  Proxies poster images from Jellyfin to the browser. The current
-  user's auth (read from session via `fetch_current_user`) authorizes
-  the upstream fetch — Jellyfin sees a request made as the actual
-  signed-in user.
+  Proxies poster + backdrop images from Jellyfin. The current user's
+  auth (read from session) authorizes the upstream fetch — Jellyfin
+  sees a request made as the actual signed-in user.
 
-  Aggressively cached client-side (Jellyfin's item IDs are stable
-  enough that we treat each URL as content-addressed).
+  `kind=backdrop` returns the 16:9 backdrop for marquee thumbnails;
+  default returns the 2:3 poster for grid items.
   """
   use AviaryWeb, :controller
 
-  def show(conn, %{"item_id" => item_id}) do
-    case Aviary.Jellyfin.fetch_poster(item_id, conn.assigns.current_user) do
+  def show(conn, %{"item_id" => item_id} = params) do
+    fetcher = fetcher_for(params["kind"])
+
+    case fetcher.(item_id, conn.assigns.current_user) do
       {:ok, body, content_type} ->
         conn
         |> put_resp_header("content-type", content_type)
@@ -22,4 +23,7 @@ defmodule AviaryWeb.ImageController do
         send_resp(conn, 404, "")
     end
   end
+
+  defp fetcher_for("backdrop"), do: &Aviary.Jellyfin.fetch_backdrop/2
+  defp fetcher_for(_), do: &Aviary.Jellyfin.fetch_poster/2
 end
