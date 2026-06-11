@@ -113,12 +113,16 @@ defmodule AviaryWeb.UserAuth do
       end
   """
   def on_mount(:require_authenticated, _params, session, socket) do
-    socket = Phoenix.Component.assign_new(socket, :current_user, fn ->
-      session["aviary_user"] || session[@session_key]
-    end)
+    user = session["aviary_user"] || session[@session_key]
 
-    if socket.assigns.current_user do
-      {:cont, socket}
+    # Probe Jellyfin to confirm the cookied token is still good. Without
+    # this, a stale session (token Jellyfin no longer recognizes —
+    # happens across deploys where Jellyfin's db was rebuilt) takes down
+    # every authenticated page with a 500 once a Jellyfin call returns
+    # 401 + empty body. One extra HTTP call per mount is cheap; the
+    # alternative is per-call 500s.
+    if user && Aviary.Auth.token_valid?(user.token) do
+      {:cont, Phoenix.Component.assign(socket, :current_user, user)}
     else
       {:halt,
        socket

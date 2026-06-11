@@ -63,6 +63,29 @@ defmodule Aviary.Auth do
 
   def log_out(_), do: :ok
 
+  @doc """
+  Cheap "is this token still good with Jellyfin?" check. Used by the
+  LiveView mount guard to bounce stale sessions to /login instead of
+  letting downstream Jellyfin calls 500 on `Map.fetch!("Items")` when
+  Jellyfin returns 401 with an empty body. Returns true only on a 200
+  — any other status or transport error is treated as invalid so we
+  fail closed.
+  """
+  def token_valid?(token) when is_binary(token) do
+    case Req.get(base_url() <> "/Users/Me",
+           headers: [{"x-emby-token", token}],
+           receive_timeout: 3_000,
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200}} -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
+
+  def token_valid?(_), do: false
+
   defp base_url do
     Application.fetch_env!(:aviary, :jellyfin_url) |> String.trim_trailing("/")
   end
