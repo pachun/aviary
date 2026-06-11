@@ -4,7 +4,7 @@ defmodule AviaryWeb.MoviesDetailLive do
   alias AviaryWeb.Components.CatalogGrid
 
   def mount(%{"id" => id}, _session, socket) do
-    case Aviary.Catalog.get_movie(id) do
+    case Aviary.Catalog.get_movie(id, socket.assigns.current_user) do
       {:ok, movie} ->
         {:ok,
          assign(socket,
@@ -37,13 +37,19 @@ defmodule AviaryWeb.MoviesDetailLive do
   # a roundtrip back to Jellyfin.
   def handle_event("report_progress", %{"position" => position}, socket) do
     position_ticks = trunc(position * 10_000_000)
-    Aviary.Jellyfin.save_position(socket.assigns.movie.id, position_ticks)
+
+    Aviary.Jellyfin.save_position(
+      socket.assigns.movie.id,
+      position_ticks,
+      socket.assigns.current_user
+    )
+
     {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, position))}
   end
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} current_user={@current_user}>
       <article>
         <div class="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-8 pt-4">
           <%!--
@@ -182,7 +188,7 @@ defmodule AviaryWeb.MoviesDetailLive do
         <video
           id={"player-#{@movie.id}"}
           phx-hook="HlsPlayer"
-          data-src={Aviary.Jellyfin.hls_url(@movie.id)}
+          data-src={Aviary.Jellyfin.hls_url(@movie.id, @current_user)}
           data-resume-at={@movie.resume_seconds || 0}
           controls
           autoplay

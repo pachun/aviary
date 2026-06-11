@@ -18,6 +18,10 @@ defmodule AviaryWeb.Layouts do
     default: nil,
     doc: "which top-level section is active — \"shows\", \"movies\", or nil"
 
+  attr :current_user, :map,
+    default: nil,
+    doc: "currently signed-in user; surfaces as a chip in the masthead"
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -34,7 +38,10 @@ defmodule AviaryWeb.Layouts do
             </.section_link>
           </nav>
 
-          <.theme_toggle />
+          <div class="flex items-baseline gap-5">
+            <.user_chip :if={@current_user} user={@current_user} />
+            <.theme_toggle />
+          </div>
         </div>
       </header>
 
@@ -46,6 +53,30 @@ defmodule AviaryWeb.Layouts do
 
       <.flash_group flash={@flash} />
     </div>
+    """
+  end
+
+  attr :user, :map, required: true
+
+  defp user_chip(assigns) do
+    ~H"""
+    <details class="relative">
+      <summary class="list-none cursor-pointer font-sans text-[0.78rem] tracking-[0.15em] uppercase text-muted hover:text-ink transition-colors">
+        {@user.username}
+      </summary>
+      <div class="absolute right-0 mt-3 z-10 min-w-[140px] bg-surface border border-rule rounded-sm shadow-lg">
+        <.form for={%{}} action={~p"/logout"} method="post" class="contents">
+          <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+          <input type="hidden" name="_method" value="delete" />
+          <button
+            type="submit"
+            class="w-full text-left px-4 py-3 font-sans text-[0.72rem] tracking-[0.15em] uppercase text-ink hover:text-oxblood cursor-pointer transition-colors"
+          >
+            Sign out
+          </button>
+        </.form>
+      </div>
+    </details>
     """
   end
 

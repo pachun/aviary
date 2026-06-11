@@ -7,13 +7,13 @@ defmodule AviaryWeb.MoviesLive do
     {:ok,
      assign(socket,
        page_title: "Movies · Aviary",
-       items: Aviary.Catalog.list_movies()
+       items: Aviary.Catalog.list_movies(socket.assigns.current_user)
      )}
   end
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_section="movies">
+    <Layouts.app flash={@flash} current_section="movies" current_user={@current_user}>
       <CatalogGrid.grid items={@items}>
         <:empty>You don't have any movies.</:empty>
       </CatalogGrid.grid>

@@ -1,23 +1,17 @@
 defmodule AviaryWeb.ImageController do
   @moduledoc """
-  Proxies poster images from Jellyfin to the browser. Reasons we proxy
-  instead of having `<img src>` hit Jellyfin directly:
+  Proxies poster images from Jellyfin to the browser. The current
+  user's auth (read from session via `fetch_current_user`) authorizes
+  the upstream fetch — Jellyfin sees a request made as the actual
+  signed-in user.
 
-    * The deployed container reaches Jellyfin via host.docker.internal,
-      which means nothing to a browser on someone's laptop.
-    * The API key stays server-side — never appears in a `<img src>`
-      attribute, network log, or page source.
-    * Aviary controls caching headers and can swap the upstream
-      (Jellyfin, alternative server, etc.) without the UI noticing.
-
-  Cached aggressively client-side: posters keyed by Jellyfin's item ID
-  are content-addressed for our purposes (they don't change without the
-  ID changing).
+  Aggressively cached client-side (Jellyfin's item IDs are stable
+  enough that we treat each URL as content-addressed).
   """
   use AviaryWeb, :controller
 
   def show(conn, %{"item_id" => item_id}) do
-    case Aviary.Jellyfin.fetch_poster(item_id) do
+    case Aviary.Jellyfin.fetch_poster(item_id, conn.assigns.current_user) do
       {:ok, body, content_type} ->
         conn
         |> put_resp_header("content-type", content_type)
