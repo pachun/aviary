@@ -85,6 +85,27 @@ const HlsPlayer = {
     }, 10000)
     video.addEventListener("pause", reportProgress)
 
+    // Skip Intro pill — driven by the Intro Skipper Jellyfin plugin.
+    // The button (rendered by the LV) carries data-skip-target=end and
+    // expects data-visible toggling based on whether currentTime is
+    // inside the intro range. We add a tiny lead-out (3s) before the
+    // computed end so the pill disappears before the intro actually
+    // ends, preventing a "blink in and immediately out" feel when the
+    // user is right at the cutoff.
+    const introStart = parseFloat(video.dataset.introStart || "")
+    const introEnd = parseFloat(video.dataset.introEnd || "")
+    if (Number.isFinite(introStart) && Number.isFinite(introEnd) && introEnd > introStart) {
+      const skipButton = document.getElementById(`skip-intro-${video.id.replace("player-", "")}`)
+      if (skipButton) {
+        const updateSkipVisibility = () => {
+          const t = video.currentTime
+          const inIntro = t >= introStart && t < introEnd - 3
+          skipButton.dataset.visible = inIntro ? "true" : "false"
+        }
+        video.addEventListener("timeupdate", updateSkipVisibility)
+      }
+    }
+
     if (this.isIOS() && video.webkitEnterFullScreen) {
       const enterNativeFullscreen = () => {
         try {

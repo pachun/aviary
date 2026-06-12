@@ -11,7 +11,15 @@ defmodule AviaryWeb.Components.VideoPlayer do
   attr :current_user, :map, required: true
   attr :title, :string, required: true, doc: "label for the iframe title attr"
 
+  attr :segments, :any,
+    default: nil,
+    doc:
+      "Intro Skipper plugin segments, e.g. %{introduction: %{start: 5.0, end: 87.0}}. Nil when plugin not installed or no data for this item."
+
   def overlay(assigns) do
+    intro = get_in(assigns, [:segments, :introduction])
+    assigns = assign(assigns, :intro, intro)
+
     ~H"""
     <div
       class="fixed inset-0 z-50 bg-black flex items-center justify-center"
@@ -23,6 +31,8 @@ defmodule AviaryWeb.Components.VideoPlayer do
         phx-hook="HlsPlayer"
         data-src={Aviary.Jellyfin.hls_url(@item.id, @current_user)}
         data-resume-at={@item.resume_seconds || 0}
+        data-intro-start={@intro && @intro.start}
+        data-intro-end={@intro && @intro.end}
         controls
         autoplay
         playsinline
@@ -30,6 +40,27 @@ defmodule AviaryWeb.Components.VideoPlayer do
         class="w-full h-full max-w-screen max-h-screen object-contain"
       >
       </video>
+
+      <%!--
+        Skip Intro pill — JS hook toggles its data-visible attribute
+        based on currentTime falling inside [intro.start, intro.end].
+        The CSS opacity transition gives a soft fade so it doesn't
+        snap in/out distractingly. Bottom-right placement sits clear
+        of the native player chrome on the bottom-center.
+      --%>
+      <button
+        :if={@intro}
+        type="button"
+        id={"skip-intro-#{@item.id}"}
+        data-visible="false"
+        data-skip-target={@intro.end}
+        data-player-id={"player-#{@item.id}"}
+        aria-label="Skip intro"
+        class="absolute bottom-24 right-8 z-10 font-sans text-xs tracking-[0.18em] uppercase font-medium text-white px-5 py-3 rounded-sm bg-oxblood/90 backdrop-blur-sm hover:bg-oxblood cursor-pointer transition-opacity duration-300 opacity-0 pointer-events-none data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto"
+        onclick="const v = document.getElementById(this.dataset.playerId); if (v) v.currentTime = parseFloat(this.dataset.skipTarget);"
+      >
+        Skip Intro
+      </button>
 
       <%!--
         Skip controls — Apple TV / Hulu convention: 10s back ("did I

@@ -13,6 +13,7 @@ defmodule AviaryWeb.ShowsDetailLive do
            page_title: "#{show.title} · Aviary",
            show: show,
            playing_item: nil,
+           playing_segments: nil,
            kicker: kicker(params["from"])
          )}
 
@@ -31,18 +32,21 @@ defmodule AviaryWeb.ShowsDetailLive do
 
   def handle_event("play", _, socket) do
     item = pick_continue_episode(socket.assigns.show)
-    {:noreply, assign(socket, :playing_item, item)}
+    {:noreply, start_playing(socket, item)}
   end
 
   def handle_event("play_episode", %{"id" => episode_id}, socket) do
     case find_episode(socket.assigns.show, episode_id) do
       nil -> {:noreply, socket}
-      episode -> {:noreply, assign(socket, :playing_item, episode)}
+      episode -> {:noreply, start_playing(socket, episode)}
     end
   end
 
   def handle_event("close_player", _, socket) do
-    {:noreply, assign(socket, :playing_item, nil)}
+    {:noreply,
+     socket
+     |> assign(:playing_item, nil)
+     |> assign(:playing_segments, nil)}
   end
 
   def handle_event("report_progress", %{"position" => position}, socket) do
@@ -201,6 +205,7 @@ defmodule AviaryWeb.ShowsDetailLive do
         item={@playing_item}
         current_user={@current_user}
         title={@show.title}
+        segments={@playing_segments}
       />
     </Layouts.app>
     """
@@ -266,6 +271,12 @@ defmodule AviaryWeb.ShowsDetailLive do
   # When NextUp returns nothing (never watched OR fully watched), play
   # the very first episode. If there's nothing at all, the button is
   # disabled so this never gets called.
+  defp start_playing(socket, item) do
+    socket
+    |> assign(:playing_item, item)
+    |> assign(:playing_segments, Aviary.Jellyfin.segments(item.id, socket.assigns.current_user))
+  end
+
   defp pick_continue_episode(show) do
     case show.next_up do
       nil -> first_episode(show)

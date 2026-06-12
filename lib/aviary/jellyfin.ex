@@ -238,6 +238,52 @@ defmodule Aviary.Jellyfin do
     _ -> :error
   end
 
+  @doc """
+  Returns the Intro Skipper plugin's detected segments for an item, or
+  nil if the plugin isn't installed / has no data yet for this item.
+  Shape: `%{introduction: %{start: 5.0, end: 87.0}}` — currently only
+  the introduction segment is surfaced; credits/recap support is a
+  future iteration. Times are in seconds.
+
+  The plugin endpoint returns an object with all five segment types
+  (Introduction, Credits, Recap, Preview, Commercial), each defaulting
+  to `Start: 0, End: 0` when no data exists. We filter those zero
+  segments out so callers can treat "no data" as nil.
+  """
+  def segments(item_id, auth) do
+    url = base_url() <> "/Episode/" <> item_id <> "/Timestamps"
+
+    case Req.get(url,
+           headers: [{"x-emby-token", auth.token}],
+           receive_timeout: 5_000,
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: body}} ->
+        build_segments(body)
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp build_segments(body) when is_map(body) do
+    case to_segment(body["Introduction"]) do
+      nil -> nil
+      intro -> %{introduction: intro}
+    end
+  end
+
+  defp build_segments(_), do: nil
+
+  defp to_segment(%{"Start" => start_s, "End" => end_s})
+       when is_number(start_s) and is_number(end_s) and end_s > start_s do
+    %{start: start_s, end: end_s}
+  end
+
+  defp to_segment(_), do: nil
+
   ## Image proxy
 
   @doc """
