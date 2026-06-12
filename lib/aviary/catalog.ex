@@ -338,7 +338,13 @@ defmodule Aviary.Catalog do
 
   defp tmdb_poster_url(nil), do: nil
   defp tmdb_poster_url(""), do: nil
-  defp tmdb_poster_url(path), do: "https://image.tmdb.org/t/p/w500#{path}"
+  # Routes through aviary's disk-cached proxy (see
+  # AviaryWeb.ImageController.tmdb/2 + Aviary.TmdbImageCache) — same-
+  # origin, long-lived cache, and avoids the per-visit DNS+TLS to
+  # image.tmdb.org. TMDB paths come back with a leading slash; the
+  # route param wants the filename without it.
+  defp tmdb_poster_url("/" <> path), do: "/image/tmdb/w500/" <> path
+  defp tmdb_poster_url(path) when is_binary(path), do: "/image/tmdb/w500/" <> path
 
   defp to_show(item) do
     %{

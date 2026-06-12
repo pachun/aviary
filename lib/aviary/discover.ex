@@ -105,14 +105,15 @@ defmodule Aviary.Discover do
 
   defp jellyfin_id(_), do: nil
 
-  # TMDB CDN backdrop. w780 is the size sweet spot — large enough
-  # for the 320px-wide marquee card on retina without overpaying
-  # bytes. Falls back to the original-size endpoint if a path is
-  # weirdly missing the leading slash.
+  # TMDB CDN backdrop, routed through aviary's disk-cached proxy
+  # (`/image/tmdb/...` → AviaryWeb.ImageController.tmdb/2 →
+  # Aviary.TmdbImageCache). Same-origin keeps the browser's HTTP/2
+  # connection hot and avoids the per-visit DNS + TLS to
+  # image.tmdb.org; subsequent fetches of the same image pay only
+  # local disk IO. w780 is the size sweet spot — large enough for
+  # the 320px-wide marquee card on retina without overpaying bytes.
   defp backdrop_url(nil), do: nil
   defp backdrop_url(""), do: nil
-
-  defp backdrop_url(path) when is_binary(path) do
-    "https://image.tmdb.org/t/p/w780#{path}"
-  end
+  defp backdrop_url("/" <> path), do: "/image/tmdb/w780/" <> path
+  defp backdrop_url(path) when is_binary(path), do: "/image/tmdb/w780/" <> path
 end

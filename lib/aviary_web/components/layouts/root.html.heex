@@ -30,6 +30,15 @@
     --%>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <%!--
+      Warm the TMDB image CDN connection — Discover renders dozens of
+      posters/backdrops served from image.tmdb.org, and without this
+      every fresh visit pays DNS + TLS handshake before the first
+      image starts streaming. /image/tmdb/* proxy aside, even when
+      the user hits the unproxied URL (a stray reference, or first
+      load before the proxy populates) this knocks ~100-300ms off.
+    --%>
+    <link rel="preconnect" href="https://image.tmdb.org" crossorigin />
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..900,0..100,0..1;1,9..144,300..900,0..100,0..1&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Newsreader:opsz,wght@6..72,300..700&display=swap"

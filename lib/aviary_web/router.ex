@@ -53,6 +53,7 @@ defmodule AviaryWeb.Router do
       live "/movies/:id", MoviesDetailLive, :show
     end
 
+    get "/image/tmdb/:size/*path", ImageController, :tmdb
     get "/image/:item_id", ImageController, :show
   end
 
