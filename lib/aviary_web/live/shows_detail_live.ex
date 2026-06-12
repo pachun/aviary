@@ -24,7 +24,8 @@ defmodule AviaryWeb.ShowsDetailLive do
             playing_segments: nil,
             playing_subtitles: [],
             kicker: kicker(params["from"]),
-            sonarr_status: nil
+            sonarr_status: nil,
+            collapsed_seasons: initial_collapsed_seasons(show)
           )
           |> fetch_sonarr_status()
           |> schedule_sonarr_poll()
@@ -124,6 +125,18 @@ defmodule AviaryWeb.ShowsDetailLive do
   # mark recomputes from the updated UserData. TMDB-only entries
   # (not-yet-downloaded episodes) are skipped — Jellyfin has nothing
   # to mark for them.
+  def handle_event("toggle_season", %{"season" => season}, socket) do
+    season = String.to_integer(season)
+    collapsed = socket.assigns.collapsed_seasons
+
+    next =
+      if MapSet.member?(collapsed, season),
+        do: MapSet.delete(collapsed, season),
+        else: MapSet.put(collapsed, season)
+
+    {:noreply, assign(socket, :collapsed_seasons, next)}
+  end
+
   def handle_event("set_watch_point", %{"id" => episode_id}, socket) do
     show = socket.assigns.show
     user = socket.assigns.current_user
@@ -421,17 +434,43 @@ defmodule AviaryWeb.ShowsDetailLive do
         <section :if={has_episodes?(@show)} class="mt-12 md:mt-14">
           <div :for={{season, episodes} <- @show.episodes_by_season} class="mb-10 last:mb-0">
             <%!--
-              Season header gets its own Play affordance — the
-              intermediate scope between "play this episode" and
-              "watch the whole show." Same oxblood vocabulary as the
-              top action button and per-episode chip so the three
-              tiers visually belong to the same action family.
+              Season header doubles as a collapse toggle and carries
+              its own Play affordance — the intermediate scope between
+              "play this episode" and "watch the whole show." When
+              collapsed, the header still shows the marginalia ribbon
+              so the user can see at a glance which seasons sit before
+              their watch point.
             --%>
-            <div class="flex items-baseline justify-between mb-3">
-              <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted">
-                Season {season}
-              </h2>
+            <div class={[
+              "flex items-baseline justify-between mb-3 border-l-2 pl-2 -ml-2 transition-colors duration-200",
+              if(MapSet.member?(@collapsed_seasons, season),
+                do: season_marginalia_border(episodes, @mark),
+                else: "border-l-transparent"
+              )
+            ]}>
               <button
+                type="button"
+                phx-click="toggle_season"
+                phx-value-season={season}
+                aria-expanded={!MapSet.member?(@collapsed_seasons, season)}
+                class="group flex items-baseline gap-2 cursor-pointer focus:outline-none focus-visible:underline"
+              >
+                <span class="font-sans text-muted/60 group-hover:text-muted transition-colors text-[0.65rem] w-3 inline-block leading-none">
+                  {if MapSet.member?(@collapsed_seasons, season), do: "▸", else: "▾"}
+                </span>
+                <span class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted">
+                  Season {season}
+                </span>
+                <span
+                  :if={MapSet.member?(@collapsed_seasons, season)}
+                  class="font-display italic text-muted/70 text-sm"
+                  style="font-variation-settings: 'opsz' 14;"
+                >
+                  · {length(episodes)} {if length(episodes) == 1, do: "episode", else: "episodes"}
+                </span>
+              </button>
+              <button
+                :if={!MapSet.member?(@collapsed_seasons, season)}
                 type="button"
                 phx-click="watch_season"
                 phx-value-season={season}
@@ -440,7 +479,7 @@ defmodule AviaryWeb.ShowsDetailLive do
                 <.action_chip state={season_state(@show, season, @sonarr_status)} label="▶ Play Season" />
               </button>
             </div>
-            <ul class="border-t border-rule">
+            <ul :if={!MapSet.member?(@collapsed_seasons, season)} class="border-t border-rule">
               <%!--
                 Each row has two click targets and a marginalia bar:
                   * Marker column (32px, leftmost) fires set_watch_point
@@ -893,6 +932,40 @@ defmodule AviaryWeb.ShowsDetailLive do
       end)
 
     %{show | episodes_by_season: updated}
+  end
+
+  # Default collapse rule: a show with a mark in S9 doesn't want to
+  # make the user scroll past S1-S8. Collapse every season strictly
+  # before the mark-season; mark-season and anything later stay
+  # expanded. No mark → expand everything (the user has nothing they
+  # need to be "past").
+  defp initial_collapsed_seasons(show) do
+    case watch_mark(show) do
+      %{season: mark_season} ->
+        show.episodes_by_season
+        |> Enum.map(fn {s, _} -> s end)
+        |> Enum.filter(&(&1 < mark_season))
+        |> MapSet.new()
+
+      _ ->
+        MapSet.new()
+    end
+  end
+
+  # Marginalia bar for a collapsed season header — preserves the
+  # ribbon continuity when the user has hidden a stretch of watched
+  # episodes. Looks at every episode in the season and picks the
+  # strongest position present.
+  defp season_marginalia_border(_eps, nil), do: "border-l-transparent"
+
+  defp season_marginalia_border(eps, mark) do
+    positions = Enum.map(eps, &row_position(&1, mark))
+
+    cond do
+      :at in positions -> "border-l-oxblood"
+      Enum.all?(positions, &(&1 == :before)) -> "border-l-oxblood/40"
+      true -> "border-l-transparent"
+    end
   end
 
   # Where a given episode sits relative to the show's mark. Drives the
