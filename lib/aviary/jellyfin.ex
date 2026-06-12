@@ -287,6 +287,35 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
+  Marks a single item as fully played in the user's UserData —
+  `Played=true, PlaybackPositionTicks=0, PlayedPercentage=100`. Used
+  by the watch-mark feature on the show detail page: clicking the
+  marker column on episode N fans this call out across episodes 1..N
+  so Jellyfin's NextUp moves past the mark and Continue Watching
+  surfaces the next-after.
+
+  LastPlayedDate stamped to now so the marked episodes sort correctly
+  by recency (Jellyfin's NextUp uses this).
+  """
+  def mark_played(item_id, auth) do
+    Req.post(base_url() <> "/UserItems/" <> item_id <> "/UserData",
+      params: [userId: auth.id],
+      headers: [{"x-emby-token", auth.token}],
+      json: %{
+        "Played" => true,
+        "PlaybackPositionTicks" => 0,
+        "PlayedPercentage" => 100,
+        "LastPlayedDate" => DateTime.utc_now() |> DateTime.to_iso8601()
+      },
+      receive_timeout: 5_000
+    )
+
+    :ok
+  rescue
+    _ -> :error
+  end
+
+  @doc """
   Persists a playback position to the current user's UserData. Used
   after each progress report from the player.
 

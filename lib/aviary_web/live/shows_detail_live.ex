@@ -46,6 +46,13 @@ defmodule AviaryWeb.ShowsDetailLive do
      |> schedule_sonarr_poll()}
   end
 
+  def handle_info(:reconcile_watch_point, socket) do
+    case Aviary.Catalog.get_show(socket.assigns.show.id, socket.assigns.current_user) do
+      {:ok, refreshed} -> {:noreply, assign(socket, :show, refreshed)}
+      _ -> {:noreply, socket}
+    end
+  end
+
   defp fetch_sonarr_status(socket) do
     status =
       case Aviary.Sonarr.series_status(socket.assigns.show.tmdb_id) do
@@ -106,6 +113,55 @@ defmodule AviaryWeb.ShowsDetailLive do
         %{id: "tmdb-" <> _} -> trigger_sonarr(socket, :season, season, nil)
         ep -> {:noreply, start_playing(socket, ep)}
       end
+    end
+  end
+
+  # Moves the show's watch mark to the clicked episode by marking
+  # every prior episode (and the clicked one) as Played in Jellyfin.
+  # Episodes AFTER the click point are deliberately left untouched —
+  # this is an "insert the mark here" operation, not a "wipe the
+  # future" one. After the writes settle we re-fetch the show so the
+  # mark recomputes from the updated UserData. TMDB-only entries
+  # (not-yet-downloaded episodes) are skipped — Jellyfin has nothing
+  # to mark for them.
+  def handle_event("set_watch_point", %{"id" => episode_id}, socket) do
+    show = socket.assigns.show
+    user = socket.assigns.current_user
+
+    flat = Enum.flat_map(show.episodes_by_season, fn {_, eps} -> eps end)
+
+    case Enum.find_index(flat, &(&1.id == episode_id)) do
+      nil ->
+        {:noreply, socket}
+
+      idx ->
+        to_mark =
+          flat
+          |> Enum.take(idx + 1)
+          |> Enum.reject(&String.starts_with?(to_string(&1.id), "tmdb-"))
+
+        # Optimistic UI: snap the in-memory show so the marker
+        # moves on the next render — N×Jellyfin RTT + a full
+        # get_show round-trip was the source of the perceived
+        # lag. The actual writes run in a background task; when
+        # they settle, the live view reconciles against canonical
+        # Jellyfin state.
+        pid = self()
+
+        Task.start(fn ->
+          to_mark
+          |> Task.async_stream(
+            fn ep -> Aviary.Jellyfin.mark_played(ep.id, user) end,
+            max_concurrency: 5,
+            timeout: 5_000,
+            on_timeout: :kill_task
+          )
+          |> Stream.run()
+
+          send(pid, :reconcile_watch_point)
+        end)
+
+        {:noreply, assign(socket, :show, apply_optimistic_watch_point(show, flat, idx))}
     end
   end
 
@@ -241,6 +297,8 @@ defmodule AviaryWeb.ShowsDetailLive do
   end
 
   def render(assigns) do
+    assigns = assign(assigns, :mark, watch_mark(assigns.show))
+
     ~H"""
     <Layouts.app flash={@flash} current_user={@current_user} nav_visibility={@nav_visibility}>
       <article>
@@ -384,19 +442,88 @@ defmodule AviaryWeb.ShowsDetailLive do
             </div>
             <ul class="border-t border-rule">
               <%!--
-                Aired episodes get the clickable Play row. Not-aired
-                episodes get a dimmed info row with the air date in
-                place of the Play chip — same vocabulary, same
-                geometry, so the user reads the list as one continuous
-                sequence with the unaired ones flagged as future.
+                Each row has two click targets and a marginalia bar:
+                  * Marker column (32px, leftmost) fires set_watch_point
+                  * Play row (rest) fires play_episode (unchanged)
+                The left border on each row is the marginalia bar —
+                oxblood/40 for rows before AND at the mark (forms a
+                continuous ribbon), full oxblood on the at-mark row
+                (slightly stronger), transparent for rows after the
+                mark. Editorial-bookmark vocabulary.
               --%>
-              <li :for={ep <- episodes}>
+              <li
+                :for={ep <- episodes}
+                class={[
+                  "grid grid-cols-[32px_1fr] border-b border-rule border-l-2 transition-colors duration-200",
+                  case row_position(ep, @mark) do
+                    :at -> "border-l-oxblood"
+                    :before -> "border-l-oxblood/40"
+                    :after -> "border-l-transparent"
+                  end,
+                  !ep.aired && "opacity-50"
+                ]}
+              >
+                <%!--
+                  Marker column. Empty by default; ghost ✓ on hover
+                  invites the click without persistent noise. The
+                  at-mark row shows ✓ or ~ depending on kind.
+                  Disabled for not-yet-aired episodes (you can't mark
+                  what hasn't dropped).
+                --%>
+                <button
+                  type="button"
+                  phx-click="set_watch_point"
+                  phx-value-id={ep.id}
+                  disabled={!ep.aired}
+                  aria-label={"Mark E#{ep.episode} as the watch point"}
+                  class="group flex items-center justify-center cursor-pointer focus:outline-none focus-visible:bg-rule/50 transition-colors duration-150 disabled:cursor-default"
+                >
+                  <%= cond do %>
+                    <% @mark && @mark.episode_id == ep.id && @mark.kind == :watched -> %>
+                      <span class="font-sans font-bold text-oxblood text-sm leading-none">
+                        ✓
+                      </span>
+                    <% @mark && @mark.episode_id == ep.id && @mark.kind == :in_progress -> %>
+                      <%!--
+                        Tilde-to-check on hover: the persistent ~ fades
+                        out and a ghost ✓ fades in (same 30% ghost
+                        opacity other rows use). Click → mark_played
+                        sets PlayedPercentage=100 and clears the resume
+                        position, so the mark recomputes as ✓ next
+                        render.
+                      --%>
+                      <span class="relative inline-flex items-center justify-center">
+                        <span
+                          class="font-display italic text-oxblood text-base leading-none -mt-0.5 transition-opacity duration-150 group-hover:opacity-0"
+                          style="font-variation-settings: 'opsz' 14;"
+                        >
+                          ~
+                        </span>
+                        <span class="absolute inset-0 flex items-center justify-center font-sans font-bold text-oxblood/0 group-hover:text-oxblood/30 transition-colors duration-150 text-sm leading-none">
+                          ✓
+                        </span>
+                      </span>
+                    <% ep.aired -> %>
+                      <%!-- Ghost on hover — invites the click. --%>
+                      <span class="font-sans font-bold text-oxblood/0 group-hover:text-oxblood/30 transition-opacity duration-150 text-sm leading-none">
+                        ✓
+                      </span>
+                    <% true -> %>
+                      <%!-- Not-yet-aired row, no affordance --%>
+                  <% end %>
+                </button>
+
+                <%!--
+                  Play row — clickable for aired episodes, info-only
+                  for unaired. Same geometry across both so the list
+                  stays as one continuous sequence.
+                --%>
                 <button
                   :if={ep.aired}
                   type="button"
                   phx-click="play_episode"
                   phx-value-id={ep.id}
-                  class="group w-full flex items-center gap-4 py-3 px-1 border-b border-rule cursor-pointer hover:bg-rule/30 transition-colors text-left"
+                  class="group w-full flex items-center gap-4 py-3 px-1 cursor-pointer text-left"
                 >
                   <span class="font-sans text-muted text-sm tabular-nums w-8 shrink-0">
                     {pad_episode(ep.episode)}
@@ -413,7 +540,7 @@ defmodule AviaryWeb.ShowsDetailLive do
 
                 <div
                   :if={!ep.aired}
-                  class="w-full flex items-center gap-4 py-3 px-1 border-b border-rule opacity-50"
+                  class="w-full flex items-center gap-4 py-3 px-1"
                 >
                   <span class="font-sans text-muted text-sm tabular-nums w-8 shrink-0">
                     {pad_episode(ep.episode)}
@@ -710,6 +837,75 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp in_progress?(:searching), do: true
   defp in_progress?({:downloading, _}), do: true
   defp in_progress?(_), do: false
+
+  # The single "watch mark" for a show: which episode carries the
+  # user's bookmark, and whether they finished it (✓) or are mid-watch
+  # (~). Computed from per-episode Jellyfin UserData; returns nil for
+  # shows the user hasn't touched.
+  #
+  # "Most recent activity" is the wins condition — if the user has
+  # E3 mid-watch and E5 marked played, the mark sits on E5 (most
+  # recent). The mark moves naturally as the user watches.
+  defp watch_mark(show) do
+    most_recent =
+      show.episodes_by_season
+      |> Enum.flat_map(fn {_, eps} -> eps end)
+      |> Enum.filter(& &1.last_played_at)
+      |> Enum.max_by(& &1.last_played_at, DateTime, fn -> nil end)
+
+    case most_recent do
+      %{resume_seconds: r, season: s, episode: e, id: id} when is_number(r) and r > 0 ->
+        %{episode_id: id, season: s, episode: e, kind: :in_progress}
+
+      %{played_percentage: p, season: s, episode: e, id: id} when is_number(p) and p >= 90 ->
+        %{episode_id: id, season: s, episode: e, kind: :watched}
+
+      _ ->
+        nil
+    end
+  end
+
+  # Mirrors what Jellyfin will look like once the background writes
+  # settle: every episode 1..idx (tmdb-only ones included; they're
+  # filtered out at write time but harmless to predict-mark since
+  # watch_mark only looks at real ones via last_played_at) gets
+  # played_percentage=100, resume cleared, and a fresh last_played_at.
+  # Timestamps ascend with index so the *clicked* episode wins
+  # max_by — that's what makes the mark land on it instead of E1.
+  defp apply_optimistic_watch_point(show, flat, idx) do
+    now = DateTime.utc_now()
+
+    marked =
+      flat
+      |> Enum.with_index()
+      |> Enum.take(idx + 1)
+      |> Map.new(fn {ep, i} -> {ep.id, DateTime.add(now, i, :microsecond)} end)
+
+    updated =
+      Enum.map(show.episodes_by_season, fn {season, eps} ->
+        {season,
+         Enum.map(eps, fn ep ->
+           case Map.get(marked, ep.id) do
+             nil -> ep
+             ts -> %{ep | played_percentage: 100.0, resume_seconds: nil, last_played_at: ts}
+           end
+         end)}
+      end)
+
+    %{show | episodes_by_season: updated}
+  end
+
+  # Where a given episode sits relative to the show's mark. Drives the
+  # marginalia-bar color: before / at = ribbon visible, after = not.
+  defp row_position(_ep, nil), do: :after
+
+  defp row_position(ep, %{episode_id: mark_id, season: ms, episode: me}) do
+    cond do
+      ep.id == mark_id -> :at
+      {ep.season, ep.episode} < {ms, me} -> :before
+      true -> :after
+    end
+  end
 
   defp first_episode_of_season(show, season) do
     case Enum.find(show.episodes_by_season, fn {s, _} -> s == season end) do
