@@ -89,18 +89,26 @@ defmodule AviaryWeb.DiscoverLive do
       current_user={@current_user}
       nav_visibility={@nav_visibility}
     >
-      <section :for={{label, _id} <- @services} class="pt-4 first:pt-2 mb-10 last:mb-0">
-        <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
-          {label}
-        </h2>
-        <%= if items = Map.get(@rows, label) do %>
-          <Marquee.row items={items} from="discover" key={"discover:" <> label}>
-            <:empty>No recommendations available right now.</:empty>
-          </Marquee.row>
-        <% else %>
-          <Marquee.skeleton />
-        <% end %>
-      </section>
+      <%!--
+        Same wrapper as Home (pt-2 + space-y-12) so the first section
+        header lands at the same y-coordinate AND subsequent headers
+        share the same vertical rhythm. Switching between tabs should
+        feel like only the label changed.
+      --%>
+      <div class="pt-2 space-y-12">
+        <section :for={{label, _id} <- @services}>
+          <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
+            {label}
+          </h2>
+          <%= if items = Map.get(@rows, label) do %>
+            <Marquee.row items={items} from="discover" key={"discover:" <> label}>
+              <:empty>No recommendations available right now.</:empty>
+            </Marquee.row>
+          <% else %>
+            <Marquee.skeleton />
+          <% end %>
+        </section>
+      </div>
     </Layouts.app>
     """
   end
