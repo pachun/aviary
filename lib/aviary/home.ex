@@ -20,6 +20,16 @@ defmodule Aviary.Home do
     latest = Jellyfin.latest_episodes(auth)
     recent = Jellyfin.recently_watched(auth)
 
+    # NextUp's whole job is "what should the user watch next on this
+    # show" — a show NOT in this set means the user is caught up on
+    # it. Use that as the filter: an episode item is only surfaced if
+    # its series has something to watch next. Without this, a show
+    # whose last available episode the user just finished keeps
+    # showing up in Continue Watching (with a misleading "Continue
+    # S X E Y" tile that just replays the finished episode from start)
+    # until the next episode lands.
+    available_series = MapSet.new(next_up, & &1["SeriesId"])
+
     # Four sources, each catching a different case. Mid-watch shows
     # come through Resume; caught-up shows come through Recent (the
     # actually-most-recently-watched episode, which Resume misses
@@ -27,12 +37,19 @@ defmodule Aviary.Home do
     # shows with new episodes the user hasn't started. The sort_at
     # dedupe picks the right tile per show without per-source
     # branching.
-    (resume ++ next_up ++ latest ++ recent)
+    (next_up ++ resume ++ latest ++ recent)
     |> Enum.map(&normalize/1)
     |> Enum.reject(&is_nil/1)
+    |> Enum.reject(&caught_up?(&1, available_series))
     |> dedupe_by_key()
     |> Enum.sort_by(& &1.sort_at, {:desc, DateTime})
   end
+
+  defp caught_up?(%{kind: :show, dedupe_key: "series:" <> series_id}, available_series) do
+    not MapSet.member?(available_series, series_id)
+  end
+
+  defp caught_up?(_, _), do: false
 
   # Collapses raw Jellyfin items into a uniform shape the home marquee
   # can render without further branching. `dedupe_key` makes the same

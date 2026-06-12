@@ -212,10 +212,15 @@ defmodule Aviary.Catalog do
 
     cond do
       recent && recent.played_percentage >= @done_threshold ->
-        # When no next exists (caught up — library lacks E+1) fall
-        # back to recent. Leaves a "Continue S1 E5"-style label that's
-        # at least correct rather than regressing to "Play S1 E1".
-        next_episode_after(flat, recent.id) || recent
+        # When E+1 exists in the library, advance to it. When it
+        # doesn't, mark `caught_up` on the recent episode so the
+        # detail page renders a disabled "Caught up" button instead
+        # of a misleading "Continue S X E Y" that just replays the
+        # finished episode from start.
+        case next_episode_after(flat, recent.id) do
+          nil -> Map.put(recent, :caught_up, true)
+          next -> next
+        end
 
       recent && recent.resume_seconds ->
         recent

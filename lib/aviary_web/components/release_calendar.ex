@@ -171,7 +171,7 @@ defmodule AviaryWeb.Components.ReleaseCalendar do
     day_name = Calendar.strftime(air_date, "%A")
 
     cond do
-      days == 0 -> "Next episode today (#{day_name})"
+      days == 0 -> "Next episode later today (#{day_name})"
       days == 1 -> "Next episode tomorrow (#{day_name})"
       days <= 14 -> "Next episode #{relative_day(air_date, today)}"
       true -> "Next episode #{Calendar.strftime(air_date, "%B %-d")}"

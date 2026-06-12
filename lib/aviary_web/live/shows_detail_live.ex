@@ -121,7 +121,7 @@ defmodule AviaryWeb.ShowsDetailLive do
                   <button
                     type="button"
                     phx-click="play"
-                    disabled={!has_episodes?(@show)}
+                    disabled={!has_episodes?(@show) || caught_up?(@show)}
                     class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     {action_label(@show)}
@@ -244,9 +244,27 @@ defmodule AviaryWeb.ShowsDetailLive do
     show.episodes_by_season != []
   end
 
-  # Morphing label: "Resume S2 E4" / "Continue S3 E1" / "Play S1 E1"
-  # based on whether the next-up episode has a saved position and
-  # whether it's the very first episode of the series.
+  # Morphing label. Caught-up first because it short-circuits the
+  # "no resume position" path that would otherwise read as
+  # "Continue S X E Y" — confusing for an episode the user already
+  # finished. The button is disabled in this state via
+  # caught_up?/1; the calendar widget on the same page tells them
+  # when the next episode airs.
+  #
+  # When we know the next episode's air date (Jellyseerr returned a
+  # schedule), surface it on the button itself so the user sees
+  # "S1 E6 later today" rather than the generic "Caught up". When we
+  # don't have a schedule (show ended, plugin miss, etc.), fall
+  # through to "Caught up".
+  defp action_label(%{
+         next_up: %{caught_up: true},
+         schedule: %{air_date: %Date{} = date, season: s, episode: e}
+       }) do
+    "S#{s} E#{e} " <> waiting_phrase(date)
+  end
+
+  defp action_label(%{next_up: %{caught_up: true}}), do: "Caught up"
+
   defp action_label(%{next_up: nil} = show), do: first_episode_label(show)
 
   defp action_label(%{next_up: %{resume_seconds: r, season: s, episode: e}})
@@ -258,6 +276,25 @@ defmodule AviaryWeb.ShowsDetailLive do
     case first_episode(show) do
       %{season: ^s, episode: ^e} -> first_episode_label(show)
       _ -> "Continue S#{s} E#{e}"
+    end
+  end
+
+  defp caught_up?(%{next_up: %{caught_up: true}}), do: true
+  defp caught_up?(_), do: false
+
+  # Short, tiered phrase for the caught-up button: "later today" /
+  # "tomorrow" / day-name / "next [day]" / month-day. Mirrors the
+  # calendar caption's tiers but terser since this lives on a button.
+  defp waiting_phrase(air_date) do
+    today = Date.utc_today()
+    days = Date.diff(air_date, today)
+
+    cond do
+      days == 0 -> "later today"
+      days == 1 -> "tomorrow"
+      days in 2..7 -> Calendar.strftime(air_date, "%A")
+      days in 8..14 -> "next " <> Calendar.strftime(air_date, "%A")
+      true -> Calendar.strftime(air_date, "%B %-d")
     end
   end
 
