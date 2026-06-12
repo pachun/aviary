@@ -48,6 +48,8 @@ defmodule Aviary.Auth do
   we just drop the session locally and move on.
   """
   def log_out(%{token: token}) when is_binary(token) do
+    Aviary.TokenCache.invalidate(token)
+
     Req.post(base_url() <> "/Sessions/Logout",
       headers: [
         {"x-emby-token", token},
@@ -72,27 +74,47 @@ defmodule Aviary.Auth do
   fail closed.
   """
   def token_valid?(token) when is_binary(token) do
+    # Cache layer first — without it, a single home page load triggers
+    # ~6 probes (page mount + each marquee thumbnail proxy), discover
+    # triggers ~10+. Even a small 401 rate against Jellyfin's
+    # token endpoint then drops sessions constantly. With the cache,
+    # at most one probe per token per minute regardless of how many
+    # parallel requests are in flight.
+    case Aviary.TokenCache.status(token) do
+      :cached_valid -> true
+      :not_cached -> probe_and_cache(token)
+    end
+  end
+
+  def token_valid?(_), do: false
+
+  defp probe_and_cache(token) do
     # Only invalidate on an explicit "Jellyfin rejected this token" —
-    # which is a 401. Transport failures (Tailscale flap, slow VPN,
-    # Jellyfin restart) shouldn't log the user out; the session cookie
-    # is still legitimate and the next page load will either succeed
-    # or hit a real 401. Fails-open on doubt instead of fails-closed,
-    # because the alternative ("delete your cookies and log back in
-    # every time the network blinks") was unusable.
+    # which is a 401/403. Transport failures (Tailscale flap, slow
+    # VPN, Jellyfin restart) shouldn't log the user out; the session
+    # cookie is still legitimate. Fail-open on doubt instead of
+    # fail-closed.
     case Req.get(base_url() <> "/Users/Me",
            headers: [{"x-emby-token", token}],
            receive_timeout: 3_000,
            retry: false
          ) do
-      {:ok, %Req.Response{status: 401}} -> false
-      {:ok, %Req.Response{status: 403}} -> false
-      _ -> true
+      {:ok, %Req.Response{status: 200}} ->
+        Aviary.TokenCache.mark_valid(token)
+        true
+
+      {:ok, %Req.Response{status: status}} when status in [401, 403] ->
+        Aviary.TokenCache.invalidate(token)
+        false
+
+      _ ->
+        # Transport error or unexpected status — don't cache (so we
+        # retry on the next request), but don't kick the user either.
+        true
     end
   rescue
     _ -> true
   end
-
-  def token_valid?(_), do: false
 
   defp base_url do
     Application.fetch_env!(:aviary, :jellyfin_url) |> String.trim_trailing("/")

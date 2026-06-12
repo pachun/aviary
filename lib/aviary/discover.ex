@@ -33,27 +33,19 @@ defmodule Aviary.Discover do
   ]
 
   @doc """
-  Returns `[%{label, items}]` — one entry per service. Network calls
-  run in parallel via async_stream; total wall-clock is roughly the
-  slowest single network, not the sum.
+  The list of service rows to render. Returned in display order.
+  Exposed publicly so DiscoverLive can render skeleton placeholders
+  immediately, then stream each row in via start_async.
   """
-  def rows do
-    @services
-    |> Task.async_stream(
-      fn {label, network_id} -> {label, fetch_row(network_id)} end,
-      max_concurrency: length(@services),
-      timeout: 8_000,
-      on_timeout: :kill_task
-    )
-    |> Enum.map(fn
-      {:ok, {label, items}} -> %{label: label, items: items}
-      _ -> nil
-    end)
-    |> Enum.reject(&is_nil/1)
-    |> Enum.reject(&(&1.items == []))
-  end
+  def services, do: @services
 
-  defp fetch_row(network_id) do
+  @doc """
+  Fetches one network's row. Used by DiscoverLive in a per-row
+  start_async so the page can paint immediately with skeletons and
+  fill rows independently — instead of the page blocking until all
+  seven rows + 140 RT scrapes are done (the prior 15s cold-cache UX).
+  """
+  def fetch_row(network_id) do
     case Jellyseerr.discover_tv_network(network_id) do
       {:ok, results} ->
         results
@@ -63,10 +55,29 @@ defmodule Aviary.Discover do
         # of valid backdrops at the top.
         |> Enum.filter(&has_backdrop?/1)
         |> Enum.map(&to_item/1)
+        |> enrich_with_ratings()
 
       _ ->
         []
     end
+  end
+
+  # RT-only audience + critic. Items without RT data render with no
+  # corner badge — better to show nothing than to mix data sources
+  # behind the same audience-tomato icon.
+  defp enrich_with_ratings(items) do
+    items
+    |> Task.async_stream(
+      fn item -> Map.put(item, :rating, Aviary.RottenTomatoes.fetch(item.title, :tv)) end,
+      max_concurrency: 8,
+      timeout: 10_000,
+      on_timeout: :kill_task
+    )
+    |> Enum.map(fn
+      {:ok, item} -> item
+      _ -> nil
+    end)
+    |> Enum.reject(&is_nil/1)
   end
 
   defp has_backdrop?(%{"backdropPath" => p}) when is_binary(p) and p != "", do: true
@@ -83,7 +94,8 @@ defmodule Aviary.Discover do
       detail_id: jellyfin_id(result) || result["id"],
       title: result["name"],
       subtitle: nil,
-      thumbnail_url: backdrop_url(result["backdropPath"])
+      thumbnail_url: backdrop_url(result["backdropPath"]),
+      rating: nil
     }
   end
 

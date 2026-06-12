@@ -35,13 +35,30 @@ defmodule AviaryWeb.Components.Marquee do
       --%>
       <ul
         data-marquee-key={@key}
-        class="flex gap-3 sm:gap-4 overflow-x-auto snap-x snap-mandatory p-1 pb-4 scroll-p-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
+        class="flex gap-3 sm:gap-4 overflow-x-auto overscroll-x-contain snap-x snap-mandatory p-1 pb-4 scroll-p-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
       >
         <li :for={item <- @items} class="snap-start shrink-0">
           <.card item={item} from={@from} />
         </li>
       </ul>
     <% end %>
+    """
+  end
+
+  @doc """
+  Placeholder row rendered while the real items are still being
+  fetched. Five pulsing cards matched to the same dimensions the
+  real cards use, so the layout doesn't jump when items arrive.
+  """
+  def skeleton(assigns) do
+    ~H"""
+    <div class="flex gap-3 sm:gap-4 p-1 pb-4">
+      <div
+        :for={_ <- 1..5}
+        class="shrink-0 w-[200px] sm:w-[240px] md:w-[260px] aspect-video bg-rule/40 rounded-sm animate-pulse"
+      >
+      </div>
+    </div>
     """
   end
 
@@ -60,7 +77,7 @@ defmodule AviaryWeb.Components.Marquee do
     --%>
     <.link
       navigate={detail_href(@item, @from)}
-      class="group block w-[240px] sm:w-[280px] md:w-[320px] focus:outline-none"
+      class="group block w-[200px] sm:w-[240px] md:w-[260px] focus:outline-none"
     >
       <div class={[
         "aspect-video w-full overflow-hidden rounded-sm bg-rule relative",
@@ -73,6 +90,40 @@ defmodule AviaryWeb.Components.Marquee do
           loading="lazy"
           class="w-full h-full object-cover"
         />
+        <%!--
+          RT corner badge — only renders when item has :rating with
+          at least one score. Continue Watching items don't get
+          enriched so they stay clean; Discover items do. Critic icon
+          + audience icon side by side, numbers only (no %) for
+          compactness. Critic absent when RT has no data for the
+          show but TMDB audience fallback is present.
+        --%>
+        <div
+          :if={has_score?(@item)}
+          class="absolute top-1.5 right-1.5 flex items-center gap-1.5 bg-paper/95 rounded-sm px-1.5 py-0.5 shadow-sm"
+        >
+          <span :if={@item.rating.critic} class="flex items-center gap-1">
+            <img
+              src={if @item.rating.critic >= 60, do: "/images/rt_fresh.svg", else: "/images/rt_rotten.svg"}
+              alt=""
+              class="size-3"
+            />
+            <span class="font-sans tabular-nums text-[0.65rem] text-ink font-medium leading-none">
+              {@item.rating.critic}
+            </span>
+          </span>
+          <span :if={@item.rating.audience} class="flex items-center gap-1">
+            <img
+              src={if @item.rating.audience >= 60, do: "/images/rt_aud_fresh.svg", else: "/images/rt_aud_rotten.svg"}
+              alt=""
+              class="size-3"
+            />
+            <span class="font-sans tabular-nums text-[0.65rem] text-ink font-medium leading-none">
+              {@item.rating.audience}
+            </span>
+          </span>
+        </div>
+
         <%!--
           Bottom-anchored title overlay. Gradient ensures legibility
           regardless of artwork brightness.
@@ -105,4 +156,7 @@ defmodule AviaryWeb.Components.Marquee do
 
   defp detail_href(%{kind: :movie, detail_id: id}, from), do: "/movies/#{id}?from=#{from}"
   defp detail_href(%{kind: :show, detail_id: id}, from), do: "/shows/#{id}?from=#{from}"
+
+  defp has_score?(%{rating: %{critic: c, audience: a}}) when not (is_nil(c) and is_nil(a)), do: true
+  defp has_score?(_), do: false
 end

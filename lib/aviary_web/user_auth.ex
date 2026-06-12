@@ -129,7 +129,7 @@ defmodule AviaryWeb.UserAuth do
   Usage:
 
       live_session :authenticated, on_mount: {AviaryWeb.UserAuth, :require_authenticated} do
-        live "/shows", ShowsLive, :index
+        live "/library", LibraryLive, :index
         ...
       end
   """

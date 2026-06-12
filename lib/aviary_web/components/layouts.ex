@@ -16,7 +16,7 @@ defmodule AviaryWeb.Layouts do
 
   attr :current_section, :string,
     default: nil,
-    doc: "which top-level section is active — \"home\", \"discover\", \"shows\", \"movies\", or nil"
+    doc: "which top-level section is active — \"home\", \"discover\", \"library\", or nil"
 
   attr :current_user, :map,
     default: nil,
@@ -27,7 +27,13 @@ defmodule AviaryWeb.Layouts do
   def app(assigns) do
     ~H"""
     <div class="min-h-screen bg-paper text-ink antialiased">
-      <header class="px-4 sm:px-8 lg:px-12 pt-8 pb-10 sm:pt-10 sm:pb-12">
+      <%!--
+        Sticky masthead so the nav stays reachable on long pages
+        (discover scrolls past a viewport now). bg-paper keeps content
+        from bleeding through; z-20 sits above marquee cards and
+        their hover rings.
+      --%>
+      <header class="sticky top-0 z-20 bg-paper px-4 sm:px-8 lg:px-12 pt-8 pb-6 sm:pt-10 sm:pb-8">
         <div class="mx-auto max-w-[1100px] flex items-baseline justify-between gap-8">
           <nav class="flex items-baseline gap-8 text-[0.78rem] font-sans tracking-[0.15em] uppercase">
             <.section_link href={~p"/home"} active={@current_section == "home"}>
@@ -36,11 +42,8 @@ defmodule AviaryWeb.Layouts do
             <.section_link href={~p"/discover"} active={@current_section == "discover"}>
               Discover
             </.section_link>
-            <.section_link href={~p"/shows"} active={@current_section == "shows"}>
-              Shows
-            </.section_link>
-            <.section_link href={~p"/movies"} active={@current_section == "movies"}>
-              Movies
+            <.section_link href={~p"/library"} active={@current_section == "library"}>
+              Library
             </.section_link>
           </nav>
 

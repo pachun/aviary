@@ -12,6 +12,7 @@ defmodule Aviary.Application do
       {DNSCluster, query: Application.get_env(:aviary, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Aviary.PubSub},
       Aviary.RottenTomatoes,
+      Aviary.TokenCache,
       # Start to serve requests, typically the last entry
       AviaryWeb.Endpoint
     ]

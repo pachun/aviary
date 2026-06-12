@@ -38,7 +38,6 @@ defmodule AviaryWeb.Components.CatalogGrid do
           "group-hover:ring-oxblood group-focus-visible:ring-oxblood"
         ]}
       />
-      <.rotten_tomatoes :if={@item.rating} rating={@item.rating} />
     </a>
     """
   end
@@ -86,7 +85,7 @@ defmodule AviaryWeb.Components.CatalogGrid do
     """
   end
 
-  defp item_href(%{type: :movie, id: id}), do: "/movies/#{id}?from=movies"
-  defp item_href(%{type: :show, id: id}), do: "/shows/#{id}?from=shows"
+  defp item_href(%{type: :movie, id: id}), do: "/movies/#{id}?from=library_movies"
+  defp item_href(%{type: :show, id: id}), do: "/shows/#{id}?from=library_shows"
   defp item_href(_), do: "#"
 end

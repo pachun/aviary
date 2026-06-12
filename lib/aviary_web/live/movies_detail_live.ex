@@ -12,28 +12,26 @@ defmodule AviaryWeb.MoviesDetailLive do
            page_title: "#{movie.title} · Aviary",
            movie: movie,
            playing_item: nil,
-           kicker: kicker(params["from"], default: "movies")
+           kicker: kicker(params["from"])
          )}
 
       :error ->
         {:ok,
          socket
          |> put_flash(:error, "Movie not found")
-         |> push_navigate(to: ~p"/movies")}
+         |> push_navigate(to: ~p"/library?type=movies")}
     end
   end
 
   # Resolve the kicker (back link above the title) from the `from`
-  # query param. Detail pages can be reached from /home, /shows, or
-  # /movies — the kicker should send the user back to wherever they
-  # came from, labeled accordingly.
-  defp kicker(from, default: fallback) do
+  # query param. Default lands on the Movies tab of /library since
+  # there's no movie-other natural landing place.
+  defp kicker(from) do
     case from do
       "home" -> %{label: "Home", path: "/home"}
       "discover" -> %{label: "Discover", path: "/discover"}
-      "shows" -> %{label: "Shows", path: "/shows"}
-      "movies" -> %{label: "Movies", path: "/movies"}
-      _ -> kicker(fallback, default: fallback)
+      "library_shows" -> %{label: "Library", path: "/library?type=shows"}
+      _ -> %{label: "Library", path: "/library?type=movies"}
     end
   end
 

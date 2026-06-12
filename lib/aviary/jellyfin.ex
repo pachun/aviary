@@ -219,10 +219,19 @@ defmodule Aviary.Jellyfin do
   `position_ticks` is in Jellyfin's 100ns units.
   """
   def save_position(item_id, position_ticks, auth) do
+    # Jellyfin doesn't auto-update LastPlayedDate when a partial
+    # UserData payload arrives — we have to stamp it explicitly. Without
+    # this, every progress report correctly updates the position but
+    # leaves "when did the user last touch this" frozen at whatever
+    # client first recorded the item, so the home page's recency
+    # ordering misses anything watched through aviary.
     Req.post(base_url() <> "/UserItems/" <> item_id <> "/UserData",
       params: [userId: auth.id],
       headers: [{"x-emby-token", auth.token}],
-      json: %{"PlaybackPositionTicks" => position_ticks},
+      json: %{
+        "PlaybackPositionTicks" => position_ticks,
+        "LastPlayedDate" => DateTime.utc_now() |> DateTime.to_iso8601()
+      },
       receive_timeout: 5_000
     )
   rescue

@@ -20,14 +20,14 @@ defmodule AviaryWeb.ShowsDetailLive do
         {:ok,
          socket
          |> put_flash(:error, "Show not found")
-         |> push_navigate(to: ~p"/shows")}
+         |> push_navigate(to: ~p"/library?type=shows")}
     end
   end
 
   defp kicker("home"), do: %{label: "Home", path: "/home"}
   defp kicker("discover"), do: %{label: "Discover", path: "/discover"}
-  defp kicker("movies"), do: %{label: "Movies", path: "/movies"}
-  defp kicker(_), do: %{label: "Shows", path: "/shows"}
+  defp kicker("library_movies"), do: %{label: "Library", path: "/library?type=movies"}
+  defp kicker(_), do: %{label: "Library", path: "/library?type=shows"}
 
   def handle_event("play", _, socket) do
     item = pick_continue_episode(socket.assigns.show)

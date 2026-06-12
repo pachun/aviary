@@ -10,14 +10,12 @@ defmodule Aviary.Catalog do
   def list_shows(auth) do
     Aviary.Jellyfin.list_shows(auth)
     |> Enum.map(&to_show/1)
-    |> enrich_with_ratings(:tv)
     |> Enum.sort_by(&sort_key/1)
   end
 
   def list_movies(auth) do
     Aviary.Jellyfin.list_movies(auth)
     |> Enum.map(&to_movie/1)
-    |> enrich_with_ratings(:movie)
     |> Enum.sort_by(&sort_key/1)
   end
 
@@ -82,21 +80,6 @@ defmodule Aviary.Catalog do
       :error ->
         :error
     end
-  end
-
-  defp enrich_with_ratings(items, type) do
-    items
-    |> Task.async_stream(
-      fn item -> Map.put(item, :rating, Aviary.RottenTomatoes.fetch(item.title, type)) end,
-      max_concurrency: 8,
-      timeout: 10_000,
-      on_timeout: :kill_task
-    )
-    |> Enum.map(fn
-      {:ok, item} -> item
-      _ -> nil
-    end)
-    |> Enum.reject(&is_nil/1)
   end
 
   defp to_show(item) do
