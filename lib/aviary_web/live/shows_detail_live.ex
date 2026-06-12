@@ -44,6 +44,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     {:noreply,
      socket
      |> fetch_sonarr_status()
+     |> refresh_show_if_imported()
      |> schedule_sonarr_poll()}
   end
 
@@ -51,6 +52,30 @@ defmodule AviaryWeb.ShowsDetailLive do
     case Aviary.Catalog.get_show(socket.assigns.show.id, socket.assigns.current_user) do
       {:ok, refreshed} -> {:noreply, assign(socket, :show, refreshed)}
       _ -> {:noreply, socket}
+    end
+  end
+
+  # When Sonarr has imported episodes that aviary still sees as
+  # tmdb-prefixed (Jellyfin hasn't scanned the new files yet), re-pull
+  # the show so the tmdb- ids get swapped for real Jellyfin ids as
+  # soon as Jellyfin catches up. Without this, the "Importing…" chip
+  # would sit until the user navigates away and back.
+  defp refresh_show_if_imported(socket) do
+    show = socket.assigns.show
+    status = socket.assigns.sonarr_status
+
+    has_imported? =
+      show.episodes_by_season
+      |> Enum.flat_map(fn {_, eps} -> eps end)
+      |> Enum.any?(fn ep -> episode_state(show, ep, status) == :imported end)
+
+    if has_imported? do
+      case Aviary.Catalog.get_show(show.id, socket.assigns.current_user) do
+        {:ok, refreshed} -> assign(socket, :show, refreshed)
+        _ -> socket
+      end
+    else
+      socket
     end
   end
 
@@ -275,6 +300,10 @@ defmodule AviaryWeb.ShowsDetailLive do
         <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-paper/80 px-3 py-1.5 rounded-sm shrink-0">
           Queued
         </span>
+      <% :imported -> %>
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-paper/80 px-3 py-1.5 rounded-sm shrink-0">
+          Importing…
+        </span>
       <% _ -> %>
         <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-paper px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
           {@label}
@@ -315,6 +344,10 @@ defmodule AviaryWeb.ShowsDetailLive do
       <% :queued -> %>
         <div class="inline-block bg-oxblood/40 text-paper/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
           Queued
+        </div>
+      <% :imported -> %>
+        <div class="inline-block bg-oxblood/40 text-paper/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
+          Importing…
         </div>
       <% _ -> %>
         <button
@@ -895,6 +928,7 @@ defmodule AviaryWeb.ShowsDetailLive do
 
   defp in_progress?(:searching), do: true
   defp in_progress?({:downloading, _}), do: true
+  defp in_progress?(:imported), do: true
   defp in_progress?(_), do: false
 
   # The single "watch mark" for a show: which episode carries the
@@ -1022,17 +1056,38 @@ defmodule AviaryWeb.ShowsDetailLive do
   #   :queued    — sonarr has searched/queued but no bytes yet
   #   :ready     — neither in library nor in queue; click triggers Sonarr
   #
-  # Library shows short-circuit to :playable for any episode in the
-  # `episodes_by_season` list (presence there means Jellyfin has the
-  # file). Discover shows route through the sonarr_status map.
-  def episode_state(%{source: :library}, _ep, _status), do: :playable
+  # An episode short-circuits to :playable only if THIS episode has a
+  # real Jellyfin id — `tmdb-…` ids in `episodes_by_season` are filled
+  # in by `Catalog.augment_with_tmdb` for episodes Jellyfin doesn't
+  # have yet, and those need to fall through to the Sonarr status
+  # path so the chip can show searching/downloading/queued progress.
+  # The old short-circuit on `%{source: :library}` alone made every
+  # episode of a library show render as :playable even while E2-E7
+  # were mid-download.
+  def episode_state(_show, %{id: "tmdb-" <> _, season: s, episode: e}, status) do
+    sonarr_episode_state(s, e, status)
+  end
 
-  def episode_state(_show, _ep, nil), do: :ready
+  def episode_state(_show, %{id: id}, _status) when is_binary(id), do: :playable
 
   def episode_state(_show, %{season: s, episode: e}, status) do
+    sonarr_episode_state(s, e, status)
+  end
+
+  defp sonarr_episode_state(_s, _e, nil), do: :ready
+
+  defp sonarr_episode_state(s, e, status) do
     case Map.get(status.episodes, {s, e}) do
+      # Sonarr says it has the file, but if we reached this branch
+      # the calling clause has already established the episode is
+      # tmdb-prefixed in our view — meaning Jellyfin hasn't scanned
+      # the new file yet. That's `:imported`, not `:playable`: the
+      # chip should say "Importing…" and clicks should no-op rather
+      # than firing another grab. The poll loop re-fetches the show
+      # when any episode is in this state so the transition to
+      # :playable happens automatically once Jellyfin catches up.
       %{has_file: true} ->
-        :playable
+        :imported
 
       # Three sub-states once Sonarr is monitoring the episode:
       #   - in queue with progress  → :downloading {pct}%

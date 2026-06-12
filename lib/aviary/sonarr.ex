@@ -1,4 +1,6 @@
 defmodule Aviary.Sonarr do
+  require Logger
+
   @moduledoc """
   Thin wrapper over Sonarr's v3 API. Three things drive everything
   aviary asks of it:
@@ -34,20 +36,28 @@ defmodule Aviary.Sonarr do
   @behaviour_default_root_folder "/shows"
 
   @doc """
-  "Watch the whole show" — adds the series with monitor=all, ensures
-  S1 E1 is searched first (so the user can start watching ASAP), then
-  fires a SeriesSearch for the rest. Without the explicit E1 search,
-  Sonarr's per-indexer responses dictate queue order; the user would
-  see E8 finish before E1 just because that release happened to be
-  cached at the indexer.
+  "Watch the whole show" — adds the series with monitor=all, then
+  fires a per-episode EpisodeSearch for every aired, monitored,
+  fileless episode in sequence (E1, E2, ... so the earliest episode
+  is queued first and grabbed first).
 
-  When the series already exists in Sonarr, widens monitoring + does
-  the same dual search.
+  Why not `SeriesSearch` (Sonarr's "search the whole series" command)?
+  `SeriesSearch` and Sonarr's automatic post-add search both issue a
+  SINGLE season-level indexer query whose response is paginated
+  (~50 results per indexer). The most-recently-aired / most-seeded
+  episodes dominate that result page, so less-popular older episodes
+  get crowded out and never grabbed — even when releases for them
+  exist on the indexer. We learned this the hard way when Widow's Bay
+  E2-E7 sat ungrabbed for weeks despite 11+ approved 1080p releases
+  each. Per-episode searches force one indexer query per episode,
+  giving each its own result depth.
+
+  When the series already exists in Sonarr, widens monitoring +
+  re-fires per-episode searches for whatever's still missing.
   """
   def watch_show(tmdb_id) do
     with {:ok, series} <- ensure_series(tmdb_id, monitor: "all", search: false) do
-      prioritize_first_episode(series["id"])
-      command("SeriesSearch", %{seriesId: series["id"]})
+      search_each_missing(series["id"])
       {:ok, series}
     end
   end
@@ -55,15 +65,16 @@ defmodule Aviary.Sonarr do
   @doc """
   "Watch a specific season" — ensures the series exists (added with
   monitor=none so we don't auto-search the whole library), sets the
-  target season + future seasons to monitored, then fires a
-  SeasonSearch for that season. Future seasons get picked up
-  automatically as they air.
+  target season + future seasons to monitored, then fires a per-
+  episode EpisodeSearch for every aired, monitored, fileless episode
+  in that season. Future seasons get picked up automatically as they
+  air. See `watch_show/1` for why we don't use Sonarr's `SeasonSearch`
+  command.
   """
   def watch_season(tmdb_id, season_number) when is_integer(season_number) do
     with {:ok, series} <- ensure_series(tmdb_id, monitor: "none"),
          :ok <- monitor_seasons_from(series["id"], season_number) do
-      prioritize_first_episode(series["id"], season_number)
-      command("SeasonSearch", %{seriesId: series["id"], seasonNumber: season_number})
+      search_each_missing(series["id"], season_number)
       {:ok, series}
     end
   end
@@ -171,25 +182,39 @@ defmodule Aviary.Sonarr do
 
   ## Internals
 
-  # Fires a single EpisodeSearch for the first episode of the given
-  # scope (whole show ⇒ S1 E1; season ⇒ S<n> E1) BEFORE the broader
-  # SeriesSearch/SeasonSearch runs, so the user's "first thing to
-  # watch" is the first thing Sonarr finds a release for. Skipped
-  # when the episode already has a file (re-clicks are idempotent
-  # AND don't waste an indexer query).
-  defp prioritize_first_episode(sonarr_series_id, season_number \\ 1) do
-    case find_episode(sonarr_series_id, season_number, 1) do
-      {:ok, %{"hasFile" => true}} ->
-        :ok
+  # Fires a single-episode EpisodeSearch for every aired, monitored,
+  # fileless episode in (optionally) a specific season, in (season,
+  # episode) order so the earliest episode is queued first. One
+  # POST per episode is deliberate — bundling all ids into a single
+  # EpisodeSearch (or relying on SeriesSearch / SeasonSearch) makes
+  # Sonarr issue a single season-level indexer query whose paginated
+  # response is dominated by popular episodes; quieter older episodes
+  # get nothing. Per-episode searches guarantee each gets its own
+  # indexer-query result depth.
+  defp search_each_missing(sonarr_series_id, season_filter \\ nil) do
+    today = Date.utc_today()
 
-      {:ok, ep} ->
-        command("EpisodeSearch", %{episodeIds: [ep["id"]]})
-        :ok
+    list_episodes(sonarr_series_id)
+    |> Enum.filter(fn ep ->
+      ep["monitored"] == true and
+        ep["hasFile"] != true and
+        aired?(ep, today) and
+        (season_filter == nil or ep["seasonNumber"] == season_filter)
+    end)
+    |> Enum.sort_by(fn ep -> {ep["seasonNumber"], ep["episodeNumber"]} end)
+    |> Enum.each(fn ep ->
+      command("EpisodeSearch", %{episodeIds: [ep["id"]]})
+    end)
+  end
 
-      _ ->
-        :ok
+  defp aired?(%{"airDate" => air}, today) when is_binary(air) and air != "" do
+    case Date.from_iso8601(air) do
+      {:ok, date} -> Date.compare(date, today) != :gt
+      _ -> false
     end
   end
+
+  defp aired?(_, _), do: false
 
   defp ensure_series(tmdb_id, opts) do
     case find_series_by_tmdb(tmdb_id) do
@@ -278,8 +303,29 @@ defmodule Aviary.Sonarr do
     end
   end
 
+  # Sonarr's POST /command returns the queued command record with its
+  # id, status (queued/started/completed), and any exception. We log
+  # the full response (success or failure) because Sonarr's own
+  # /command list buffer ages out fast and there's no second chance
+  # to find out what happened to a command after the fact. A
+  # silently-failed search command is exactly what left Widow's Bay
+  # S01E02-E07 ungrabbed for weeks — no audit trail without this.
   defp command(name, params) do
-    post("/command", Map.put(params, :name, name))
+    require Logger
+    body = Map.put(params, :name, name)
+
+    case post("/command", body) do
+      {:ok, response} ->
+        Logger.info(
+          "sonarr_command ok name=#{name} body=#{inspect(body)} response=#{inspect(Map.take(response || %{}, ["id", "name", "status", "queued", "started", "ended", "exception"]))}"
+        )
+
+        {:ok, response}
+
+      :error ->
+        Logger.warning("sonarr_command failed name=#{name} body=#{inspect(body)}")
+        :error
+    end
   end
 
   ## HTTP helpers
@@ -297,6 +343,8 @@ defmodule Aviary.Sonarr do
   end
 
   defp request(method, path, params, body) do
+    require Logger
+
     with key when not is_nil(key) <- api_key(),
          url = base_url() <> "/api/v3" <> path do
       opts = [
@@ -312,14 +360,32 @@ defmodule Aviary.Sonarr do
         {:ok, %Req.Response{status: status, body: response_body}} when status in 200..299 ->
           {:ok, response_body}
 
-        _ ->
+        {:ok, %Req.Response{status: status, body: response_body}} ->
+          Logger.warning(
+            "sonarr_http non-2xx method=#{method} path=#{path} status=#{status} response=#{inspect(response_body) |> String.slice(0, 400)}"
+          )
+
+          :error
+
+        {:error, exc} ->
+          Logger.warning(
+            "sonarr_http transport error method=#{method} path=#{path} error=#{inspect(exc) |> String.slice(0, 400)}"
+          )
+
           :error
       end
     else
-      _ -> :error
+      _ ->
+        Logger.warning("sonarr_http missing config (api_key or base_url)")
+        :error
     end
   rescue
-    _ -> :error
+    e ->
+      Logger.warning(
+        "sonarr_http raised method=#{method} path=#{path} error=#{inspect(e) |> String.slice(0, 400)}"
+      )
+
+      :error
   end
 
   defp base_url do
