@@ -14,15 +14,54 @@ defmodule AviaryWeb.HomeLive do
      )}
   end
 
+  # Dismiss from Continue Watching — for show tiles, reset every
+  # episode's progress for that series (otherwise NextUp would
+  # immediately re-surface the show as "watch S X E Y next"). For
+  # movie tiles, just reset that one item. Both go through Jellyfin
+  # so the change syncs to every device.
+  def handle_event("dismiss", %{"id" => id, "kind" => "show"}, socket) do
+    Aviary.Jellyfin.reset_series_progress(id, socket.assigns.current_user)
+    {:noreply, refresh_continue_watching(socket)}
+  end
+
+  def handle_event("dismiss", %{"id" => id, "kind" => "movie"}, socket) do
+    Aviary.Jellyfin.reset_item_progress(id, socket.assigns.current_user)
+    {:noreply, refresh_continue_watching(socket)}
+  end
+
+  # After a dismiss the user's home state may have changed enough to
+  # affect nav visibility (e.g., they just emptied Continue Watching
+  # and Upcoming both — Home tab should disappear). Recompute both
+  # the section data and the nav visibility so the masthead updates
+  # without requiring a refresh.
+  defp refresh_continue_watching(socket) do
+    user = socket.assigns.current_user
+
+    socket
+    |> assign(:items, Aviary.Home.continue_watching(user))
+    |> assign(:upcoming, Aviary.Upcoming.releases(user))
+    |> assign(:nav_visibility, Aviary.Nav.visibility(user))
+  end
+
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_section="home" current_user={@current_user}>
-      <section class="pt-4">
+    <Layouts.app
+      flash={@flash}
+      current_section="home"
+      current_user={@current_user}
+      nav_visibility={@nav_visibility}
+    >
+      <%!--
+        Continue Watching only renders when populated. Empty section
+        with a "nothing in progress" message was noise; same pattern
+        as Upcoming below — section presence itself is the signal.
+      --%>
+      <section :if={@items != []} class="pt-4">
         <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
           Continue Watching
         </h2>
-        <Marquee.row items={@items} from="home" key="home:continue-watching">
-          <:empty>Nothing in progress — pick something from Shows or Movies to get started.</:empty>
+        <Marquee.row items={@items} from="home" key="home:continue-watching" dismissible>
+          <:empty></:empty>
         </Marquee.row>
       </section>
 

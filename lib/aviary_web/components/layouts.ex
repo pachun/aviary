@@ -22,6 +22,11 @@ defmodule AviaryWeb.Layouts do
     default: nil,
     doc: "currently signed-in user; surfaces as a chip in the masthead"
 
+  attr :nav_visibility, :map,
+    default: %{discover: true, home: true, library: true},
+    doc:
+      "Which top-level nav links to render — Discover is always true; Home and Library hide when the user has no content for them, so a brand-new user sees only Discover."
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -45,13 +50,21 @@ defmodule AviaryWeb.Layouts do
         --%>
         <div class="mx-auto max-w-[1100px] flex items-center justify-between gap-8">
           <nav class="flex items-baseline gap-8 text-[0.78rem] font-sans tracking-[0.15em] uppercase">
-            <.section_link href={~p"/home"} active={@current_section == "home"}>
+            <.section_link
+              :if={@nav_visibility.home}
+              href={~p"/home"}
+              active={@current_section == "home"}
+            >
               Home
             </.section_link>
             <.section_link href={~p"/discover"} active={@current_section == "discover"}>
               Discover
             </.section_link>
-            <.section_link href={~p"/library"} active={@current_section == "library"}>
+            <.section_link
+              :if={@nav_visibility.library}
+              href={~p"/library"}
+              active={@current_section == "library"}
+            >
               Library
             </.section_link>
           </nav>

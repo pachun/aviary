@@ -36,7 +36,12 @@ defmodule AviaryWeb.LibraryLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_section="library" current_user={@current_user}>
+    <Layouts.app
+      flash={@flash}
+      current_section="library"
+      current_user={@current_user}
+      nav_visibility={@nav_visibility}
+    >
       <%!--
         Sub-toggle. Same uppercase tracked Instrument Sans + oxblood
         active underline as the masthead nav, dropped down a tier

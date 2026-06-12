@@ -18,6 +18,11 @@ defmodule AviaryWeb.Components.Marquee do
     doc:
       "Optional stable key used by the scroll-restore JS hook to remember this row's horizontal scrollLeft when the user navigates away and comes back."
 
+  attr :dismissible, :boolean,
+    default: false,
+    doc:
+      "When true, renders a hover-revealed X button on each card; click fires phx-click=\"dismiss\" with kind + detail_id. Home uses this to give the user direct control over Continue Watching."
+
   slot :empty, doc: "rendered when there's nothing to show"
 
   def row(assigns) do
@@ -38,7 +43,7 @@ defmodule AviaryWeb.Components.Marquee do
         class="flex gap-3 sm:gap-4 overflow-x-auto overscroll-x-contain snap-x snap-mandatory p-1 pb-4 scroll-p-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
       >
         <li :for={item <- @items} class="snap-start shrink-0">
-          <.card item={item} from={@from} />
+          <.card item={item} from={@from} dismissible={@dismissible} />
         </li>
       </ul>
     <% end %>
@@ -64,21 +69,18 @@ defmodule AviaryWeb.Components.Marquee do
 
   attr :item, :map, required: true
   attr :from, :string, required: true
+  attr :dismissible, :boolean, default: false
 
   defp card(assigns) do
     ~H"""
     <%!--
-      .link navigate (rather than a bare <a href>) makes this a LV soft
-      nav. The scroll-restore hook listens to phx:page-loading-start to
-      capture the source page's scrollY + marquee scrollLefts before
-      the navigation begins — a regular anchor would trigger a full
-      page reload and bypass that event, so the back-trip would land
-      at the top.
+      Wrapper holds the `group` class so both the link's hover ring AND
+      the dismiss X-button's hover-reveal trigger from the same parent
+      hover. The dismiss button is a SIBLING of the link, not a child —
+      otherwise its click would bubble through to the link's navigate.
     --%>
-    <.link
-      navigate={detail_href(@item, @from)}
-      class="group block w-[200px] sm:w-[240px] md:w-[260px] focus:outline-none"
-    >
+    <div class="group relative w-[200px] sm:w-[240px] md:w-[260px]">
+      <.link navigate={detail_href(@item, @from)} class="block focus:outline-none">
       <div class={[
         "aspect-video w-full overflow-hidden rounded-sm bg-rule relative",
         "ring-2 ring-transparent transition-all duration-200",
@@ -140,7 +142,26 @@ defmodule AviaryWeb.Components.Marquee do
           </p>
         </div>
       </div>
-    </.link>
+      </.link>
+
+      <%!--
+        Dismiss control — hover-revealed, top-right. Sits outside the
+        link element so the click doesn't bubble into navigation.
+        focus-visible mirrors the hover state for keyboard users.
+      --%>
+      <button
+        :if={@dismissible}
+        type="button"
+        phx-click="dismiss"
+        phx-value-id={@item.detail_id}
+        phx-value-kind={to_string(@item.kind)}
+        data-confirm="Remove this? Your watch history for it will be cleared on all devices — can't be undone."
+        aria-label="Remove from Continue Watching"
+        class="absolute top-2 right-2 z-10 size-6 rounded-full bg-black/60 backdrop-blur-sm text-white text-xs leading-none flex items-center justify-center cursor-pointer transition-opacity duration-200 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+      >
+        ✕
+      </button>
+    </div>
     """
   end
 

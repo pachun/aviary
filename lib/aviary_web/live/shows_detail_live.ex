@@ -73,7 +73,7 @@ defmodule AviaryWeb.ShowsDetailLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_user={@current_user}>
+    <Layouts.app flash={@flash} current_user={@current_user} nav_visibility={@nav_visibility}>
       <article>
         <div class={[
           "grid grid-cols-1 md:grid-cols-[260px_1fr] gap-8 pt-4"

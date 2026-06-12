@@ -213,6 +213,49 @@ defmodule Aviary.Jellyfin do
   ## Playback state
 
   @doc """
+  Resets a single item's UserData to "never watched" — Played=false,
+  PlaybackPositionTicks=0, PlayedPercentage=0. Used by the Home page's
+  dismiss action for movies. For shows, see `reset_series_progress/2`
+  which iterates across every episode (necessary because Jellyfin's
+  NextUp would otherwise resurface the series the moment a single
+  finished episode is reset).
+  """
+  def reset_item_progress(item_id, auth) do
+    Req.post(base_url() <> "/UserItems/" <> item_id <> "/UserData",
+      params: [userId: auth.id],
+      headers: [{"x-emby-token", auth.token}],
+      json: %{
+        "Played" => false,
+        "PlaybackPositionTicks" => 0,
+        "PlayedPercentage" => 0
+      },
+      receive_timeout: 5_000
+    )
+
+    :ok
+  rescue
+    _ -> :error
+  end
+
+  @doc """
+  Resets every episode in a series to "never watched". Bounded
+  parallelism so a 50-episode show doesn't fire 50 simultaneous
+  requests. Used by Home's dismiss action on show tiles.
+  """
+  def reset_series_progress(series_id, auth) do
+    series_id
+    |> list_episodes(auth)
+    |> Task.async_stream(&reset_item_progress(&1["Id"], auth),
+      max_concurrency: 8,
+      timeout: 10_000,
+      on_timeout: :kill_task
+    )
+    |> Stream.run()
+
+    :ok
+  end
+
+  @doc """
   Persists a playback position to the current user's UserData. Used
   after each progress report from the player.
 

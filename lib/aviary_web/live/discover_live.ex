@@ -83,7 +83,12 @@ defmodule AviaryWeb.DiscoverLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_section="discover" current_user={@current_user}>
+    <Layouts.app
+      flash={@flash}
+      current_section="discover"
+      current_user={@current_user}
+      nav_visibility={@nav_visibility}
+    >
       <section :for={{label, _id} <- @services} class="pt-4 first:pt-2 mb-10 last:mb-0">
         <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
           {label}

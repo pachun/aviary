@@ -142,7 +142,10 @@ defmodule AviaryWeb.UserAuth do
     user = session["aviary_user"] || session[@session_key]
 
     if user do
-      {:cont, Phoenix.Component.assign(socket, :current_user, user)}
+      {:cont,
+       socket
+       |> Phoenix.Component.assign(:current_user, user)
+       |> Phoenix.Component.assign(:nav_visibility, Aviary.Nav.visibility(user))}
     else
       {:halt,
        socket
