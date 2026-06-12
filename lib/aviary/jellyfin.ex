@@ -76,37 +76,65 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
-  Returns the next unplayed, in-library episode for a series (or nil).
-  Used by the home page's Continue Watching to recover from cases
-  where Jellyfin's `/Shows/NextUp` index hasn't caught up with our
-  UserData writes (visible after the watch-mark UI marks a stretch
-  of episodes played — NextUp can take time to reflect, or never
-  surfaces the series if its library scanner hasn't seen the next
-  file yet). We sort episodes by (season, episode) and take the
-  first one whose UserData says unplayed and whose LocationType
-  isn't `Virtual`.
+  Returns the next unplayed, in-library episode for a series — the
+  one the user should play next given their progress — or nil when
+  the user is caught up.
+
+  "Next" means "first non-virtual unplayed episode AFTER the user's
+  furthest-along played episode," not "first unplayed in the list."
+  The naive interpretation breaks the moment any earlier episode has
+  stale `Played=false` (a mark_played call that silently failed, a
+  skipped episode, manual file imports Jellyfin saw before the user
+  watched the predecessor — any non-linear case). For a series where
+  E1-E9 are played and E10 is virtual, this returns nil. For one
+  where E9 stayed Played=false even though E3-E8 are played, this
+  still returns nil because the user is clearly past E9. For a true
+  in-progress series with E1-E5 played and E6+ available, this
+  returns E6.
+
+  Returns nil if the user hasn't played anything in the series
+  (caller is responsible for filtering down to engaged series).
   """
   def next_unplayed_episode(series_id, auth) do
-    Req.get!(base_url() <> "/Shows/" <> series_id <> "/Episodes",
-      params: [
-        userId: auth.id,
-        Fields:
-          "Overview,RunTimeTicks,UserData,LocationType,SeriesPrimaryImageTag,DateCreated,PremiereDate"
-      ],
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 15_000
-    ).body
-    |> case do
-      %{"Items" => items} when is_list(items) -> items
-      _ -> []
+    episodes =
+      Req.get!(base_url() <> "/Shows/" <> series_id <> "/Episodes",
+        params: [
+          userId: auth.id,
+          Fields:
+            "Overview,RunTimeTicks,UserData,LocationType,SeriesPrimaryImageTag,DateCreated,PremiereDate"
+        ],
+        headers: [{"x-emby-token", auth.token}],
+        receive_timeout: 15_000
+      ).body
+      |> case do
+        %{"Items" => items} when is_list(items) -> items
+        _ -> []
+      end
+      |> Enum.sort_by(fn ep ->
+        {ep["ParentIndexNumber"] || 0, ep["IndexNumber"] || 0}
+      end)
+
+    # Furthest-along played episode by viewing order — the last index
+    # where Played=true.
+    last_played_idx =
+      episodes
+      |> Enum.with_index()
+      |> Enum.reduce(nil, fn {ep, idx}, acc ->
+        if get_in(ep, ["UserData", "Played"]) == true, do: idx, else: acc
+      end)
+
+    case last_played_idx do
+      nil ->
+        nil
+
+      idx ->
+        episodes
+        |> Enum.drop(idx + 1)
+        |> Enum.find(fn ep ->
+          get_in(ep, ["UserData", "Played"]) != true and
+            ep["LocationType"] != "Virtual"
+        end)
     end
-    |> Enum.sort_by(fn ep ->
-      {ep["ParentIndexNumber"] || 0, ep["IndexNumber"] || 0}
-    end)
-    |> Enum.find(fn ep ->
-      get_in(ep, ["UserData", "Played"]) != true and
-        ep["LocationType"] != "Virtual"
-    end)
   rescue
     _ -> nil
   end
