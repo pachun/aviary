@@ -104,6 +104,18 @@ defmodule Aviary.Sonarr do
   end
 
   @doc """
+  Forces Sonarr to re-query qBittorrent for download progress right
+  now. Sonarr's own `RefreshMonitoredDownloads` scheduled task only
+  runs ~every 90 seconds, so progress in our chip otherwise updates
+  in big chunks (and gets stuck at the last reported percent for up
+  to a minute and a half after qBit actually finishes). Polling
+  this from the show detail page collapses that lag.
+  """
+  def refresh_monitored_downloads do
+    command("RefreshMonitoredDownloads", %{})
+  end
+
+  @doc """
   Returns a `%{monitored: bool, episodes: map, queue: list}` snapshot
   for a single show. The episodes map is keyed by
   `{season, episode}` so callers can look up state per episode
@@ -122,6 +134,12 @@ defmodule Aviary.Sonarr do
         {:ok,
          %{
            sonarr_series_id: series["id"],
+           # Sonarr knows the on-disk path; we surface it so the
+           # show detail page can use it to call Jellyfin's
+           # /Library/Media/Updated when an import lands, telling
+           # Jellyfin "scan this specific folder for new files
+           # right now" instead of waiting for its scheduled scan.
+           path: series["path"],
            monitored: series["monitored"] == true,
            episodes:
              Map.new(episodes, fn ep ->

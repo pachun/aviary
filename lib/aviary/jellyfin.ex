@@ -361,25 +361,27 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
-  Asks Jellyfin to rescan a series' folder right now. Used when
-  Sonarr has just imported a new episode file to disk but Jellyfin
-  hasn't run its scheduled scan yet — without the nudge, the
-  episode sits in our "Importing…" state for however long until
-  the scheduled scan fires (often hours). The POST is async on
-  Jellyfin's side (it queues the scan task) so it returns
-  immediately; the freshly-discovered episode shows up on the
-  next aviary poll cycle once Jellyfin's scan worker processes it
-  (typically a few seconds).
+  Asks Jellyfin to scan a specific folder path right now via
+  `/Library/Media/Updated` — the same hook Sonarr's "Connect"
+  integration uses when an import lands. Critically, this
+  *discovers new files on disk*, unlike `/Items/{id}/Refresh`
+  which only re-processes existing items. Used by the show
+  detail page when an episode is in our `:imported` state
+  (Sonarr has the file, Jellyfin hasn't seen it yet) to skip the
+  multi-minute wait for Jellyfin's scheduled scan.
 
-  `Recursive=true` makes Jellyfin walk the series' folder for new
-  files; the other refresh-mode params are deliberately left at
-  Jellyfin's defaults so the scan picks up files without
-  re-running every metadata provider.
+  Returns immediately; the scan is async on Jellyfin's side.
+  The freshly-discovered episode appears in `list_episodes`
+  results once the scan worker processes it (typically seconds).
   """
-  def refresh_series(series_id, auth) do
-    Req.post(base_url() <> "/Items/" <> series_id <> "/Refresh",
-      params: [Recursive: true],
+  def refresh_path(path, auth) when is_binary(path) and path != "" do
+    Req.post(base_url() <> "/Library/Media/Updated",
       headers: [{"x-emby-token", auth.token}],
+      json: %{
+        "Updates" => [
+          %{"Path" => path, "UpdateType" => "Created"}
+        ]
+      },
       receive_timeout: 5_000
     )
 
@@ -387,6 +389,8 @@ defmodule Aviary.Jellyfin do
   rescue
     _ -> :error
   end
+
+  def refresh_path(_, _), do: :error
 
   ## Playback state
 

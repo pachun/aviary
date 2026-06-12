@@ -55,31 +55,65 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
-  # When Sonarr has imported episodes that aviary still sees as
-  # tmdb-prefixed (Jellyfin hasn't scanned the new files yet),
-  # actively nudge Jellyfin to rescan the series folder right now
-  # and re-pull our view of the show so the tmdb- ids get swapped
-  # for real Jellyfin ids as soon as Jellyfin catches up. The
-  # Sonarr→Jellyfin "Connect" integration is supposed to fire this
-  # scan on import; in practice it's been unreliable here, so we
-  # do it from the client too. The nudge is per-series (cheap on
-  # Jellyfin's side) and gated on `source == :library` because
-  # discover shows don't yet have a Jellyfin series id to refresh.
-  # Cache invalidation forces the next list_episodes to bypass the
-  # SWR cache so it sees the freshly-scanned episode.
+  # Side-effects that piggyback on the Sonarr poll to keep the chip
+  # feeling live:
+  #
+  #   * Any episode currently :downloading → kick Sonarr to refresh
+  #     its qBit download progress now. Sonarr's own
+  #     RefreshMonitoredDownloads scheduled task fires every ~90 s,
+  #     so without this nudge the percentage chip updates in big
+  #     chunks and gets stuck on the last-reported value for up to
+  #     90 s after qBit finishes.
+  #
+  #   * Any episode :imported (Sonarr has the file, Jellyfin doesn't
+  #     yet) → ask Jellyfin to scan the series folder via
+  #     /Library/Media/Updated. Without it the chip can sit on
+  #     "Importing…" for hours waiting on Jellyfin's scheduled scan.
+  #     Path comes from Sonarr (it owns the on-disk layout); the
+  #     scan endpoint expects the path Sonarr/Jellyfin agree on.
+  #     Discover shows skip the scan because we have no path to
+  #     hand to Jellyfin until Sonarr resolves the series, but
+  #     Sonarr-side already does refresh them.
+  #
+  # Both side-effects are throttled per-show via the cache so a
+  # multi-second poll cadence doesn't pile up requests on Sonarr or
+  # Jellyfin. The throttle uses a TTL'd cache entry as a poor
+  # man's "did we already do this in the last N seconds" check.
+  #
+  # When :imported is detected we also invalidate our own
+  # list_episodes cache so the same-tick get_show re-fetch goes to
+  # Jellyfin instead of returning the stale pre-scan view.
   defp refresh_show_if_imported(socket) do
     show = socket.assigns.show
     status = socket.assigns.sonarr_status
     user = socket.assigns.current_user
 
-    has_imported? =
+    states =
       show.episodes_by_season
       |> Enum.flat_map(fn {_, eps} -> eps end)
-      |> Enum.any?(fn ep -> episode_state(show, ep, status) == :imported end)
+      |> Enum.map(fn ep -> episode_state(show, ep, status) end)
+
+    has_downloading? =
+      Enum.any?(states, fn
+        {:downloading, _} -> true
+        _ -> false
+      end)
+
+    has_imported? = Enum.any?(states, &(&1 == :imported))
+
+    if has_downloading? do
+      throttle({:sonarr_dl_refresh, show.id}, 5_000, fn ->
+        Aviary.Sonarr.refresh_monitored_downloads()
+      end)
+    end
 
     if has_imported? do
-      if show.source == :library do
-        Aviary.Jellyfin.refresh_series(show.id, user)
+      sonarr_path = status && Map.get(status, :path)
+
+      if sonarr_path do
+        throttle({:jellyfin_scan, sonarr_path}, 10_000, fn ->
+          Aviary.Jellyfin.refresh_path(sonarr_path, user)
+        end)
       end
 
       Aviary.Cache.invalidate({:jellyfin_list_episodes, show.id, user.id})
@@ -91,6 +125,19 @@ defmodule AviaryWeb.ShowsDetailLive do
     else
       socket
     end
+  end
+
+  # Run `fun` at most once per `cooldown_ms` for the given key.
+  # Implemented on top of `Aviary.Cache.fetch/3`: a cache hit (entry
+  # still fresh) means "we already ran this recently, skip"; a miss
+  # means "cooldown elapsed, run again and stamp the entry."
+  defp throttle(key, cooldown_ms, fun) do
+    Aviary.Cache.fetch(key, cooldown_ms, fn ->
+      fun.()
+      :stamped
+    end)
+
+    :ok
   end
 
   defp fetch_sonarr_status(socket) do
@@ -749,16 +796,24 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp action_label(%{next_up: nil} = show), do: first_episode_label(show)
 
   defp action_label(%{next_up: %{resume_seconds: r, season: s, episode: e}})
-       when is_number(r) and r > 0 do
+       when is_number(r) and r > 0 and not is_nil(s) and not is_nil(e) do
     "Resume S#{s} E#{e}"
   end
 
-  defp action_label(%{next_up: %{season: s, episode: e}} = show) do
+  defp action_label(%{next_up: %{season: s, episode: e}} = show)
+       when not is_nil(s) and not is_nil(e) do
     case first_episode(show) do
       %{season: ^s, episode: ^e} -> first_episode_label(show)
       _ -> "Continue S#{s} E#{e}"
     end
   end
+
+  # Jellyfin sometimes returns a next_up episode mid-import where
+  # ParentIndexNumber/IndexNumber haven't populated yet — without
+  # this guard the label renders as "Continue S E" with empty
+  # numbers. Fall back to the first-episode label until metadata
+  # catches up.
+  defp action_label(%{next_up: %{}} = show), do: first_episode_label(show)
 
   defp caught_up?(%{next_up: %{caught_up: true}}), do: true
   defp caught_up?(_), do: false
