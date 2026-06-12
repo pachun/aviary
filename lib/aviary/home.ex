@@ -20,27 +20,33 @@ defmodule Aviary.Home do
     latest = Jellyfin.latest_episodes(auth)
     recent = Jellyfin.recently_watched(auth)
 
+    all_items = next_up ++ resume ++ latest ++ recent
+
     # NextUp's whole job is "what should the user watch next on this
     # show" — a show NOT in this set means the user is caught up on
     # it. Use that as the filter: an episode item is only surfaced if
-    # its series has something to watch next. Without this, a show
-    # whose last available episode the user just finished keeps
-    # showing up in Continue Watching (with a misleading "Continue
-    # S X E Y" tile that just replays the finished episode from start)
-    # until the next episode lands.
+    # its series has something to watch next.
     available_series = MapSet.new(next_up, & &1["SeriesId"])
 
-    # Four sources, each catching a different case. Mid-watch shows
-    # come through Resume; caught-up shows come through Recent (the
-    # actually-most-recently-watched episode, which Resume misses
-    # because ticks=0 once Played auto-flips). NextUp + Latest cover
-    # shows with new episodes the user hasn't started. The sort_at
-    # dedupe picks the right tile per show without per-source
-    # branching.
-    (next_up ++ resume ++ latest ++ recent)
-    |> Enum.map(&normalize/1)
+    # Series → TMDB id map. One batch Jellyfin call covers every
+    # unique series that came through any of the four sources, so
+    # downstream filtering by library membership is just a MapSet
+    # check, not N round-trips.
+    series_ids =
+      all_items
+      |> Enum.filter(&(&1["Type"] == "Episode"))
+      |> Enum.map(& &1["SeriesId"])
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    tmdb_map = Jellyfin.series_tmdb_map(series_ids, auth)
+    library = MapSet.new(Aviary.Library.list_tmdb_ids(auth.id))
+
+    all_items
+    |> Enum.map(&normalize(&1, tmdb_map))
     |> Enum.reject(&is_nil/1)
     |> Enum.reject(&caught_up?(&1, available_series))
+    |> Enum.filter(&in_library?(&1, library))
     |> dedupe_by_key()
     |> Enum.sort_by(& &1.sort_at, {:desc, DateTime})
   end
@@ -51,13 +57,27 @@ defmodule Aviary.Home do
 
   defp caught_up?(_, _), do: false
 
+  # Library gating: a show is surfaced only if the user has it in
+  # their library_entries. Movies don't go through library entries
+  # (yet) — they always pass through. Discover-flow library shows
+  # without a known TMDB id (rare, but possible if ProviderIds.Tmdb
+  # is missing) get dropped — without a TMDB id we can't reliably
+  # link them to library entries or Sonarr/Jellyseerr downstream.
+  defp in_library?(%{kind: :movie}, _library), do: true
+  defp in_library?(%{kind: :show, tmdb_id: nil}, _library), do: false
+
+  defp in_library?(%{kind: :show, tmdb_id: tmdb_id}, library) do
+    MapSet.member?(library, tmdb_id)
+  end
+
   # Collapses raw Jellyfin items into a uniform shape the home marquee
   # can render without further branching. `dedupe_key` makes the same
   # show appear once even when it's surfaced by multiple endpoints.
-  defp normalize(%{"Type" => "Movie"} = item) do
+  defp normalize(%{"Type" => "Movie"} = item, _tmdb_map) do
     %{
       dedupe_key: "movie:#{item["Id"]}",
       kind: :movie,
+      tmdb_id: nil,
       play_item_id: item["Id"],
       detail_id: item["Id"],
       thumbnail_item_id: item["Id"],
@@ -71,17 +91,18 @@ defmodule Aviary.Home do
     }
   end
 
-  defp normalize(%{"Type" => "Episode"} = item) do
+  defp normalize(%{"Type" => "Episode"} = item, tmdb_map) do
     series_id = item["SeriesId"]
-    if is_nil(series_id), do: nil, else: do_episode(item, series_id)
+    if is_nil(series_id), do: nil, else: do_episode(item, series_id, tmdb_map)
   end
 
-  defp normalize(_), do: nil
+  defp normalize(_, _), do: nil
 
-  defp do_episode(item, series_id) do
+  defp do_episode(item, series_id, tmdb_map) do
     %{
       dedupe_key: "series:#{series_id}",
       kind: :show,
+      tmdb_id: Map.get(tmdb_map, series_id),
       play_item_id: item["Id"],
       detail_id: series_id,
       thumbnail_item_id: item["Id"],

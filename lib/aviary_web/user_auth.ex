@@ -75,6 +75,12 @@ defmodule AviaryWeb.UserAuth do
     case get_session(conn, @session_key) do
       %{token: token} = user when is_binary(token) ->
         if Aviary.Auth.token_valid?(token) do
+          # Backfill is a no-op after the first request per user —
+          # checks a primary-key lookup, runs the seed only if the
+          # user_backfills row is missing. Belongs here (not on
+          # explicit login) so existing users hitting a deployed
+          # version of Stage 2 don't see empty Continue Watching.
+          Aviary.Library.Backfill.ensure_run(user)
           assign(conn, :current_user, user)
         else
           conn

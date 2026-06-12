@@ -87,6 +87,7 @@ defmodule Aviary.Catalog do
           item
           |> to_show_detail()
           |> Map.put(:source, :library)
+          |> Map.put(:tmdb_id, tmdb_id(item))
           |> Map.put(:poster_url, "/image/#{item["Id"]}")
           |> Map.put(:episodes_by_season, episodes_by_season)
           |> Map.put(:next_up, next_up)
@@ -116,6 +117,7 @@ defmodule Aviary.Catalog do
 
       show = %{
         id: to_string(tmdb_id),
+        tmdb_id: to_string(tmdb_id),
         source: :discover,
         title: body["name"],
         year: tmdb_year_range(body),

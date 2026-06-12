@@ -45,7 +45,13 @@ config :aviary,
   # the show detail page falls back to the trailer treatment in all
   # cases.
   jellyseerr_url: System.get_env("JELLYSEERR_URL"),
-  jellyseerr_api_key: System.get_env("JELLYSEERR_API_KEY")
+  jellyseerr_api_key: System.get_env("JELLYSEERR_API_KEY"),
+  # Sonarr is what makes the Watch buttons actually do anything — it
+  # accepts the "add this series / monitor this season / search this
+  # episode" intents from aviary and runs the download. Without it,
+  # Watch buttons fall through to "not in your library yet" flashes.
+  sonarr_url: System.get_env("SONARR_URL"),
+  sonarr_api_key: System.get_env("SONARR_API_KEY")
 
 # Database — prod lives on a mounted volume so it survives container
 # rebuilds. depot's aviary/configure.sh sets DATABASE_PATH; default is

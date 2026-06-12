@@ -13,7 +13,6 @@ defmodule Aviary.Upcoming do
   bounded by the slowest single show, not the sum.
   """
 
-  alias Aviary.Jellyfin
   alias Aviary.Jellyseerr
 
   # Two weeks matches the show-detail calendar widget's window. Most
@@ -32,8 +31,13 @@ defmodule Aviary.Upcoming do
   def releases(auth) do
     today = Date.utc_today()
 
-    auth
-    |> recently_watched_series()
+    # Library entries are TMDB-keyed by definition, so we sidestep the
+    # Jellyfin series-id lookup the previous implementation needed.
+    # Each lookup is one Jellyseerr call + (when the show is also in
+    # the user's Jellyfin library) one /Items call for the canonical
+    # display name + a stable click target.
+    auth.id
+    |> Aviary.Library.list_tmdb_ids()
     |> Task.async_stream(&fetch_release(&1, auth, today),
       max_concurrency: 8,
       timeout: 8_000,
@@ -47,31 +51,58 @@ defmodule Aviary.Upcoming do
     |> Enum.sort_by(& &1.air_date, Date)
   end
 
-  defp recently_watched_series(auth) do
-    auth
-    |> Jellyfin.recently_watched()
-    |> Enum.filter(&(&1["Type"] == "Episode"))
-    |> Enum.map(& &1["SeriesId"])
-    |> Enum.reject(&is_nil/1)
-    |> Enum.uniq()
-  end
-
-  defp fetch_release(series_id, auth, today) do
-    with {:ok, item} <- Jellyfin.get_item(series_id, auth),
-         tmdb_id when not is_nil(tmdb_id) <- get_in(item, ["ProviderIds", "Tmdb"]),
-         schedule when is_map(schedule) <- Jellyseerr.get_tv_schedule(tmdb_id),
+  defp fetch_release(tmdb_id, auth, today) do
+    with schedule when is_map(schedule) <- Jellyseerr.get_tv_schedule(tmdb_id),
          days when days in 0..@window_days <- Date.diff(schedule.air_date, today) do
-      %{
-        series_id: series_id,
-        series_name: item["Name"],
-        season: schedule.season,
-        episode: schedule.episode,
-        air_date: schedule.air_date,
-        kind: schedule.kind,
-        days_away: days
-      }
+      jellyfin = jellyfin_match(tmdb_id, auth)
+
+      # Upcoming's job is "what's coming that I don't have yet." If
+      # the scheduled episode already imported (Sonarr grabbed it
+      # before Jellyseerr / TMDB updated nextEpisodeToAir to the
+      # following episode), drop this entry — it's no longer
+      # upcoming. The next refresh will surface the episode after
+      # whenever the metadata catches up.
+      if jellyfin && episode_in_library?(jellyfin.id, schedule.season, schedule.episode, auth) do
+        nil
+      else
+        %{
+          series_id: (jellyfin && jellyfin.id) || tmdb_id,
+          series_name: (jellyfin && jellyfin.name) || schedule[:series_name] || "Unknown",
+          season: schedule.season,
+          episode: schedule.episode,
+          air_date: schedule.air_date,
+          kind: schedule.kind,
+          days_away: days
+        }
+      end
     else
       _ -> nil
+    end
+  end
+
+  defp episode_in_library?(series_id, season, episode, auth) do
+    series_id
+    |> Aviary.Jellyfin.list_episodes(auth)
+    |> Enum.any?(fn ep ->
+      ep["ParentIndexNumber"] == season and ep["IndexNumber"] == episode
+    end)
+  end
+
+  # Returns the user's Jellyfin series record for this TMDB id when
+  # the show is in the library, or nil. We look it up via the same
+  # batch endpoint as Home so this is one round-trip; if it's not in
+  # the library, we still surface the release using Jellyseerr's
+  # series name as the display.
+  defp jellyfin_match(tmdb_id, auth) do
+    case Aviary.Jellyfin.list_shows(auth) do
+      shows when is_list(shows) ->
+        case Enum.find(shows, &(get_in(&1, ["ProviderIds", "Tmdb"]) == tmdb_id)) do
+          %{"Id" => id, "Name" => name} -> %{id: id, name: name}
+          _ -> nil
+        end
+
+      _ ->
+        nil
     end
   end
 end

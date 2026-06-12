@@ -5,18 +5,31 @@ defmodule AviaryWeb.ShowsDetailLive do
   alias AviaryWeb.Components.ReleaseCalendar
   alias AviaryWeb.Components.VideoPlayer
 
+  # Sonarr poll cadence. 5s feels fast enough that a button press →
+  # download-progress transition reads as "the page reacted to my
+  # click," and slow enough that a household of users browsing
+  # multiple show pages doesn't hammer Sonarr's API. The polling
+  # process is bounded — it dies when the LV unmounts.
+  @sonarr_poll_ms 5_000
+
   def mount(%{"id" => id} = params, _session, socket) do
     case Aviary.Catalog.get_show(id, socket.assigns.current_user) do
       {:ok, show} ->
-        {:ok,
-         assign(socket,
-           page_title: "#{show.title} · Aviary",
-           show: show,
-           playing_item: nil,
-           playing_segments: nil,
-           playing_subtitles: [],
-           kicker: kicker(params["from"])
-         )}
+        socket =
+          socket
+          |> assign(
+            page_title: "#{show.title} · Aviary",
+            show: show,
+            playing_item: nil,
+            playing_segments: nil,
+            playing_subtitles: [],
+            kicker: kicker(params["from"]),
+            sonarr_status: nil
+          )
+          |> fetch_sonarr_status()
+          |> schedule_sonarr_poll()
+
+        {:ok, socket}
 
       :error ->
         {:ok,
@@ -26,26 +39,78 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
+  def handle_info(:poll_sonarr, socket) do
+    {:noreply,
+     socket
+     |> fetch_sonarr_status()
+     |> schedule_sonarr_poll()}
+  end
+
+  defp fetch_sonarr_status(socket) do
+    status =
+      case Aviary.Sonarr.series_status(socket.assigns.show.tmdb_id) do
+        {:ok, status} -> status
+        _ -> nil
+      end
+
+    assign(socket, :sonarr_status, status)
+  end
+
+  defp schedule_sonarr_poll(socket) do
+    if connected?(socket) do
+      Process.send_after(self(), :poll_sonarr, @sonarr_poll_ms)
+    end
+
+    socket
+  end
+
   defp kicker("home"), do: %{label: "Home", path: "/home"}
   defp kicker("discover"), do: %{label: "Discover", path: "/discover"}
   defp kicker("library_movies"), do: %{label: "Library", path: "/library?type=movies"}
   defp kicker(_), do: %{label: "Library", path: "/library?type=shows"}
 
+  # Top action button. For library shows it just plays — the file's
+  # already there, monitoring was set whenever the user originally
+  # added the show. For discover shows it triggers Sonarr at the
+  # whole-show scope (add series, monitor everything, search) and
+  # commits the user's library entry. Stage 5 will replace the flash
+  # with the actual download-progress UX.
   def handle_event("play", _, socket) do
-    if socket.assigns.show.source == :discover do
-      {:noreply, put_flash(socket, :info, not_yet_downloaded_message())}
-    else
-      item = pick_continue_episode(socket.assigns.show)
-      {:noreply, start_playing(socket, item)}
+    case socket.assigns.show.source do
+      :discover -> trigger_sonarr(socket, :show, nil, nil)
+      :library -> {:noreply, start_playing(socket, pick_continue_episode(socket.assigns.show))}
     end
   end
 
-  def handle_event("play_episode", %{"id" => episode_id}, socket) do
-    cond do
-      socket.assigns.show.source == :discover ->
-        {:noreply, put_flash(socket, :info, not_yet_downloaded_message())}
+  # Season-scope button. Library shows: play the first episode of
+  # that season directly. Discover: kick Sonarr to grab that season
+  # and monitor forward (this season + future).
+  def handle_event("watch_season", %{"season" => season_str}, socket) do
+    season = String.to_integer(season_str)
 
-      true ->
+    case socket.assigns.show.source do
+      :discover ->
+        trigger_sonarr(socket, :season, season, nil)
+
+      :library ->
+        case first_episode_of_season(socket.assigns.show, season) do
+          nil -> {:noreply, put_flash(socket, :error, "No episodes in this season.")}
+          ep -> {:noreply, start_playing(socket, ep)}
+        end
+    end
+  end
+
+  # Episode-scope chip. Library: play it. Discover: try-this-episode —
+  # grab just this one episode without committing to the rest.
+  def handle_event("play_episode", %{"id" => episode_id}, socket) do
+    case socket.assigns.show.source do
+      :discover ->
+        case find_episode(socket.assigns.show, episode_id) do
+          %{season: s, episode: e} -> trigger_sonarr(socket, :episode, s, e)
+          _ -> {:noreply, socket}
+        end
+
+      :library ->
         case find_episode(socket.assigns.show, episode_id) do
           nil -> {:noreply, socket}
           episode -> {:noreply, start_playing(socket, episode)}
@@ -79,6 +144,84 @@ defmodule AviaryWeb.ShowsDetailLive do
     else
       {:noreply, socket}
     end
+  end
+
+  # One small chip used by both episode rows and the season header.
+  # Three visual states share the same geometry (so the layout never
+  # shifts as a chip transitions):
+  #   ready/playable → filled oxblood, the editorial Play affordance
+  #   queued         → muted oxblood pill saying "Queued"
+  #   downloading    → progress-fill chip with a transient inner bar
+  #                    that grows left→right; the text reads the %
+  # Inert states render as <span> (not <button>) so the parent button
+  # remains the only click target — same hit area as the row.
+  attr :state, :any, required: true
+  attr :label, :string, required: true
+
+  defp action_chip(assigns) do
+    ~H"""
+    <%= case @state do %>
+      <% {:downloading, pct} -> %>
+        <span class="relative inline-block overflow-hidden font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-paper px-3 py-1.5 rounded-sm shrink-0 bg-oxblood/20 tabular-nums">
+          <span
+            class="absolute inset-y-0 left-0 bg-oxblood transition-all duration-700 ease-out"
+            style={"width: #{pct}%"}
+          >
+          </span>
+          <span class="relative">{pct}%</span>
+        </span>
+      <% :queued -> %>
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-paper/80 px-3 py-1.5 rounded-sm shrink-0">
+          Queued
+        </span>
+      <% _ -> %>
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-paper px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
+          {@label}
+        </span>
+    <% end %>
+    """
+  end
+
+  # Top-of-page primary action button. Bigger sibling of action_chip
+  # with the same state machine, but reserves the existing morphing
+  # label (Resume/Continue/Play/Watch/Caught up/etc.) for the
+  # ready/playable case so the editorial language in the label still
+  # lives in `action_label/1`.
+  attr :show, :map, required: true
+  attr :status, :any, required: true
+  attr :label, :string, required: true
+  attr :disabled, :boolean, default: false
+
+  defp top_action_button(assigns) do
+    state = show_state(assigns.show, assigns.status)
+    assigns = assign(assigns, :state, state)
+
+    ~H"""
+    <%= case @state do %>
+      <% {:downloading, pct} -> %>
+        <div class="relative overflow-hidden inline-block bg-oxblood/20 text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm tabular-nums">
+          <span
+            class="absolute inset-y-0 left-0 bg-oxblood transition-all duration-700 ease-out"
+            style={"width: #{pct}%"}
+          >
+          </span>
+          <span class="relative">{pct}%</span>
+        </div>
+      <% :queued -> %>
+        <div class="bg-oxblood/40 text-paper/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
+          Queued
+        </div>
+      <% _ -> %>
+        <button
+          type="button"
+          phx-click="play"
+          disabled={@disabled}
+          class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+        >
+          {@label}
+        </button>
+    <% end %>
+    """
   end
 
   def render(assigns) do
@@ -133,14 +276,12 @@ defmodule AviaryWeb.ShowsDetailLive do
                 />
 
                 <div>
-                  <button
-                    type="button"
-                    phx-click="play"
+                  <.top_action_button
+                    show={@show}
+                    status={@sonarr_status}
+                    label={action_label(@show)}
                     disabled={action_disabled?(@show)}
-                    class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                  >
-                    {action_label(@show)}
-                  </button>
+                  />
                 </div>
               </div>
 
@@ -205,9 +346,26 @@ defmodule AviaryWeb.ShowsDetailLive do
         --%>
         <section :if={has_episodes?(@show)} class="mt-12 md:mt-14">
           <div :for={{season, episodes} <- @show.episodes_by_season} class="mb-10 last:mb-0">
-            <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-3">
-              Season {season}
-            </h2>
+            <%!--
+              Season header gets its own Play affordance — the
+              intermediate scope between "play this episode" and
+              "watch the whole show." Same oxblood vocabulary as the
+              top action button and per-episode chip so the three
+              tiers visually belong to the same action family.
+            --%>
+            <div class="flex items-baseline justify-between mb-3">
+              <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted">
+                Season {season}
+              </h2>
+              <button
+                type="button"
+                phx-click="watch_season"
+                phx-value-season={season}
+                class="cursor-pointer"
+              >
+                <.action_chip state={season_state(@show, season, @sonarr_status)} label="▶ Play Season" />
+              </button>
+            </div>
             <ul class="border-t border-rule">
               <%!--
                 Aired episodes get the clickable Play row. Not-aired
@@ -234,9 +392,7 @@ defmodule AviaryWeb.ShowsDetailLive do
                   >
                     {ep.runtime_minutes}m
                   </span>
-                  <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-paper px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
-                    ▶ Play
-                  </span>
+                  <.action_chip state={episode_state(@show, ep, @sonarr_status)} label="▶ Play" />
                 </button>
 
                 <div
@@ -347,14 +503,13 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp caught_up?(_), do: false
 
   # Button is inert when:
-  #   - show came via Discover and isn't in the library yet (the
-  #     Sonarr-download trigger is a future iteration we agreed to
-  #     defer)
-  #   - the library has no episodes to play
-  #   - the user is caught up on everything available
-  defp action_disabled?(show) do
-    show.source == :discover or not has_episodes?(show) or caught_up?(show)
-  end
+  #   - the library has no episodes to play AND it's a library show
+  #     (discover shows have TMDB episode lists even when nothing's
+  #     downloaded yet)
+  #   - the user is caught up on everything available in their library
+  # Discover shows are NOT disabled — clicking them triggers Sonarr.
+  defp action_disabled?(%{source: :discover}), do: false
+  defp action_disabled?(show), do: not has_episodes?(show) or caught_up?(show)
 
   # Short, tiered phrase for the caught-up button: "later today" /
   # "tomorrow" / day-name / "next [day]" / month-day. Mirrors the
@@ -387,6 +542,14 @@ defmodule AviaryWeb.ShowsDetailLive do
   # disabled so this never gets called.
   defp start_playing(socket, item) do
     user = socket.assigns.current_user
+    show = socket.assigns.show
+
+    # Any play action is a commitment signal — the show enters the
+    # user's library. Idempotent at the DB layer; doesn't re-add if
+    # already present. nil tmdb_id (rare: Jellyfin item without
+    # ProviderIds.Tmdb) just skips the library write rather than
+    # erroring.
+    if show.tmdb_id, do: Aviary.Library.add(user.id, show.tmdb_id)
 
     socket
     |> assign(:playing_item, item)
@@ -472,12 +635,127 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp pad_episode(nil), do: ""
   defp pad_episode(n), do: "E" <> String.pad_leading(to_string(n), 2, "0")
 
-  # Placeholder while the Sonarr-download trigger isn't wired yet.
-  # Surfaces the abstraction we promised the user — "if it has aired,
-  # we can play it eventually" — without lying about the current
-  # capability.
-  defp not_yet_downloaded_message,
-    do: "Not in your library yet. Download trigger is coming soon."
+  # Dispatch a Sonarr intent (show / season / episode). Commits the
+  # library entry first so the user can navigate away mid-download
+  # and find the show back where it should be when they return.
+  # Stage 5 will replace these flashes with per-button download
+  # progress on the same page.
+  defp trigger_sonarr(socket, scope, season, episode) do
+    user = socket.assigns.current_user
+    show = socket.assigns.show
+
+    Aviary.Library.add(user.id, show.tmdb_id)
+
+    {result, flash_text} =
+      case scope do
+        :show ->
+          {Aviary.Sonarr.watch_show(show.tmdb_id), "Adding #{show.title} to your library…"}
+
+        :season ->
+          {Aviary.Sonarr.watch_season(show.tmdb_id, season),
+           "Grabbing Season #{season} of #{show.title}…"}
+
+        :episode ->
+          {Aviary.Sonarr.watch_episode(show.tmdb_id, season, episode),
+           "Grabbing S#{season} E#{episode} of #{show.title}…"}
+      end
+
+    case result do
+      {:ok, _} ->
+        # Re-fetch immediately so the button reflects the new state on
+        # the same tick the user clicked — without waiting up to 5s
+        # for the next poll. The periodic poll keeps it fresh after.
+        {:noreply,
+         socket
+         |> fetch_sonarr_status()
+         |> put_flash(:info, flash_text)}
+
+      _ ->
+        {:noreply,
+         put_flash(socket, :error, "Couldn't reach Sonarr. Try again in a moment.")}
+    end
+  end
+
+  defp first_episode_of_season(show, season) do
+    case Enum.find(show.episodes_by_season, fn {s, _} -> s == season end) do
+      {_, [first | _]} -> first
+      _ -> nil
+    end
+  end
+
+  ## Sonarr-derived state for each button tier
+
+  # Resolves a single episode to one of:
+  #   :playable  — the file is in the library; click plays it
+  #   {:downloading, pct} — actively downloading; chip shows progress
+  #   :queued    — sonarr has searched/queued but no bytes yet
+  #   :ready     — neither in library nor in queue; click triggers Sonarr
+  #
+  # Library shows short-circuit to :playable for any episode in the
+  # `episodes_by_season` list (presence there means Jellyfin has the
+  # file). Discover shows route through the sonarr_status map.
+  def episode_state(%{source: :library}, _ep, _status), do: :playable
+
+  def episode_state(_show, _ep, nil), do: :ready
+
+  def episode_state(_show, %{season: s, episode: e}, status) do
+    case Map.get(status.episodes, {s, e}) do
+      %{has_file: true} ->
+        :playable
+
+      %{id: episode_id, monitored: true} ->
+        case download_progress(status.queue, episode_id) do
+          {:ok, pct} -> {:downloading, pct}
+          :queued -> :queued
+          :ready -> :ready
+        end
+
+      _ ->
+        :ready
+    end
+  end
+
+  # Season-level state mirrors that season's first episode — clicking
+  # "Play Season 2" means "start playing S2 E1 (downloading it first
+  # if needed)" so the button's appearance reflects S2 E1's exact
+  # state.
+  def season_state(show, season_number, status) do
+    case first_episode_of_season(show, season_number) do
+      nil -> :ready
+      ep -> episode_state(show, ep, status)
+    end
+  end
+
+  # Show-level state mirrors the episode you'd start watching from the
+  # top button. For library shows that's always playable (file's
+  # there); for discover shows it's the first episode of the first
+  # season.
+  def show_state(%{source: :library}, _status), do: :playable
+
+  def show_state(show, status) do
+    case show.episodes_by_season do
+      [{_, [first | _]} | _] -> episode_state(show, first, status)
+      _ -> :ready
+    end
+  end
+
+  # Looks up an episode's current queue record. Returns:
+  #   {:ok, pct} when bytes are being transferred
+  #   :queued    when Sonarr knows about it but it's not yet downloading
+  #   :ready     when not in queue at all
+  defp download_progress(queue, episode_id) do
+    case Enum.find(queue, &(&1["episodeId"] == episode_id)) do
+      %{"size" => size, "sizeleft" => left}
+      when is_number(size) and is_number(left) and size > 0 ->
+        {:ok, round((size - left) / size * 100)}
+
+      %{} ->
+        :queued
+
+      nil ->
+        :ready
+    end
+  end
 
   # Short tiered air-date label for unaired-episode rows: stays
   # consistent with the show detail Play button's waiting_phrase

@@ -149,11 +149,18 @@ defmodule AviaryWeb.Components.Marquee do
         link element so the click doesn't bubble into navigation.
         focus-visible mirrors the hover state for keyboard users.
       --%>
+      <%!--
+        Dismiss carries the item's stable identity. For shows that's
+        the TMDB id (library entries are TMDB-keyed); for movies it's
+        the Jellyfin item id (movies still go through the Jellyfin
+        reset path). `Map.get(@item, :tmdb_id)` keeps the marquee
+        forward-compatible with movie items that lack the field.
+      --%>
       <button
         :if={@dismissible}
         type="button"
         phx-click="dismiss"
-        phx-value-id={@item.detail_id}
+        phx-value-id={dismiss_id(@item)}
         phx-value-kind={to_string(@item.kind)}
         data-confirm="Remove this? Your watch history for it will be cleared on all devices — can't be undone."
         aria-label="Remove from Continue Watching"
@@ -180,4 +187,7 @@ defmodule AviaryWeb.Components.Marquee do
 
   defp has_score?(%{rating: %{critic: c, audience: a}}) when not (is_nil(c) and is_nil(a)), do: true
   defp has_score?(_), do: false
+
+  defp dismiss_id(%{kind: :show, tmdb_id: tmdb_id}) when is_binary(tmdb_id), do: tmdb_id
+  defp dismiss_id(%{detail_id: id}), do: id
 end

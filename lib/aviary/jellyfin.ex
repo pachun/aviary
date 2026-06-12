@@ -21,7 +21,7 @@ defmodule Aviary.Jellyfin do
     get!(@api_path, auth,
       IncludeItemTypes: "Series",
       Recursive: true,
-      Fields: "PremiereDate,EndDate,Status,ProductionYear"
+      Fields: "PremiereDate,EndDate,Status,ProductionYear,ProviderIds"
     )
     |> Map.fetch!("Items")
   end
@@ -116,6 +116,37 @@ defmodule Aviary.Jellyfin do
       %{"Items" => items} when is_list(items) -> items
       _ -> []
     end
+  end
+
+  @doc """
+  Returns a `%{jellyfin_series_id => tmdb_id_string | nil}` map for a
+  batch of series ids. Uses Jellyfin's `Ids` parameter so the whole
+  set is one HTTP call. Series with no TMDB id in their ProviderIds
+  map to nil — caller decides whether to filter them out or treat
+  them as unmappable.
+  """
+  def series_tmdb_map(series_ids, auth) when is_list(series_ids) do
+    case Enum.uniq(series_ids) do
+      [] ->
+        %{}
+
+      ids ->
+        case Req.get(base_url() <> "/Items",
+               params: [Ids: Enum.join(ids, ","), userId: auth.id, Fields: "ProviderIds"],
+               headers: [{"x-emby-token", auth.token}],
+               receive_timeout: 10_000
+             ) do
+          {:ok, %Req.Response{status: 200, body: %{"Items" => items}}} when is_list(items) ->
+            Map.new(items, fn item ->
+              {item["Id"], get_in(item, ["ProviderIds", "Tmdb"])}
+            end)
+
+          _ ->
+            %{}
+        end
+    end
+  rescue
+    _ -> %{}
   end
 
   @doc """

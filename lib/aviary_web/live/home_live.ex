@@ -14,13 +14,16 @@ defmodule AviaryWeb.HomeLive do
      )}
   end
 
-  # Dismiss from Continue Watching — for show tiles, reset every
-  # episode's progress for that series (otherwise NextUp would
-  # immediately re-surface the show as "watch S X E Y next"). For
-  # movie tiles, just reset that one item. Both go through Jellyfin
-  # so the change syncs to every device.
-  def handle_event("dismiss", %{"id" => id, "kind" => "show"}, socket) do
-    Aviary.Jellyfin.reset_series_progress(id, socket.assigns.current_user)
+  # Dismiss from Continue Watching. Shows take the light path now:
+  # delete the library_entry, watch history left alone. Sister-watched
+  # / "remove from library" with full watch-state reset will be its
+  # own deliberate action on the show detail page (separate from this
+  # dismiss). Movies keep their old Jellyfin-reset path since they
+  # don't go through library_entries yet — same UX as before for
+  # them. The home item carries `tmdb_id` from `Home.normalize`, so
+  # that's what we hand to `Library.remove`.
+  def handle_event("dismiss", %{"id" => tmdb_id, "kind" => "show"}, socket) do
+    Aviary.Library.remove(socket.assigns.current_user.id, tmdb_id)
     {:noreply, refresh_continue_watching(socket)}
   end
 
