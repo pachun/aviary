@@ -85,6 +85,36 @@ const HlsPlayer = {
     }, 10000)
     video.addEventListener("pause", reportProgress)
 
+    // Auto-hide controls after stillness — mirrors native HTML5 video
+    // behavior. Any mouse movement or touch shows controls and
+    // restarts the 3s hide timer; while paused, controls stay
+    // visible. The overlay toggles a data attribute that Tailwind
+    // group-data variants consume to fade each control cluster.
+    const overlay = video.closest('[id^="player-overlay-"]')
+    if (overlay) {
+      let hideTimer
+      const showControls = () => {
+        overlay.dataset.controlsVisible = "true"
+        clearTimeout(hideTimer)
+        if (!video.paused) {
+          hideTimer = setTimeout(() => {
+            overlay.dataset.controlsVisible = "false"
+          }, 3000)
+        }
+      }
+
+      overlay.addEventListener("mousemove", showControls)
+      overlay.addEventListener("touchstart", showControls)
+      video.addEventListener("play", showControls)
+      video.addEventListener("pause", () => {
+        overlay.dataset.controlsVisible = "true"
+        clearTimeout(hideTimer)
+      })
+
+      showControls()
+      this.controlsHideTimer = hideTimer
+    }
+
     // Skip Intro pill — driven by the Intro Skipper Jellyfin plugin.
     // The button (rendered by the LV) carries data-skip-target=end and
     // expects data-visible toggling based on whether currentTime is
@@ -129,6 +159,7 @@ const HlsPlayer = {
 
   destroyed() {
     if (this.progressInterval) clearInterval(this.progressInterval)
+    if (this.controlsHideTimer) clearTimeout(this.controlsHideTimer)
     if (this.hls) this.hls.destroy()
   },
 

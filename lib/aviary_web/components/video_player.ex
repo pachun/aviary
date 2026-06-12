@@ -32,10 +32,18 @@ defmodule AviaryWeb.Components.VideoPlayer do
       the video element so the skip controls + close button stay
       visible — fullscreening just the video would hide every other
       DOM element on the page.
+
+      The `group` class + `data-controls-visible` attribute drive an
+      auto-hide pattern matching native HTML5 video controls: any
+      mouse movement sets the attribute true, 3s of stillness sets it
+      false. Control buttons fade based on the parent attribute via
+      `group-data-[controls-visible=false]:*` Tailwind selectors.
+      Cursor also hides when controls hide for the polish.
     --%>
     <div
       id={"player-overlay-#{@item.id}"}
-      class="fixed inset-0 z-50 bg-black flex items-center justify-center"
+      data-controls-visible="true"
+      class="group fixed inset-0 z-50 bg-black flex items-center justify-center data-[controls-visible=false]:cursor-none"
       phx-window-keydown="close_player"
       phx-key="Escape"
     >
@@ -79,7 +87,7 @@ defmodule AviaryWeb.Components.VideoPlayer do
         data-skip-target={@intro.end}
         data-player-id={"player-#{@item.id}"}
         aria-label="Skip intro"
-        class="absolute bottom-24 right-8 z-10 font-sans text-xs tracking-[0.18em] uppercase font-medium text-white px-5 py-3 rounded-sm bg-oxblood/90 backdrop-blur-sm hover:bg-oxblood cursor-pointer transition-opacity duration-300 opacity-0 pointer-events-none data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto"
+        class="absolute bottom-24 right-8 z-10 font-sans text-xs tracking-[0.18em] uppercase font-medium text-white px-5 py-3 rounded-sm bg-oxblood/90 backdrop-blur-sm hover:bg-oxblood cursor-pointer transition-opacity duration-300 opacity-0 pointer-events-none data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto group-data-[controls-visible=false]:opacity-0 group-data-[controls-visible=false]:pointer-events-none"
         onclick="const v = document.getElementById(this.dataset.playerId); if (v) v.currentTime = parseFloat(this.dataset.skipTarget);"
       >
         Skip Intro
@@ -93,7 +101,7 @@ defmodule AviaryWeb.Components.VideoPlayer do
         on screen at a time. Math.min/max protect against scrubbing
         past the ends of the file.
       --%>
-      <div class="absolute top-4 left-4 z-10 flex items-center gap-2">
+      <div class="absolute top-4 left-4 z-10 flex items-center gap-2 transition-opacity duration-300 group-data-[controls-visible=false]:opacity-0 group-data-[controls-visible=false]:pointer-events-none">
         <button
           type="button"
           onclick={skip_js(@item.id, -10)}
@@ -120,7 +128,7 @@ defmodule AviaryWeb.Components.VideoPlayer do
         on the video hides the native fullscreen button on Chromium so
         the user has one obvious entry point.
       --%>
-      <div class="absolute top-4 right-4 z-10 flex items-center gap-2">
+      <div class="absolute top-4 right-4 z-10 flex items-center gap-2 transition-opacity duration-300 group-data-[controls-visible=false]:opacity-0 group-data-[controls-visible=false]:pointer-events-none">
         <button
           type="button"
           onclick={fullscreen_js(@item.id)}
