@@ -25,6 +25,7 @@ defmodule AviaryWeb.ShowsDetailLive do
   end
 
   defp kicker("home"), do: %{label: "Home", path: "/home"}
+  defp kicker("discover"), do: %{label: "Discover", path: "/discover"}
   defp kicker("movies"), do: %{label: "Movies", path: "/movies"}
   defp kicker(_), do: %{label: "Shows", path: "/shows"}
 

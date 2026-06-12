@@ -30,6 +30,7 @@ defmodule AviaryWeb.MoviesDetailLive do
   defp kicker(from, default: fallback) do
     case from do
       "home" -> %{label: "Home", path: "/home"}
+      "discover" -> %{label: "Discover", path: "/discover"}
       "shows" -> %{label: "Shows", path: "/shows"}
       "movies" -> %{label: "Movies", path: "/movies"}
       _ -> kicker(fallback, default: fallback)

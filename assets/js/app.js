@@ -129,6 +129,65 @@ topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
+// Scroll restoration across LiveView navigation. The default soft-nav
+// re-mounts the destination LV but doesn't restore the source page's
+// scroll position on the way back — so a user who scrolled four rows
+// down on /discover, scrolled a marquee sideways, clicked a tile, and
+// then hit the kicker landed back at the top of the page. We capture
+// page scrollY plus every marquee row's scrollLeft on page-loading-start
+// (the moment a navigation begins), key it by the path being left, and
+// restore on page-loading-stop when the user arrives at a path we have
+// state for. Persisted in sessionStorage so it survives the navigation
+// but not a tab restart.
+const SCROLL_STORE_KEY = "aviary:scroll"
+
+const readScrollStore = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem(SCROLL_STORE_KEY) || "{}")
+  } catch {
+    return {}
+  }
+}
+
+const writeScrollStore = (store) => {
+  try {
+    sessionStorage.setItem(SCROLL_STORE_KEY, JSON.stringify(store))
+  } catch {
+    // sessionStorage may be unavailable (private mode, quota); silently
+    // skip — scroll-restore is a polish feature, not a hard requirement.
+  }
+}
+
+window.addEventListener("phx:page-loading-start", () => {
+  // Capture state for the page we're leaving — window.location is still
+  // the source path at this moment in the navigation lifecycle.
+  const path = window.location.pathname
+  const rows = {}
+  document.querySelectorAll("[data-marquee-key]").forEach((el) => {
+    rows[el.dataset.marqueeKey] = el.scrollLeft
+  })
+  const store = readScrollStore()
+  store[path] = {y: window.scrollY, rows}
+  writeScrollStore(store)
+})
+
+window.addEventListener("phx:page-loading-stop", () => {
+  const path = window.location.pathname
+  const saved = readScrollStore()[path]
+  if (!saved) return
+  // Defer to next frame so the LV has actually rendered the marquee
+  // rows before we try to set their scrollLeft.
+  requestAnimationFrame(() => {
+    if (typeof saved.y === "number") window.scrollTo(0, saved.y)
+    if (saved.rows) {
+      document.querySelectorAll("[data-marquee-key]").forEach((el) => {
+        const x = saved.rows[el.dataset.marqueeKey]
+        if (typeof x === "number") el.scrollLeft = x
+      })
+    }
+  })
+})
+
 // connect if there are any LiveViews on the page
 liveSocket.connect()
 

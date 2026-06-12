@@ -16,7 +16,7 @@ defmodule AviaryWeb.Layouts do
 
   attr :current_section, :string,
     default: nil,
-    doc: "which top-level section is active — \"shows\", \"movies\", or nil"
+    doc: "which top-level section is active — \"home\", \"discover\", \"shows\", \"movies\", or nil"
 
   attr :current_user, :map,
     default: nil,
@@ -32,6 +32,9 @@ defmodule AviaryWeb.Layouts do
           <nav class="flex items-baseline gap-8 text-[0.78rem] font-sans tracking-[0.15em] uppercase">
             <.section_link href={~p"/home"} active={@current_section == "home"}>
               Home
+            </.section_link>
+            <.section_link href={~p"/discover"} active={@current_section == "discover"}>
+              Discover
             </.section_link>
             <.section_link href={~p"/shows"} active={@current_section == "shows"}>
               Shows

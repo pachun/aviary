@@ -18,7 +18,7 @@ defmodule AviaryWeb.HomeLive do
         <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
           Continue Watching
         </h2>
-        <Marquee.row items={@items} from="home">
+        <Marquee.row items={@items} from="home" key="home:continue-watching">
           <:empty>Nothing in progress — pick something from Shows or Movies to get started.</:empty>
         </Marquee.row>
       </section>

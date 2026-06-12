@@ -62,8 +62,29 @@ defmodule AviaryWeb.UserAuth do
   runs — protected routes still need require_authenticated_user.
   """
   def fetch_current_user(conn, _opts) do
-    user = get_session(conn, @session_key)
-    assign(conn, :current_user, user)
+    # Validate at the plug layer (not in on_mount) so that when the
+    # session is stale we can DROP THE COOKIE — a LV socket can't
+    # write cookies, so an on_mount redirect to /login left the stale
+    # session intact and produced an endless redirect loop ("logged
+    # in" cookie → /login redirects to /home → on_mount kicks back
+    # to /login → ...). Only manual cookie deletion broke the loop.
+    #
+    # token_valid? fails open on transport errors (anything that
+    # isn't an explicit 401/403), so this doesn't kick users when
+    # Jellyfin is briefly unreachable.
+    case get_session(conn, @session_key) do
+      %{token: token} = user when is_binary(token) ->
+        if Aviary.Auth.token_valid?(token) do
+          assign(conn, :current_user, user)
+        else
+          conn
+          |> configure_session(drop: true)
+          |> assign(:current_user, nil)
+        end
+
+      _ ->
+        assign(conn, :current_user, nil)
+    end
   end
 
   @doc """
@@ -113,15 +134,14 @@ defmodule AviaryWeb.UserAuth do
       end
   """
   def on_mount(:require_authenticated, _params, session, socket) do
+    # Token validity is checked by fetch_current_user at the plug
+    # layer (where we can actually drop the cookie on failure). Here
+    # we just trust that whatever's in the session has already been
+    # validated. If nothing's in the session, the user landed via a
+    # path that doesn't go through the HTTP plug — push to /login.
     user = session["aviary_user"] || session[@session_key]
 
-    # Probe Jellyfin to confirm the cookied token is still good. Without
-    # this, a stale session (token Jellyfin no longer recognizes —
-    # happens across deploys where Jellyfin's db was rebuilt) takes down
-    # every authenticated page with a 500 once a Jellyfin call returns
-    # 401 + empty body. One extra HTTP call per mount is cheap; the
-    # alternative is per-call 500s.
-    if user && Aviary.Auth.token_valid?(user.token) do
+    if user do
       {:cont, Phoenix.Component.assign(socket, :current_user, user)}
     else
       {:halt,

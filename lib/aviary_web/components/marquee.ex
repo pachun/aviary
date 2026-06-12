@@ -11,7 +11,12 @@ defmodule AviaryWeb.Components.Marquee do
   use Phoenix.Component
 
   attr :items, :list, required: true
-  attr :from, :string, required: true, doc: "kicker source — \"home\", \"shows\", \"movies\""
+  attr :from, :string, required: true, doc: "kicker source — \"home\", \"discover\", \"shows\", \"movies\""
+
+  attr :key, :string,
+    default: nil,
+    doc:
+      "Optional stable key used by the scroll-restore JS hook to remember this row's horizontal scrollLeft when the user navigates away and comes back."
 
   slot :empty, doc: "rendered when there's nothing to show"
 
@@ -28,7 +33,10 @@ defmodule AviaryWeb.Components.Marquee do
         when scrolled. Scrollbar hidden via webkit + Firefox properties;
         snap-x for clean card-by-card scrolling.
       --%>
-      <ul class="flex gap-3 sm:gap-4 overflow-x-auto snap-x snap-mandatory p-1 pb-4 scroll-p-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
+      <ul
+        data-marquee-key={@key}
+        class="flex gap-3 sm:gap-4 overflow-x-auto snap-x snap-mandatory p-1 pb-4 scroll-p-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
+      >
         <li :for={item <- @items} class="snap-start shrink-0">
           <.card item={item} from={@from} />
         </li>
@@ -42,8 +50,16 @@ defmodule AviaryWeb.Components.Marquee do
 
   defp card(assigns) do
     ~H"""
-    <a
-      href={detail_href(@item, @from)}
+    <%!--
+      .link navigate (rather than a bare <a href>) makes this a LV soft
+      nav. The scroll-restore hook listens to phx:page-loading-start to
+      capture the source page's scrollY + marquee scrollLefts before
+      the navigation begins — a regular anchor would trigger a full
+      page reload and bypass that event, so the back-trip would land
+      at the top.
+    --%>
+    <.link
+      navigate={detail_href(@item, @from)}
       class="group block w-[240px] sm:w-[280px] md:w-[320px] focus:outline-none"
     >
       <div class={[
@@ -73,9 +89,13 @@ defmodule AviaryWeb.Components.Marquee do
           </p>
         </div>
       </div>
-    </a>
+    </.link>
     """
   end
+
+  # Explicit URL takes precedence — used by the discover page where
+  # items come from TMDB and bypass aviary's Jellyfin image proxy.
+  defp thumbnail_src(%{thumbnail_url: url}) when is_binary(url), do: url
 
   defp thumbnail_src(%{thumbnail_item_id: id, thumbnail_kind: :backdrop}) do
     "/image/#{id}?kind=backdrop"

@@ -100,6 +100,30 @@ defmodule Aviary.Jellyseerr do
     _ -> :error
   end
 
+  @doc """
+  Returns `{:ok, results}` where results is the TMDB show list for the
+  given network — used by the discover page to populate each
+  streaming-service row. Each result has id (TMDB), name, posterPath,
+  backdropPath, and a mediaInfo block carrying the Jellyfin id when
+  the show is in the library.
+  """
+  def discover_tv_network(network_id) do
+    with key when not is_nil(key) <- api_key(),
+         url = base_url() <> "/api/v1/discover/tv/network/#{network_id}",
+         {:ok, %Req.Response{status: 200, body: %{"results" => results}}} <-
+           Req.get(url,
+             headers: [{"x-api-key", key}],
+             receive_timeout: 5_000,
+             retry: false
+           ) do
+      {:ok, results}
+    else
+      _ -> :error
+    end
+  rescue
+    _ -> :error
+  end
+
   defp base_url do
     case Application.get_env(:aviary, :jellyseerr_url) do
       nil -> nil

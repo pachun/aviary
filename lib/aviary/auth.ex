@@ -72,16 +72,24 @@ defmodule Aviary.Auth do
   fail closed.
   """
   def token_valid?(token) when is_binary(token) do
+    # Only invalidate on an explicit "Jellyfin rejected this token" —
+    # which is a 401. Transport failures (Tailscale flap, slow VPN,
+    # Jellyfin restart) shouldn't log the user out; the session cookie
+    # is still legitimate and the next page load will either succeed
+    # or hit a real 401. Fails-open on doubt instead of fails-closed,
+    # because the alternative ("delete your cookies and log back in
+    # every time the network blinks") was unusable.
     case Req.get(base_url() <> "/Users/Me",
            headers: [{"x-emby-token", token}],
            receive_timeout: 3_000,
            retry: false
          ) do
-      {:ok, %Req.Response{status: 200}} -> true
-      _ -> false
+      {:ok, %Req.Response{status: 401}} -> false
+      {:ok, %Req.Response{status: 403}} -> false
+      _ -> true
     end
   rescue
-    _ -> false
+    _ -> true
   end
 
   def token_valid?(_), do: false
