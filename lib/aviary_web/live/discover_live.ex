@@ -10,6 +10,15 @@ defmodule AviaryWeb.DiscoverLive do
 
   alias AviaryWeb.Components.Marquee
 
+  # Backoff schedule for retried rows. Picked so the user sees a quick
+  # second attempt (most rows succeed on retry because the partial RT
+  # data the first attempt collected is now warm in the cache), and
+  # then progressively longer waits if something's actually broken
+  # upstream. After the last attempt we stop retrying and the row
+  # stays in the skeleton state — better to keep showing "loading"
+  # than to commit to a misleading "no recommendations" message.
+  @retry_delays_ms [2_000, 5_000, 12_000]
+
   def mount(_params, _session, socket) do
     services = Aviary.Discover.services()
 
@@ -18,7 +27,8 @@ defmodule AviaryWeb.DiscoverLive do
       |> assign(
         page_title: "Discover · Aviary",
         services: services,
-        rows: %{}
+        rows: %{},
+        row_attempts: %{}
       )
       |> kick_off_row_fetches(services)
 
@@ -31,15 +41,44 @@ defmodule AviaryWeb.DiscoverLive do
     end)
   end
 
-  def handle_async({:row, label}, {:ok, items}, socket) do
+  def handle_async({:row, label}, {:ok, items}, socket) when items != [] do
     {:noreply, update(socket, :rows, &Map.put(&1, label, items))}
   end
 
-  def handle_async({:row, label}, {:exit, _reason}, socket) do
-    # Task crashed; stamp an empty list so the skeleton stops pulsing
-    # and the marquee's empty-slot message renders instead of leaving
-    # the row in eternal loading state.
-    {:noreply, update(socket, :rows, &Map.put(&1, label, []))}
+  # Empty result or task crash — both are "the row didn't actually
+  # populate." Retry rather than stamping an empty list into the rows
+  # map. Earlier behavior was to stamp empty on crash so the skeleton
+  # stopped pulsing, but that left the user looking at "no
+  # recommendations" for huge networks like Disney+ when the only
+  # actual problem was a slow first attempt.
+  def handle_async({:row, label}, {:ok, []}, socket), do: maybe_retry(socket, label)
+  def handle_async({:row, label}, {:exit, _reason}, socket), do: maybe_retry(socket, label)
+
+  defp maybe_retry(socket, label) do
+    attempt = Map.get(socket.assigns.row_attempts, label, 0)
+
+    case Enum.at(@retry_delays_ms, attempt) do
+      nil ->
+        # Out of retries — leave the row in skeleton state. User
+        # can hard-refresh; we'd rather show "still loading" than
+        # mislead with an empty-state message.
+        {:noreply, socket}
+
+      delay ->
+        Process.send_after(self(), {:retry_row, label}, delay)
+        {:noreply, update(socket, :row_attempts, &Map.put(&1, label, attempt + 1))}
+    end
+  end
+
+  def handle_info({:retry_row, label}, socket) do
+    case Enum.find(socket.assigns.services, fn {l, _} -> l == label end) do
+      {^label, network_id} ->
+        {:noreply,
+         start_async(socket, {:row, label}, fn -> Aviary.Discover.fetch_row(network_id) end)}
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   def render(assigns) do
