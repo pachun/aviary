@@ -41,9 +41,22 @@ defmodule Aviary.RottenTomatoes do
         scores
 
       _ ->
-        scores = scrape(title, type)
-        :ets.insert(@table, {key, scores, now})
-        scores
+        case scrape(title, type) do
+          %{} = scores ->
+            :ets.insert(@table, {key, scores, now})
+            scores
+
+          nil ->
+            # Don't cache misses. A nil here could mean "no RT page
+            # for this title" (legitimate, would benefit from caching)
+            # OR "transient failure: scraper got rate-limited / Finch
+            # pool was exhausted / HTML changed momentarily" (NOT
+            # something we want to cache for 24h). Erring on the side
+            # of "retry next time" trades a little extra work for not
+            # showing blank badges across an entire Discover row when
+            # one page load got unlucky.
+            nil
+        end
     end
   end
 
