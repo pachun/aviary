@@ -35,11 +35,28 @@ defmodule Aviary.Catalog do
   end
 
   @doc """
-  Fetch a single show with episodes, next-up, and RT scores. Episode
-  list is grouped by season and ordered so the UI can render straight
-  from `episodes_by_season` without further sorting.
+  Fetch a single show with episodes, next-up, and RT scores.
+
+  Dispatches on id format: Jellyfin GUIDs (32 hex chars) load from the
+  user's library — full functionality, episode list, progress tracking.
+  Anything else is treated as a TMDB id and loaded from Jellyseerr —
+  read-only metadata for a show not yet in the library. Both branches
+  return the SAME shape so `ShowsDetailLive` doesn't need to branch
+  on the source; the only flag the template checks is `:source`,
+  which gates the episode list + button behavior.
   """
   def get_show(id, auth) do
+    if jellyfin_id?(id) do
+      get_library_show(id, auth)
+    else
+      get_discover_show(id)
+    end
+  end
+
+  defp jellyfin_id?(id) when is_binary(id), do: String.match?(id, ~r/^[a-f0-9]{32}$/i)
+  defp jellyfin_id?(_), do: false
+
+  defp get_library_show(id, auth) do
     case Aviary.Jellyfin.get_item(id, auth) do
       {:ok, item} ->
         episodes = Aviary.Jellyfin.list_episodes(id, auth)
@@ -69,6 +86,8 @@ defmodule Aviary.Catalog do
         show =
           item
           |> to_show_detail()
+          |> Map.put(:source, :library)
+          |> Map.put(:poster_url, "/image/#{item["Id"]}")
           |> Map.put(:episodes_by_season, episodes_by_season)
           |> Map.put(:next_up, next_up)
           |> Map.put(:season_count, episodes_by_season |> Enum.map(&elem(&1, 0)) |> Enum.uniq() |> length())
@@ -81,6 +100,140 @@ defmodule Aviary.Catalog do
         :error
     end
   end
+
+  # Build the same show shape from a Jellyseerr TMDB lookup — for shows
+  # surfaced via Discover that aren't in the user's library yet. Fields
+  # that don't apply (episodes_by_season, next_up, trailer_url) come
+  # through as empty defaults so the template's existing rendering
+  # logic keeps working without per-source branching beyond the
+  # `:source` gate on episode list + button.
+  defp get_discover_show(tmdb_id) do
+    with {:ok, body} <- Aviary.Jellyseerr.get_tv(tmdb_id) do
+      # Excludes season 0 (specials/extras). Show users full episodes
+      # only — specials are noise on the detail page.
+      seasons = (body["seasons"] || []) |> Enum.filter(&((&1["seasonNumber"] || 0) > 0))
+      episodes_by_season = fetch_discover_episodes(tmdb_id, seasons)
+
+      show = %{
+        id: to_string(tmdb_id),
+        source: :discover,
+        title: body["name"],
+        year: tmdb_year_range(body),
+        status: body["status"],
+        official_rating: nil,
+        genre: tmdb_first_genre(body),
+        synopsis: body["overview"],
+        trailer_url: tmdb_trailer_url(body),
+        episodes_by_season: episodes_by_season,
+        next_up: nil,
+        season_count: length(seasons),
+        rating: Aviary.RottenTomatoes.fetch(body["name"], :tv),
+        schedule: Aviary.Jellyseerr.get_tv_schedule(tmdb_id),
+        poster_url: tmdb_poster_url(body["posterPath"])
+      }
+
+      {:ok, show}
+    else
+      _ -> :error
+    end
+  end
+
+  # Fetches all seasons in parallel and builds the same shape library
+  # shows use for episodes_by_season — so the template renders both
+  # sources through one path.
+  defp fetch_discover_episodes(tmdb_id, seasons) do
+    today = Date.utc_today()
+
+    seasons
+    |> Task.async_stream(
+      fn s ->
+        {s["seasonNumber"], Aviary.Jellyseerr.get_tv_season(tmdb_id, s["seasonNumber"])}
+      end,
+      max_concurrency: 8,
+      timeout: 10_000,
+      on_timeout: :kill_task
+    )
+    |> Enum.map(fn
+      {:ok, {season_num, {:ok, season_data}}} ->
+        episodes =
+          (season_data["episodes"] || [])
+          |> Enum.map(&tmdb_to_episode(&1, today))
+          |> Enum.sort_by(&(&1.episode || 0))
+
+        {season_num, episodes}
+
+      _ ->
+        nil
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.sort_by(fn {n, _} -> n end)
+  end
+
+  defp tmdb_to_episode(ep, today) do
+    air_date = parse_iso_date(ep["airDate"])
+
+    %{
+      id: "tmdb-#{ep["id"]}",
+      title: ep["name"],
+      season: ep["seasonNumber"],
+      episode: ep["episodeNumber"],
+      runtime_minutes: nil,
+      resume_seconds: nil,
+      last_played_at: nil,
+      played_percentage: 0.0,
+      air_date: air_date,
+      aired: air_date != nil and Date.compare(air_date, today) != :gt
+    }
+  end
+
+  defp parse_iso_date(s) when is_binary(s) and s != "" do
+    case Date.from_iso8601(s) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+
+  defp parse_iso_date(_), do: nil
+
+  defp tmdb_trailer_url(%{"relatedVideos" => videos}) when is_list(videos) do
+    case Enum.find(videos, &(&1["type"] == "Trailer" and &1["site"] == "YouTube")) do
+      %{"url" => url} when is_binary(url) -> url
+      _ -> nil
+    end
+  end
+
+  defp tmdb_trailer_url(_), do: nil
+
+  defp tmdb_year_range(body) do
+    start = year_from_date(body["firstAirDate"])
+
+    finish =
+      case body["status"] do
+        "Ended" ->
+          case body["lastEpisodeToAir"] do
+            %{"airDate" => air_date} -> year_from_date(air_date)
+            _ -> nil
+          end
+
+        _ ->
+          nil
+      end
+
+    {start, finish}
+  end
+
+  defp year_from_date(date_str) when is_binary(date_str) and date_str != "" do
+    date_str |> String.slice(0, 4) |> String.to_integer()
+  end
+
+  defp year_from_date(_), do: nil
+
+  defp tmdb_first_genre(%{"genres" => [%{"name" => name} | _]}) when is_binary(name), do: name
+  defp tmdb_first_genre(_), do: nil
+
+  defp tmdb_poster_url(nil), do: nil
+  defp tmdb_poster_url(""), do: nil
+  defp tmdb_poster_url(path), do: "https://image.tmdb.org/t/p/w500#{path}"
 
   defp to_show(item) do
     %{
@@ -172,9 +325,23 @@ defmodule Aviary.Catalog do
       runtime_minutes: runtime_minutes(item["RunTimeTicks"]),
       resume_seconds: resume_seconds(item["UserData"]),
       last_played_at: parse_date(get_in(item, ["UserData", "LastPlayedDate"])),
-      played_percentage: played_percentage(item["UserData"])
+      played_percentage: played_percentage(item["UserData"]),
+      # If it's in the library, it aired by definition. Air date may
+      # still be nil for items missing PremiereDate metadata; that's
+      # fine — the row just won't show a date.
+      air_date: parse_iso_date_prefix(item["PremiereDate"]),
+      aired: true
     }
   end
+
+  defp parse_iso_date_prefix(s) when is_binary(s) and s != "" do
+    case Date.from_iso8601(String.slice(s, 0, 10)) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+
+  defp parse_iso_date_prefix(_), do: nil
 
   # Jellyfin clears PlayedPercentage on fully-completed items but keeps
   # Played=true. Treat that as 100% rather than 0% so the "basically

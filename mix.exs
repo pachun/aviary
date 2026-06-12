@@ -60,7 +60,13 @@ defmodule Aviary.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
-      {:req, "~> 0.5"}
+      {:req, "~> 0.5"},
+      # Persistence — SQLite over Postgres because this is a household
+      # media app, not a multi-tenant SaaS. A single .db file lives on
+      # a mounted volume in prod, gets trivially rsync'd for backup,
+      # and removes a moving part from the deploy.
+      {:ecto_sql, "~> 3.12"},
+      {:ecto_sqlite3, "~> 0.18"}
     ]
   end
 

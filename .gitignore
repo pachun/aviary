@@ -38,3 +38,7 @@ npm-debug.log
 
 # Local dev env (Jellyfin URL + API key)
 .env.local
+
+# SQLite database files (dev + journal/shm/wal sidecars)
+/priv/*.db
+/priv/*.db-*

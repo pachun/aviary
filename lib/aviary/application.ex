@@ -9,6 +9,7 @@ defmodule Aviary.Application do
   def start(_type, _args) do
     children = [
       AviaryWeb.Telemetry,
+      Aviary.Repo,
       {DNSCluster, query: Application.get_env(:aviary, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Aviary.PubSub},
       Aviary.RottenTomatoes,

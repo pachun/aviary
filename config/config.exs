@@ -8,7 +8,8 @@
 import Config
 
 config :aviary,
-  generators: [timestamp_type: :utc_datetime]
+  ecto_repos: [Aviary.Repo],
+  generators: [timestamp_type: :utc_datetime, binary_id: false]
 
 # Configure the endpoint
 config :aviary, AviaryWeb.Endpoint,

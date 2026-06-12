@@ -1,5 +1,13 @@
 import Config
 
+# Local SQLite file. Kept under priv so it travels with the project
+# tree, gitignored (added below). Production points at a mounted
+# volume via runtime.exs.
+config :aviary, Aviary.Repo,
+  database: Path.expand("../priv/aviary_dev.db", __DIR__),
+  pool_size: 5,
+  show_sensitive_data_on_connection_error: true
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #

@@ -79,7 +79,13 @@ defmodule Aviary.Jellyseerr do
 
   defp schedule_kind(_, _), do: :continuation
 
-  defp get(tmdb_id) do
+  @doc """
+  Returns the raw Jellyseerr `/tv/{tmdbId}` response body, or `:error`.
+  Exposed so `Aviary.Catalog.get_show/2` can build a full show detail
+  for a TMDB id (a show not in the user's library yet, surfaced via
+  Discover).
+  """
+  def get_tv(tmdb_id) when is_binary(tmdb_id) or is_integer(tmdb_id) do
     case api_key() do
       nil ->
         :error
@@ -99,6 +105,37 @@ defmodule Aviary.Jellyseerr do
   rescue
     _ -> :error
   end
+
+  def get_tv(_), do: :error
+
+  @doc """
+  Returns Jellyseerr's per-season episode list for a show. Each
+  episode entry has airDate, episodeNumber, name, etc. — enough to
+  render the full episode list with aired/not-aired indicators on
+  the show detail page, even for shows not yet in the user's library.
+  """
+  def get_tv_season(tmdb_id, season_number) do
+    case api_key() do
+      nil ->
+        :error
+
+      key ->
+        url = base_url() <> "/api/v1/tv/#{tmdb_id}/season/#{season_number}"
+
+        case Req.get(url,
+               headers: [{"x-api-key", key}],
+               receive_timeout: 5_000,
+               retry: false
+             ) do
+          {:ok, %Req.Response{status: 200, body: body}} -> {:ok, body}
+          _ -> :error
+        end
+    end
+  rescue
+    _ -> :error
+  end
+
+  defp get(tmdb_id), do: get_tv(tmdb_id)
 
   @doc """
   Returns `{:ok, results}` where results is the TMDB show list for the

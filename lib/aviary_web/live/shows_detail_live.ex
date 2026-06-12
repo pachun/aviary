@@ -32,14 +32,24 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp kicker(_), do: %{label: "Library", path: "/library?type=shows"}
 
   def handle_event("play", _, socket) do
-    item = pick_continue_episode(socket.assigns.show)
-    {:noreply, start_playing(socket, item)}
+    if socket.assigns.show.source == :discover do
+      {:noreply, put_flash(socket, :info, not_yet_downloaded_message())}
+    else
+      item = pick_continue_episode(socket.assigns.show)
+      {:noreply, start_playing(socket, item)}
+    end
   end
 
   def handle_event("play_episode", %{"id" => episode_id}, socket) do
-    case find_episode(socket.assigns.show, episode_id) do
-      nil -> {:noreply, socket}
-      episode -> {:noreply, start_playing(socket, episode)}
+    cond do
+      socket.assigns.show.source == :discover ->
+        {:noreply, put_flash(socket, :info, not_yet_downloaded_message())}
+
+      true ->
+        case find_episode(socket.assigns.show, episode_id) do
+          nil -> {:noreply, socket}
+          episode -> {:noreply, start_playing(socket, episode)}
+        end
     end
   end
 
@@ -78,10 +88,15 @@ defmodule AviaryWeb.ShowsDetailLive do
         <div class={[
           "grid grid-cols-1 md:grid-cols-[260px_1fr] gap-8 pt-4"
         ]}>
-          <%!-- Poster (hidden on mobile, matches movie detail) --%>
+          <%!--
+            Poster (hidden on mobile, matches movie detail). poster_url
+            is set by Catalog.get_show — for library shows it's the
+            aviary image proxy; for discover shows it's the TMDB CDN.
+            Same field, same render, source abstracted away.
+          --%>
           <div class="hidden md:block">
             <img
-              src={"/image/#{@show.id}"}
+              src={@show.poster_url}
               alt={@show.title}
               class="w-full aspect-[2/3] object-cover rounded-sm bg-rule"
             />
@@ -121,7 +136,7 @@ defmodule AviaryWeb.ShowsDetailLive do
                   <button
                     type="button"
                     phx-click="play"
-                    disabled={!has_episodes?(@show) || caught_up?(@show)}
+                    disabled={action_disabled?(@show)}
                     class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     {action_label(@show)}
@@ -137,12 +152,28 @@ defmodule AviaryWeb.ShowsDetailLive do
                 between-seasons-with-no-premiere-announced, or any
                 Jellyseerr lookup failure.
               --%>
-              <div :if={@show.schedule != :none} class="w-full">
+              <%!--
+                Calendar only renders for library shows with a known
+                next-episode air date. Discover shows always get the
+                trailer instead — the calendar's framing ("when's the
+                next episode I can play") only makes sense once the
+                show is downloaded. For library shows without a
+                schedule (ended, between seasons, no Jellyseerr data),
+                fall through to trailer too.
+              --%>
+              <div
+                :if={@show.source == :library and @show.schedule != :none}
+                class="w-full"
+              >
                 <ReleaseCalendar.widget schedule={@show.schedule} />
               </div>
 
               <div
-                :if={@show.schedule == :none && trailer_embeddable?(@show.trailer_url)}
+                :if={
+                  (@show.source == :discover or
+                     (@show.source == :library and @show.schedule == :none)) and
+                    trailer_embeddable?(@show.trailer_url)
+                }
                 class="aspect-video w-full bg-rule rounded-sm overflow-hidden"
               >
                 <iframe
@@ -178,15 +209,16 @@ defmodule AviaryWeb.ShowsDetailLive do
               Season {season}
             </h2>
             <ul class="border-t border-rule">
+              <%!--
+                Aired episodes get the clickable Play row. Not-aired
+                episodes get a dimmed info row with the air date in
+                place of the Play chip — same vocabulary, same
+                geometry, so the user reads the list as one continuous
+                sequence with the unaired ones flagged as future.
+              --%>
               <li :for={ep <- episodes}>
-                <%!--
-                  Whole-row click stays — gives a wide hit target on
-                  mobile. The trailing Play chip is a visual signal
-                  that the row IS interactive; without it the row
-                  read as flat text-list copy. Filled oxblood matches
-                  the primary action vocabulary used elsewhere.
-                --%>
                 <button
+                  :if={ep.aired}
                   type="button"
                   phx-click="play_episode"
                   phx-value-id={ep.id}
@@ -206,6 +238,22 @@ defmodule AviaryWeb.ShowsDetailLive do
                     ▶ Play
                   </span>
                 </button>
+
+                <div
+                  :if={!ep.aired}
+                  class="w-full flex items-center gap-4 py-3 px-1 border-b border-rule opacity-50"
+                >
+                  <span class="font-sans text-muted text-sm tabular-nums w-8 shrink-0">
+                    {pad_episode(ep.episode)}
+                  </span>
+                  <span class="font-display text-ink flex-1 truncate">{ep.title}</span>
+                  <span
+                    :if={ep.air_date}
+                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0"
+                  >
+                    {air_date_label(ep.air_date)}
+                  </span>
+                </div>
               </li>
             </ul>
           </div>
@@ -254,12 +302,18 @@ defmodule AviaryWeb.ShowsDetailLive do
     show.episodes_by_season != []
   end
 
-  # Morphing label. Caught-up first because it short-circuits the
+  # Morphing label. Discover (not-in-library) shows always read
+  # "Watch S1 E1" — the eventual flow is "click → kick Sonarr to
+  # download → playback when ready," and the button stays disabled
+  # for now until that's wired (per agreed scope).
+  #
+  # After discover, caught-up first because it short-circuits the
   # "no resume position" path that would otherwise read as
   # "Continue S X E Y" — confusing for an episode the user already
   # finished. The button is disabled in this state via
   # caught_up?/1; the calendar widget on the same page tells them
   # when the next episode airs.
+  defp action_label(%{source: :discover}), do: "Watch S1 E1"
   #
   # When we know the next episode's air date (Jellyseerr returned a
   # schedule), surface it on the button itself so the user sees
@@ -291,6 +345,16 @@ defmodule AviaryWeb.ShowsDetailLive do
 
   defp caught_up?(%{next_up: %{caught_up: true}}), do: true
   defp caught_up?(_), do: false
+
+  # Button is inert when:
+  #   - show came via Discover and isn't in the library yet (the
+  #     Sonarr-download trigger is a future iteration we agreed to
+  #     defer)
+  #   - the library has no episodes to play
+  #   - the user is caught up on everything available
+  defp action_disabled?(show) do
+    show.source == :discover or not has_episodes?(show) or caught_up?(show)
+  end
 
   # Short, tiered phrase for the caught-up button: "later today" /
   # "tomorrow" / day-name / "next [day]" / month-day. Mirrors the
@@ -408,11 +472,40 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp pad_episode(nil), do: ""
   defp pad_episode(n), do: "E" <> String.pad_leading(to_string(n), 2, "0")
 
+  # Placeholder while the Sonarr-download trigger isn't wired yet.
+  # Surfaces the abstraction we promised the user — "if it has aired,
+  # we can play it eventually" — without lying about the current
+  # capability.
+  defp not_yet_downloaded_message,
+    do: "Not in your library yet. Download trigger is coming soon."
+
+  # Short tiered air-date label for unaired-episode rows: stays
+  # consistent with the show detail Play button's waiting_phrase
+  # vocabulary so the user sees one language across the page.
+  defp air_date_label(%Date{} = date) do
+    today = Date.utc_today()
+    days = Date.diff(date, today)
+
+    cond do
+      days == 0 -> "Today"
+      days == 1 -> "Tomorrow"
+      days in 2..7 -> Calendar.strftime(date, "%A")
+      days in 8..14 -> "Next " <> Calendar.strftime(date, "%A")
+      true -> Calendar.strftime(date, "%b %-d, %Y")
+    end
+  end
+
+  defp air_date_label(_), do: nil
+
   ## Trailer helpers (duplicate of MoviesDetailLive — small enough to
   ## not justify a shared module yet)
 
   defp upper_right_present?(show) do
-    show.schedule != :none || trailer_embeddable?(show.trailer_url)
+    cond do
+      show.source == :library and show.schedule != :none -> true
+      trailer_embeddable?(show.trailer_url) -> true
+      true -> false
+    end
   end
 
   defp trailer_embeddable?(nil), do: false

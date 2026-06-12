@@ -47,6 +47,17 @@ config :aviary,
   jellyseerr_url: System.get_env("JELLYSEERR_URL"),
   jellyseerr_api_key: System.get_env("JELLYSEERR_API_KEY")
 
+# Database — prod lives on a mounted volume so it survives container
+# rebuilds. depot's aviary/configure.sh sets DATABASE_PATH; default is
+# a sensible fallback that lands in the container.
+if config_env() == :prod do
+  config :aviary, Aviary.Repo,
+    database: System.get_env("DATABASE_PATH") || "/app/data/aviary.db",
+    pool_size: String.to_integer(System.get_env("POOL_SIZE", "5")),
+    journal_mode: :wal,
+    cache_size: -64000
+end
+
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
