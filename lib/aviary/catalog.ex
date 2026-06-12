@@ -188,26 +188,74 @@ defmodule Aviary.Catalog do
       episode: item["IndexNumber"],
       runtime_minutes: runtime_minutes(item["RunTimeTicks"]),
       resume_seconds: resume_seconds(item["UserData"]),
-      last_played_at: parse_date(get_in(item, ["UserData", "LastPlayedDate"]))
+      last_played_at: parse_date(get_in(item, ["UserData", "LastPlayedDate"])),
+      played_percentage: played_percentage(item["UserData"])
     }
   end
 
-  # Sort fallback so episodes with no parsed LastPlayedDate sort last
-  # rather than crashing the DateTime comparator.
+  # Jellyfin clears PlayedPercentage on fully-completed items but keeps
+  # Played=true. Treat that as 100% rather than 0% so the "basically
+  # done, advance" logic catches it. Order matters: explicit pct wins
+  # when present (covers the rewatch-in-progress case where Played has
+  # latched from a prior completion but pct is now genuinely partial).
+  defp played_percentage(%{"PlayedPercentage" => p}) when is_number(p), do: p
+  defp played_percentage(%{"Played" => true}), do: 100.0
+  defp played_percentage(_), do: 0.0
+
+  # When the most-recently-watched episode is past this percentage we
+  # treat it as "basically done" and advance the continue/play button
+  # to the next episode in sequence. Tuned to catch the typical
+  # credits-came-on close (credits usually start in the last 10% of
+  # an episode).
+  @done_threshold 90.0
+
   @epoch ~U[1970-01-01 00:00:00Z]
 
-  # Pick the most recently watched in-progress episode. The earlier
-  # implementation used `Enum.find` which returned the lowest season+
-  # episode order, so an old leftover position on S1E3 would win over
-  # an actively-being-watched S1E4. Sorting by last_played_at fixes
-  # that — the home page surfaces the same episode by recency, and
-  # now the detail page agrees.
+  # Picks the show's continue/play target. Three cases:
+  #
+  #   1. Most-recently-watched episode is basically done (>= 90%):
+  #      advance to the NEXT episode in sequence so the button reads
+  #      "Continue S1 E6" rather than stranding the user at S1 E5's
+  #      credits. Falls through to nil (→ Jellyfin NextUp, then "Play
+  #      first episode") if there's nothing after it in the library.
+  #
+  #   2. Most-recently-watched episode is mid-watch with a saved
+  #      position: return it as the resume target.
+  #
+  #   3. Nothing in progress: nil, caller falls through.
   defp first_in_progress(episodes_by_season) do
-    episodes_by_season
-    |> Enum.flat_map(fn {_season, eps} -> eps end)
-    |> Enum.filter(& &1.resume_seconds)
+    flat = Enum.flat_map(episodes_by_season, fn {_season, eps} -> eps end)
+    recent = most_recently_played(flat)
+
+    cond do
+      recent && recent.played_percentage >= @done_threshold ->
+        # When no next exists (caught up — library lacks E+1) fall
+        # back to recent. Leaves a "Continue S1 E5"-style label that's
+        # at least correct rather than regressing to "Play S1 E1".
+        next_episode_after(flat, recent.id) || recent
+
+      recent && recent.resume_seconds ->
+        recent
+
+      true ->
+        nil
+    end
+  end
+
+  defp most_recently_played(eps) do
+    eps
+    |> Enum.filter(& &1.last_played_at)
     |> Enum.sort_by(&(&1.last_played_at || @epoch), {:desc, DateTime})
     |> List.first()
+  end
+
+  defp next_episode_after(flat_episodes, id) do
+    flat_episodes
+    |> Enum.drop_while(&(&1.id != id))
+    |> case do
+      [_current, next | _] -> next
+      _ -> nil
+    end
   end
 
   defp parse_date(nil), do: nil

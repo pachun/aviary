@@ -119,6 +119,34 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
+  Items the user has most recently watched (Played=true), sorted by
+  DatePlayed descending. Used by the home page to surface shows where
+  the user is caught up — Resume's lingering-ticks artifact would
+  otherwise point at the wrong episode, and Latest's "newly added"
+  ordering misses pure rewatch activity.
+  """
+  def recently_watched(auth) do
+    Req.get!(base_url() <> "/Items",
+      params: [
+        userId: auth.id,
+        IncludeItemTypes: "Episode,Movie",
+        Filters: "IsPlayed",
+        SortBy: "DatePlayed",
+        SortOrder: "Descending",
+        Recursive: true,
+        Limit: 30,
+        Fields: "UserData,SeriesId,SeriesPrimaryImageTag,DateCreated"
+      ],
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 15_000
+    ).body
+    |> case do
+      %{"Items" => items} when is_list(items) -> items
+      _ -> []
+    end
+  end
+
+  @doc """
   Recently-added episodes — surfaces new episodes that arrived (via
   Sonarr import) since the user last interacted with the show. Sort
   by DateCreated descending on Jellyfin's side.

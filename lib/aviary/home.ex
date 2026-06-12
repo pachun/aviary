@@ -18,8 +18,16 @@ defmodule Aviary.Home do
     resume = Jellyfin.resume_items(auth)
     next_up = Jellyfin.next_up_across_library(auth)
     latest = Jellyfin.latest_episodes(auth)
+    recent = Jellyfin.recently_watched(auth)
 
-    (resume ++ next_up ++ latest)
+    # Four sources, each catching a different case. Mid-watch shows
+    # come through Resume; caught-up shows come through Recent (the
+    # actually-most-recently-watched episode, which Resume misses
+    # because ticks=0 once Played auto-flips). NextUp + Latest cover
+    # shows with new episodes the user hasn't started. The sort_at
+    # dedupe picks the right tile per show without per-source
+    # branching.
+    (resume ++ next_up ++ latest ++ recent)
     |> Enum.map(&normalize/1)
     |> Enum.reject(&is_nil/1)
     |> dedupe_by_key()

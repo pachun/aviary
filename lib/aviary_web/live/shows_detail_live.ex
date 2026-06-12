@@ -285,6 +285,11 @@ defmodule AviaryWeb.ShowsDetailLive do
     |> Enum.find(&(&1.id == episode_id))
   end
 
+  # Mirror Catalog.@done_threshold — when the just-closed episode is
+  # past this fraction, we advance the live next_up to the following
+  # episode rather than leaving the button pointed at the credits.
+  @done_fraction 0.90
+
   defp update_episode_progress(show, episode_id, position) do
     updated_episodes_by_season =
       Enum.map(show.episodes_by_season, fn {season, eps} ->
@@ -294,18 +299,45 @@ defmodule AviaryWeb.ShowsDetailLive do
          end)}
       end)
 
-    # Always sync next_up to the currently-playing episode so the
-    # action_label reflects "what would happen if I press the button"
-    # — even when Jellyfin's NextUp endpoint returned :none at mount
-    # time (because UserData was empty / never watched).
+    flat = Enum.flat_map(updated_episodes_by_season, fn {_, eps} -> eps end)
+    closed_ep = Enum.find(flat, &(&1.id == episode_id))
+
+    # When the user closes a basically-done episode, advance to the
+    # next one so the action_label reflects "Continue S1 E6" rather
+    # than "Resume S1 E5" pointing at the credits they just closed.
+    # When mid-watch (< 90%), keep next_up on the just-closed episode
+    # for a resume target.
     next_up =
-      Enum.find_value(updated_episodes_by_season, fn {_season, eps} ->
-        Enum.find(eps, &(&1.id == episode_id))
-      end) || show.next_up
+      cond do
+        closed_ep && basically_done?(closed_ep, position) ->
+          next_after_in(flat, episode_id) || closed_ep
+
+        closed_ep ->
+          closed_ep
+
+        true ->
+          show.next_up
+      end
 
     show
     |> Map.put(:episodes_by_season, updated_episodes_by_season)
     |> Map.put(:next_up, next_up)
+  end
+
+  defp basically_done?(%{runtime_minutes: m}, position)
+       when is_integer(m) and m > 0 and is_number(position) do
+    position / (m * 60) >= @done_fraction
+  end
+
+  defp basically_done?(_, _), do: false
+
+  defp next_after_in(flat, id) do
+    flat
+    |> Enum.drop_while(&(&1.id != id))
+    |> case do
+      [_current, next | _] -> next
+      _ -> nil
+    end
   end
 
   defp pad_episode(nil), do: ""
