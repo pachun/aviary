@@ -56,13 +56,21 @@ defmodule AviaryWeb.ShowsDetailLive do
   end
 
   # When Sonarr has imported episodes that aviary still sees as
-  # tmdb-prefixed (Jellyfin hasn't scanned the new files yet), re-pull
-  # the show so the tmdb- ids get swapped for real Jellyfin ids as
-  # soon as Jellyfin catches up. Without this, the "Importing…" chip
-  # would sit until the user navigates away and back.
+  # tmdb-prefixed (Jellyfin hasn't scanned the new files yet),
+  # actively nudge Jellyfin to rescan the series folder right now
+  # and re-pull our view of the show so the tmdb- ids get swapped
+  # for real Jellyfin ids as soon as Jellyfin catches up. The
+  # Sonarr→Jellyfin "Connect" integration is supposed to fire this
+  # scan on import; in practice it's been unreliable here, so we
+  # do it from the client too. The nudge is per-series (cheap on
+  # Jellyfin's side) and gated on `source == :library` because
+  # discover shows don't yet have a Jellyfin series id to refresh.
+  # Cache invalidation forces the next list_episodes to bypass the
+  # SWR cache so it sees the freshly-scanned episode.
   defp refresh_show_if_imported(socket) do
     show = socket.assigns.show
     status = socket.assigns.sonarr_status
+    user = socket.assigns.current_user
 
     has_imported? =
       show.episodes_by_season
@@ -70,7 +78,13 @@ defmodule AviaryWeb.ShowsDetailLive do
       |> Enum.any?(fn ep -> episode_state(show, ep, status) == :imported end)
 
     if has_imported? do
-      case Aviary.Catalog.get_show(show.id, socket.assigns.current_user) do
+      if show.source == :library do
+        Aviary.Jellyfin.refresh_series(show.id, user)
+      end
+
+      Aviary.Cache.invalidate({:jellyfin_list_episodes, show.id, user.id})
+
+      case Aviary.Catalog.get_show(show.id, user) do
         {:ok, refreshed} -> assign(socket, :show, refreshed)
         _ -> socket
       end

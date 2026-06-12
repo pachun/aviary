@@ -360,6 +360,34 @@ defmodule Aviary.Jellyfin do
     end
   end
 
+  @doc """
+  Asks Jellyfin to rescan a series' folder right now. Used when
+  Sonarr has just imported a new episode file to disk but Jellyfin
+  hasn't run its scheduled scan yet — without the nudge, the
+  episode sits in our "Importing…" state for however long until
+  the scheduled scan fires (often hours). The POST is async on
+  Jellyfin's side (it queues the scan task) so it returns
+  immediately; the freshly-discovered episode shows up on the
+  next aviary poll cycle once Jellyfin's scan worker processes it
+  (typically a few seconds).
+
+  `Recursive=true` makes Jellyfin walk the series' folder for new
+  files; the other refresh-mode params are deliberately left at
+  Jellyfin's defaults so the scan picks up files without
+  re-running every metadata provider.
+  """
+  def refresh_series(series_id, auth) do
+    Req.post(base_url() <> "/Items/" <> series_id <> "/Refresh",
+      params: [Recursive: true],
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 5_000
+    )
+
+    :ok
+  rescue
+    _ -> :error
+  end
+
   ## Playback state
 
   @doc """
