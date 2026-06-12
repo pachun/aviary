@@ -79,12 +79,21 @@ defmodule AviaryWeb.LibraryLive do
 
   defp tab(assigns) do
     ~H"""
+    <%!--
+      Pill treatment makes the toggle read as actionable controls
+      instead of plain text. Mirrors the primary/secondary button
+      vocabulary on the show detail page: active is filled oxblood
+      (like the Play button), inactive is outlined ink/rule (like
+      the kicker). The user gets an immediate "these are clickable"
+      signal without breaking the editorial palette.
+    --%>
     <.link
       patch={@patch}
       class={[
-        "transition-colors duration-200",
-        @active && "text-oxblood underline decoration-oxblood decoration-1 underline-offset-[6px]",
-        !@active && "text-muted hover:text-ink"
+        "px-4 py-1.5 rounded-sm border font-medium transition-colors duration-200",
+        @active && "bg-oxblood text-paper border-oxblood",
+        !@active &&
+          "bg-transparent text-muted border-rule hover:text-ink hover:border-ink"
       ]}
     >
       {render_slot(@inner_block)}

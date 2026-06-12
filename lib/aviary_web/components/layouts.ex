@@ -158,12 +158,18 @@ defmodule AviaryWeb.Layouts do
 
   defp section_link(assigns) do
     ~H"""
+    <%!--
+      Inactive links also get an underline on hover (decoration-ink at
+      the same offset as the active underline). Without it the muted
+      text reads as flat copy — adding the appearing-underline gives
+      the "clickable" cue without compromising the editorial calm.
+    --%>
     <a
       href={@href}
       class={[
-        "transition-colors duration-200",
-        @active && "text-oxblood underline decoration-oxblood decoration-1 underline-offset-[6px]",
-        !@active && "text-muted hover:text-ink"
+        "transition-colors duration-200 underline-offset-[6px] decoration-1",
+        @active && "text-oxblood underline decoration-oxblood",
+        !@active && "text-muted hover:text-ink hover:underline hover:decoration-ink"
       ]}
     >
       {render_slot(@inner_block)}

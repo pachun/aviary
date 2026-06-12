@@ -179,11 +179,18 @@ defmodule AviaryWeb.ShowsDetailLive do
             </h2>
             <ul class="border-t border-rule">
               <li :for={ep <- episodes}>
+                <%!--
+                  Whole-row click stays — gives a wide hit target on
+                  mobile. The trailing Play chip is a visual signal
+                  that the row IS interactive; without it the row
+                  read as flat text-list copy. Filled oxblood matches
+                  the primary action vocabulary used elsewhere.
+                --%>
                 <button
                   type="button"
                   phx-click="play_episode"
                   phx-value-id={ep.id}
-                  class="w-full flex items-center gap-4 py-3 px-1 border-b border-rule cursor-pointer hover:bg-rule/30 transition-colors text-left"
+                  class="group w-full flex items-center gap-4 py-3 px-1 border-b border-rule cursor-pointer hover:bg-rule/30 transition-colors text-left"
                 >
                   <span class="font-sans text-muted text-sm tabular-nums w-8 shrink-0">
                     {pad_episode(ep.episode)}
@@ -194,6 +201,9 @@ defmodule AviaryWeb.ShowsDetailLive do
                     class="font-sans text-muted text-xs tabular-nums shrink-0"
                   >
                     {ep.runtime_minutes}m
+                  </span>
+                  <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-paper px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
+                    ▶ Play
                   </span>
                 </button>
               </li>

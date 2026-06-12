@@ -52,28 +52,38 @@ defmodule AviaryWeb.HomeLive do
       nav_visibility={@nav_visibility}
     >
       <%!--
-        Continue Watching only renders when populated. Empty section
-        with a "nothing in progress" message was noise; same pattern
-        as Upcoming below — section presence itself is the signal.
+        Wrapper handles top padding + between-section spacing. pt-2
+        matches Discover's `first:pt-2` so the first section header
+        on either tab lands at the same y-coordinate — switching
+        between Home and Discover should feel like only the section
+        label changed, not like the page reflowed. space-y-12 applies
+        via :not(:first-child), so a hidden first section doesn't
+        leave a phantom gap.
       --%>
-      <section :if={@items != []} class="pt-4">
-        <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
-          Continue Watching
-        </h2>
-        <Marquee.row items={@items} from="home" key="home:continue-watching" dismissible>
-          <:empty></:empty>
-        </Marquee.row>
-      </section>
+      <div class="pt-2 space-y-12">
+        <%!--
+          Continue Watching only renders when populated. Empty section
+          with a "nothing in progress" message was noise; same pattern
+          as Upcoming below — section presence itself is the signal.
+        --%>
+        <section :if={@items != []}>
+          <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
+            Continue Watching
+          </h2>
+          <Marquee.row items={@items} from="home" key="home:continue-watching" dismissible>
+            <:empty></:empty>
+          </Marquee.row>
+        </section>
 
-      <%!--
-        Upcoming releases. Hidden entirely when nothing is dropping in
-        the window — the section appearing/disappearing communicates
-        "your week is empty / your week has drops" by its presence.
-        Editorial list, not a grid: most users have 2–4 active shows
-        so a 7×2 calendar would be mostly empty cells; the list
-        contracts and expands with what's actually scheduled.
-      --%>
-      <section :if={@upcoming != []} class="mt-12">
+        <%!--
+          Upcoming releases. Hidden entirely when nothing is dropping in
+          the window — the section appearing/disappearing communicates
+          "your week is empty / your week has drops" by its presence.
+          Editorial list, not a grid: most users have 2–4 active shows
+          so a 7×2 calendar would be mostly empty cells; the list
+          contracts and expands with what's actually scheduled.
+        --%>
+        <section :if={@upcoming != []}>
         <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
           Upcoming
         </h2>
@@ -101,7 +111,8 @@ defmodule AviaryWeb.HomeLive do
             </.link>
           </li>
         </ul>
-      </section>
+        </section>
+      </div>
     </Layouts.app>
     """
   end
