@@ -61,7 +61,17 @@ defmodule Aviary.Catalog do
       {:ok, item} ->
         episodes = Aviary.Jellyfin.list_episodes(id, auth)
 
-        episodes_by_season = group_episodes(episodes)
+        jellyfin_by_season = group_episodes(episodes)
+
+        # Augment with TMDB-known episodes the library doesn't yet have
+        # (future air dates, unfetched gaps). Without this the episode
+        # list ended abruptly at the last downloaded episode and the
+        # user couldn't see what was coming. After augment, library
+        # shows render the same full timeline as discover shows; the
+        # only difference is which entries carry Jellyfin ids vs.
+        # `tmdb-` ids — and that's the same routing the action chips
+        # already understand.
+        episodes_by_season = augment_with_tmdb(jellyfin_by_season, tmdb_id(item))
 
         # Prefer the in-progress episode (one with a saved resume
         # position) over Jellyfin's NextUp response. NextUp's logic
@@ -138,6 +148,40 @@ defmodule Aviary.Catalog do
     else
       _ -> :error
     end
+  end
+
+  defp augment_with_tmdb(jellyfin_by_season, nil), do: jellyfin_by_season
+
+  defp augment_with_tmdb(jellyfin_by_season, tmdb_id) do
+    have =
+      MapSet.new(
+        Enum.flat_map(jellyfin_by_season, fn {_, eps} ->
+          Enum.map(eps, fn ep -> {ep.season, ep.episode} end)
+        end)
+      )
+
+    case Aviary.Jellyseerr.get_tv(tmdb_id) do
+      {:ok, body} ->
+        seasons = (body["seasons"] || []) |> Enum.filter(&((&1["seasonNumber"] || 0) > 0))
+
+        missing =
+          tmdb_id
+          |> fetch_discover_episodes(seasons)
+          |> Enum.flat_map(fn {_season, eps} -> eps end)
+          |> Enum.reject(fn ep -> MapSet.member?(have, {ep.season, ep.episode}) end)
+
+        merge_episode_lists(jellyfin_by_season, missing)
+
+      _ ->
+        jellyfin_by_season
+    end
+  end
+
+  defp merge_episode_lists(jellyfin_by_season, additional) do
+    (Enum.flat_map(jellyfin_by_season, fn {_, eps} -> eps end) ++ additional)
+    |> Enum.group_by(& &1.season)
+    |> Enum.sort_by(fn {s, _} -> s end)
+    |> Enum.map(fn {s, eps} -> {s, Enum.sort_by(eps, &(&1.episode || 0))} end)
   end
 
   # Fetches all seasons in parallel and builds the same shape library

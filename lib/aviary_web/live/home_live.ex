@@ -131,8 +131,8 @@ defmodule AviaryWeb.HomeLive do
     cond do
       days == 0 -> "Later today"
       days == 1 -> "Tomorrow"
-      days in 2..7 -> Calendar.strftime(air_date, "%A")
-      days in 8..14 -> "Next " <> Calendar.strftime(air_date, "%A")
+      days in 2..6 -> "This " <> Calendar.strftime(air_date, "%A")
+      days in 7..13 -> "Next " <> Calendar.strftime(air_date, "%A")
       true -> Calendar.strftime(air_date, "%B %-d")
     end
   end

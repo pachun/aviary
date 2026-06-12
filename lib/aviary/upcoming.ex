@@ -1,46 +1,33 @@
 defmodule Aviary.Upcoming do
   @moduledoc """
-  "What of mine is dropping in the next two weeks." For each show the
-  user has touched recently, looks up Jellyseerr's nextEpisodeToAir
-  and surfaces it if it falls within the window. Shows the user
-  hasn't started, shows between seasons with no announced date, and
-  ended shows all naturally fall out — Jellyseerr's nextEpisodeToAir
-  is nil for those.
+  "What of mine is dropping in the next two weeks." For each show in
+  the user's library, derives the next upcoming episode directly from
+  TMDB's per-season episode list (via Jellyseerr) — not from the
+  `nextEpisodeToAir` convenience pointer, which lags TMDB's actual
+  per-episode air dates by hours to days.
 
-  Cost: one Jellyfin /Items call per unique recently-watched series
-  (to extract TMDB id from ProviderIds) plus one Jellyseerr call per
-  series. Parallelized via Task.async_stream so wall-clock is
-  bounded by the slowest single show, not the sum.
+  Surfaces an entry whenever the next-not-already-downloaded episode
+  has an air date in the next two weeks, independent of whether the
+  user has caught up on the rest of the show. The "next episode
+  coming" is series-level information; the user's watch state is
+  orthogonal.
   """
 
   alias Aviary.Jellyseerr
 
-  # Two weeks matches the show-detail calendar widget's window. Most
-  # broadcast shows drop weekly, so 14 days is a full picture of
-  # what's coming — anything further out is in the same "later" tier
-  # mentally and doesn't need surfacing on home yet.
   @window_days 14
 
   @doc """
   Returns the user's upcoming releases sorted by air date ascending.
-
-  Each release is `%{series_id, series_name, season, episode,
-  air_date, kind, days_away}` where `kind` is `:continuation` or
-  `:new_season`.
   """
   def releases(auth) do
     today = Date.utc_today()
 
-    # Library entries are TMDB-keyed by definition, so we sidestep the
-    # Jellyfin series-id lookup the previous implementation needed.
-    # Each lookup is one Jellyseerr call + (when the show is also in
-    # the user's Jellyfin library) one /Items call for the canonical
-    # display name + a stable click target.
     auth.id
     |> Aviary.Library.list_tmdb_ids()
     |> Task.async_stream(&fetch_release(&1, auth, today),
       max_concurrency: 8,
-      timeout: 8_000,
+      timeout: 12_000,
       on_timeout: :kill_task
     )
     |> Enum.map(fn
@@ -52,57 +39,113 @@ defmodule Aviary.Upcoming do
   end
 
   defp fetch_release(tmdb_id, auth, today) do
-    with schedule when is_map(schedule) <- Jellyseerr.get_tv_schedule(tmdb_id),
-         days when days in 0..@window_days <- Date.diff(schedule.air_date, today) do
-      jellyfin = jellyfin_match(tmdb_id, auth)
+    with {:ok, body} <- Jellyseerr.get_tv(tmdb_id),
+         seasons when is_list(seasons) <- body["seasons"] do
+      jellyfin = jellyfin_match_with_episodes(tmdb_id, auth)
 
-      # Upcoming's job is "what's coming that I don't have yet." If
-      # the scheduled episode already imported (Sonarr grabbed it
-      # before Jellyseerr / TMDB updated nextEpisodeToAir to the
-      # following episode), drop this entry — it's no longer
-      # upcoming. The next refresh will surface the episode after
-      # whenever the metadata catches up.
-      if jellyfin && episode_in_library?(jellyfin.id, schedule.season, schedule.episode, auth) do
-        nil
-      else
-        %{
-          series_id: (jellyfin && jellyfin.id) || tmdb_id,
-          series_name: (jellyfin && jellyfin.name) || schedule[:series_name] || "Unknown",
-          season: schedule.season,
-          episode: schedule.episode,
-          air_date: schedule.air_date,
-          kind: schedule.kind,
-          days_away: days
-        }
+      # Two-season window: the current/latest season (most likely
+      # source of mid-season upcoming episodes) plus the next-announced
+      # season (catches new-season premieres). For shows with only one
+      # season in TMDB's record, Enum.take simply trims to whatever's
+      # there.
+      candidates =
+        seasons
+        |> Enum.filter(&((&1["seasonNumber"] || 0) > 0))
+        |> Enum.sort_by(& &1["seasonNumber"], :desc)
+        |> Enum.take(2)
+
+      case find_next_upcoming(tmdb_id, candidates, jellyfin, today) do
+        nil -> nil
+        episode -> build_release(episode, jellyfin, body["name"], today)
       end
     else
       _ -> nil
     end
   end
 
-  defp episode_in_library?(series_id, season, episode, auth) do
-    series_id
-    |> Aviary.Jellyfin.list_episodes(auth)
-    |> Enum.any?(fn ep ->
-      ep["ParentIndexNumber"] == season and ep["IndexNumber"] == episode
+  # Walks candidate seasons (most recent first), returning the first
+  # episode whose air date sits in the window AND isn't already
+  # downloaded. find_value short-circuits the moment any season
+  # yields a hit — most shows resolve in one Jellyseerr call.
+  defp find_next_upcoming(tmdb_id, seasons, jellyfin, today) do
+    Enum.find_value(seasons, fn season ->
+      case Jellyseerr.get_tv_season(tmdb_id, season["seasonNumber"]) do
+        {:ok, season_data} ->
+          find_upcoming_in_episodes(season_data["episodes"] || [], jellyfin, today)
+
+        _ ->
+          nil
+      end
     end)
   end
 
-  # Returns the user's Jellyfin series record for this TMDB id when
-  # the show is in the library, or nil. We look it up via the same
-  # batch endpoint as Home so this is one round-trip; if it's not in
-  # the library, we still surface the release using Jellyseerr's
-  # series name as the display.
-  defp jellyfin_match(tmdb_id, auth) do
+  defp find_upcoming_in_episodes(episodes, jellyfin, today) do
+    episodes
+    |> Enum.map(&Map.put(&1, :parsed_date, parse_iso_date(&1["airDate"])))
+    |> Enum.filter(&in_window?(&1, today))
+    |> Enum.sort_by(& &1.parsed_date, Date)
+    |> Enum.find(&(not episode_in_library?(jellyfin, &1["seasonNumber"], &1["episodeNumber"])))
+  end
+
+  defp in_window?(%{parsed_date: nil}, _today), do: false
+
+  defp in_window?(%{parsed_date: date}, today) do
+    days = Date.diff(date, today)
+    days >= 0 and days <= @window_days
+  end
+
+  defp build_release(episode, jellyfin, name_fallback, today) do
+    %{
+      # Prefer the Jellyfin id when the show's in the library so the
+      # link lands on the existing show detail page; otherwise the
+      # TMDB id routes through the discover-show loader.
+      series_id: (jellyfin && jellyfin.id) || to_string(episode["showId"]),
+      series_name: (jellyfin && jellyfin.name) || name_fallback || "Unknown",
+      season: episode["seasonNumber"],
+      episode: episode["episodeNumber"],
+      air_date: episode.parsed_date,
+      # episodeNumber == 1 ⇒ flag as new season for the row's
+      # "NEW SEASON" annotation. Simple heuristic; misclassifies brand-
+      # new-series premieres as "new season" rather than "series
+      # premiere," which is close enough.
+      kind: if(episode["episodeNumber"] == 1, do: :new_season, else: :continuation),
+      days_away: Date.diff(episode.parsed_date, today)
+    }
+  end
+
+  # Fetches the series record AND its episodes in one call per show.
+  # Caching the episode list this way means we don't refetch on every
+  # in-library check.
+  defp jellyfin_match_with_episodes(tmdb_id, auth) do
     case Aviary.Jellyfin.list_shows(auth) do
       shows when is_list(shows) ->
         case Enum.find(shows, &(get_in(&1, ["ProviderIds", "Tmdb"]) == tmdb_id)) do
-          %{"Id" => id, "Name" => name} -> %{id: id, name: name}
-          _ -> nil
+          %{"Id" => id, "Name" => name} ->
+            %{id: id, name: name, episodes: Aviary.Jellyfin.list_episodes(id, auth)}
+
+          _ ->
+            nil
         end
 
       _ ->
         nil
     end
   end
+
+  defp episode_in_library?(nil, _season, _episode), do: false
+
+  defp episode_in_library?(%{episodes: episodes}, season, episode_num) do
+    Enum.any?(episodes, fn ep ->
+      ep["ParentIndexNumber"] == season and ep["IndexNumber"] == episode_num
+    end)
+  end
+
+  defp parse_iso_date(s) when is_binary(s) and s != "" do
+    case Date.from_iso8601(s) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+
+  defp parse_iso_date(_), do: nil
 end

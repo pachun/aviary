@@ -69,52 +69,51 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp kicker("library_movies"), do: %{label: "Library", path: "/library?type=movies"}
   defp kicker(_), do: %{label: "Library", path: "/library?type=shows"}
 
-  # Top action button. For library shows it just plays — the file's
-  # already there, monitoring was set whenever the user originally
-  # added the show. For discover shows it triggers Sonarr at the
-  # whole-show scope (add series, monitor everything, search) and
-  # commits the user's library entry. Stage 5 will replace the flash
-  # with the actual download-progress UX.
+  # Three handlers, one routing rule: an episode id with the `tmdb-`
+  # prefix means "not in Jellyfin's library yet" and routes to
+  # Sonarr; anything else is a Jellyfin id and routes to playback.
+  # Works uniformly across discover shows (everything `tmdb-`) and
+  # library shows (mix of Jellyfin ids and `tmdb-` ids for episodes
+  # not yet downloaded).
+
   def handle_event("play", _, socket) do
-    case socket.assigns.show.source do
-      :discover -> trigger_sonarr(socket, :show, nil, nil)
-      :library -> {:noreply, start_playing(socket, pick_continue_episode(socket.assigns.show))}
+    case pick_continue_episode(socket.assigns.show) do
+      nil ->
+        trigger_sonarr(socket, :show, nil, nil)
+
+      %{id: "tmdb-" <> _} ->
+        trigger_sonarr(socket, :show, nil, nil)
+
+      ep ->
+        {:noreply, start_playing(socket, ep)}
     end
   end
 
-  # Season-scope button. Library shows: play the first episode of
-  # that season directly. Discover: kick Sonarr to grab that season
-  # and monitor forward (this season + future).
   def handle_event("watch_season", %{"season" => season_str}, socket) do
     season = String.to_integer(season_str)
 
-    case socket.assigns.show.source do
-      :discover ->
+    case first_episode_of_season(socket.assigns.show, season) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "No episodes in this season.")}
+
+      %{id: "tmdb-" <> _} ->
         trigger_sonarr(socket, :season, season, nil)
 
-      :library ->
-        case first_episode_of_season(socket.assigns.show, season) do
-          nil -> {:noreply, put_flash(socket, :error, "No episodes in this season.")}
-          ep -> {:noreply, start_playing(socket, ep)}
-        end
+      ep ->
+        {:noreply, start_playing(socket, ep)}
     end
   end
 
-  # Episode-scope chip. Library: play it. Discover: try-this-episode —
-  # grab just this one episode without committing to the rest.
   def handle_event("play_episode", %{"id" => episode_id}, socket) do
-    case socket.assigns.show.source do
-      :discover ->
-        case find_episode(socket.assigns.show, episode_id) do
-          %{season: s, episode: e} -> trigger_sonarr(socket, :episode, s, e)
-          _ -> {:noreply, socket}
-        end
+    case find_episode(socket.assigns.show, episode_id) do
+      nil ->
+        {:noreply, socket}
 
-      :library ->
-        case find_episode(socket.assigns.show, episode_id) do
-          nil -> {:noreply, socket}
-          episode -> {:noreply, start_playing(socket, episode)}
-        end
+      %{id: "tmdb-" <> _} = ep ->
+        trigger_sonarr(socket, :episode, ep.season, ep.episode)
+
+      ep ->
+        {:noreply, start_playing(socket, ep)}
     end
   end
 
@@ -469,7 +468,19 @@ defmodule AviaryWeb.ShowsDetailLive do
   # finished. The button is disabled in this state via
   # caught_up?/1; the calendar widget on the same page tells them
   # when the next episode airs.
-  defp action_label(%{source: :discover}), do: "Watch S1 E1"
+  defp action_label(%{source: :discover}), do: "Watch"
+
+  # Library show whose next_up is a TMDB-only episode (not yet
+  # downloaded — could be unaired or aired-but-missing). Two flavors:
+  # unaired carries an air date and reads as a waiting state; aired-
+  # but-missing reads as a Watch trigger.
+  defp action_label(%{next_up: %{id: "tmdb-" <> _, season: s, episode: e, aired: false, air_date: %Date{} = date}}) do
+    "S#{s} E#{e} " <> waiting_phrase(date)
+  end
+
+  defp action_label(%{next_up: %{id: "tmdb-" <> _, season: s, episode: e}}) do
+    "Watch S#{s} E#{e}"
+  end
   #
   # When we know the next episode's air date (Jellyseerr returned a
   # schedule), surface it on the button itself so the user sees
@@ -503,12 +514,15 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp caught_up?(_), do: false
 
   # Button is inert when:
-  #   - the library has no episodes to play AND it's a library show
-  #     (discover shows have TMDB episode lists even when nothing's
-  #     downloaded yet)
-  #   - the user is caught up on everything available in their library
-  # Discover shows are NOT disabled — clicking them triggers Sonarr.
+  #   - the show has no episodes at all (rare; would need a Jellyseerr
+  #     miss for a discover show)
+  #   - the next-up episode hasn't aired yet (you can't Watch what
+  #     hasn't dropped)
+  #   - the user is genuinely caught up — no future episode known
+  # Discover shows are NOT disabled even when caught_up never fired —
+  # clicking them triggers Sonarr at the show scope.
   defp action_disabled?(%{source: :discover}), do: false
+  defp action_disabled?(%{next_up: %{aired: false}}), do: true
   defp action_disabled?(show), do: not has_episodes?(show) or caught_up?(show)
 
   # Short, tiered phrase for the caught-up button: "later today" /
@@ -521,8 +535,8 @@ defmodule AviaryWeb.ShowsDetailLive do
     cond do
       days == 0 -> "later today"
       days == 1 -> "tomorrow"
-      days in 2..7 -> Calendar.strftime(air_date, "%A")
-      days in 8..14 -> "next " <> Calendar.strftime(air_date, "%A")
+      days in 2..6 -> "this " <> Calendar.strftime(air_date, "%A")
+      days in 7..13 -> "next " <> Calendar.strftime(air_date, "%A")
       true -> Calendar.strftime(air_date, "%B %-d")
     end
   end
@@ -767,8 +781,8 @@ defmodule AviaryWeb.ShowsDetailLive do
     cond do
       days == 0 -> "Today"
       days == 1 -> "Tomorrow"
-      days in 2..7 -> Calendar.strftime(date, "%A")
-      days in 8..14 -> "Next " <> Calendar.strftime(date, "%A")
+      days in 2..6 -> "This " <> Calendar.strftime(date, "%A")
+      days in 7..13 -> "Next " <> Calendar.strftime(date, "%A")
       true -> Calendar.strftime(date, "%b %-d, %Y")
     end
   end

@@ -170,19 +170,22 @@ defmodule AviaryWeb.Components.ReleaseCalendar do
     days = Date.diff(air_date, today)
     day_name = Calendar.strftime(air_date, "%A")
 
+    # "this [day]" = the upcoming day with that name (2–6 days out).
+    # "next [day]" = the one after the upcoming one (7–13 days out).
+    # Matches natural English usage, not Sunday-week boundaries.
     cond do
       days == 0 -> "Next episode later today (#{day_name})"
       days == 1 -> "Next episode tomorrow (#{day_name})"
-      days <= 14 -> "Next episode #{relative_day(air_date, today)}"
+      days in 2..6 -> "Next episode this #{day_name}"
+      days in 7..13 -> "Next episode next #{day_name}"
       true -> "Next episode #{Calendar.strftime(air_date, "%B %-d")}"
     end
   end
 
-  defp relative_day(date, today) do
-    name = Calendar.strftime(date, "%A")
-    if same_sunday_week?(date, today), do: "this #{name}", else: "next #{name}"
-  end
-
+  # Sunday-week semantics — only used by the calendar grid's layout
+  # decision (one row vs. two), where it correctly represents whether
+  # the target lands inside this rendered grid row. Not used for the
+  # caption phrase, which follows natural English day-counting.
   defp same_sunday_week?(a, b) do
     Date.beginning_of_week(a, :sunday) == Date.beginning_of_week(b, :sunday)
   end
