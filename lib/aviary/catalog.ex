@@ -112,12 +112,15 @@ defmodule Aviary.Catalog do
               :none -> nil
             end
 
-        # Jellyseerr knows when the next episode is scheduled to air
-        # (TMDB sync). We use this on the detail page to swap the
-        # trailer for a release calendar when the show is in active
-        # rotation. Returns :none if no upcoming episode is known —
-        # in which case the trailer treatment takes over.
-        schedule = Aviary.Jellyseerr.get_tv_schedule(tmdb_id(item))
+        # Derive the next-episode schedule from episodes_by_season we
+        # just assembled. TMDB's nextEpisodeToAir convenience pointer
+        # lags its own per-episode airDate data by hours after each
+        # drop — long enough that the calendar would surface an
+        # episode the user already has in their library. The local
+        # derivation is authoritative: skip anything already
+        # downloaded, take the first remaining unaired or today-airing
+        # episode.
+        schedule = derive_schedule(episodes_by_season, Date.utc_today())
 
         show =
           item
@@ -166,7 +169,7 @@ defmodule Aviary.Catalog do
         next_up: nil,
         season_count: length(seasons),
         rating: Aviary.RottenTomatoes.fetch(body["name"], :tv),
-        schedule: Aviary.Jellyseerr.get_tv_schedule(tmdb_id),
+        schedule: derive_schedule(episodes_by_season, Date.utc_today()),
         poster_url: tmdb_poster_url(body["posterPath"])
       }
 
@@ -239,6 +242,36 @@ defmodule Aviary.Catalog do
     end)
     |> Enum.reject(&is_nil/1)
     |> Enum.sort_by(fn {n, _} -> n end)
+  end
+
+  # Walks episodes_by_season for the next still-to-come episode the
+  # library doesn't already have. tmdb-prefixed ids are the "not in
+  # Jellyfin yet" sentinel — anything with a real Jellyfin id is
+  # already downloaded and shouldn't be "next." episode==1 ⇒ new
+  # season (mirrors Upcoming's heuristic).
+  defp derive_schedule(episodes_by_season, today) do
+    next =
+      episodes_by_season
+      |> Enum.flat_map(fn {_, eps} -> eps end)
+      |> Enum.filter(fn ep ->
+        ep.air_date && Date.compare(ep.air_date, today) != :lt &&
+          String.starts_with?(to_string(ep.id), "tmdb-")
+      end)
+      |> Enum.sort_by(& &1.air_date, Date)
+      |> List.first()
+
+    case next do
+      nil ->
+        :none
+
+      ep ->
+        %{
+          air_date: ep.air_date,
+          season: ep.season,
+          episode: ep.episode,
+          kind: if(ep.episode == 1, do: :new_season, else: :continuation)
+        }
+    end
   end
 
   defp tmdb_to_episode(ep, today) do
