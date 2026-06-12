@@ -8,20 +8,28 @@ defmodule Aviary.Auth do
   auth context.
   """
 
-  @client_auth ~s|MediaBrowser Client="Aviary", Device="Aviary Web", DeviceId="aviary-web", Version="0.1.0"|
-
   @doc """
   Authenticates against Jellyfin with username + password. On success
   returns `{:ok, %{id, username, token}}`; on failure returns
   `{:error, reason}`.
+
+  Uses a freshly-generated DeviceId per login so concurrent sessions
+  (different browsers, mobile + desktop, etc.) don't collide in
+  Jellyfin's session tracking — a static DeviceId would cause Jellyfin
+  to invalidate the older session's token whenever a new one logs in,
+  silently logging the older session out.
   """
   def log_in(username, password) do
     url = base_url() <> "/Users/AuthenticateByName"
+    device_id = "aviary-web-" <> (:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower))
+
+    client_auth =
+      ~s|MediaBrowser Client="Aviary", Device="Aviary Web", DeviceId="#{device_id}", Version="0.1.0"|
 
     case Req.post(url,
            headers: [
              {"content-type", "application/json"},
-             {"x-emby-authorization", @client_auth}
+             {"x-emby-authorization", client_auth}
            ],
            json: %{"Username" => username, "Pw" => password},
            receive_timeout: 10_000
@@ -50,10 +58,14 @@ defmodule Aviary.Auth do
   def log_out(%{token: token}) when is_binary(token) do
     Aviary.TokenCache.invalidate(token)
 
+    # DeviceId is irrelevant on logout — Jellyfin invalidates by
+    # token, not by session-key. Static placeholder so the header
+    # remains well-formed.
     Req.post(base_url() <> "/Sessions/Logout",
       headers: [
         {"x-emby-token", token},
-        {"x-emby-authorization", @client_auth}
+        {"x-emby-authorization",
+         ~s|MediaBrowser Client="Aviary", Device="Aviary Web", DeviceId="aviary-web", Version="0.1.0"|}
       ],
       receive_timeout: 5_000
     )
@@ -74,19 +86,37 @@ defmodule Aviary.Auth do
   fail closed.
   """
   def token_valid?(token) when is_binary(token) do
-    # Cache layer first — without it, a single home page load triggers
-    # ~6 probes (page mount + each marquee thumbnail proxy), discover
-    # triggers ~10+. Even a small 401 rate against Jellyfin's
-    # token endpoint then drops sessions constantly. With the cache,
-    # at most one probe per token per minute regardless of how many
-    # parallel requests are in flight.
+    # Cache + probe-lock layers. The cache cuts at most one probe per
+    # token per minute for SEQUENTIAL requests. The probe-lock prevents
+    # concurrent requests (page mount + all thumbnail proxies firing
+    # at once) from ALL probing in parallel on a cold cache, which
+    # would overwhelm Jellyfin and produce spurious 401s that drop
+    # sessions. Only one probe in flight at a time; siblings trust the
+    # in-flight prober and return true.
     case Aviary.TokenCache.status(token) do
       :cached_valid -> true
-      :not_cached -> probe_and_cache(token)
+      :probing -> true
+      :not_cached -> probe_with_lock(token)
     end
   end
 
   def token_valid?(_), do: false
+
+  defp probe_with_lock(token) do
+    case Aviary.TokenCache.take_probe_lock(token) do
+      :locked ->
+        # Another caller is mid-probe. Trust them; the cache will
+        # be filled momentarily. Fail-open.
+        true
+
+      :ok ->
+        try do
+          probe_and_cache(token)
+        after
+          Aviary.TokenCache.release_probe_lock(token)
+        end
+    end
+  end
 
   defp probe_and_cache(token) do
     # Only invalidate on an explicit "Jellyfin rejected this token" —

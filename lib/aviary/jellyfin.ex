@@ -311,6 +311,51 @@ defmodule Aviary.Jellyfin do
   ## Video stream
 
   @doc """
+  Returns the item's subtitle tracks as `[%{index, lang, label, default}]`,
+  empty list when there are none or on error. Each entry corresponds to
+  a HTML5 `<track>` element the video player can offer via its native
+  CC menu.
+  """
+  def subtitle_streams(item_id, auth) do
+    case Req.get(base_url() <> "/Items",
+           params: [Ids: item_id, userId: auth.id, Fields: "MediaStreams"],
+           headers: [{"x-emby-token", auth.token}],
+           receive_timeout: 5_000,
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: %{"Items" => [%{"MediaStreams" => streams} | _]}}}
+      when is_list(streams) ->
+        streams
+        |> Enum.filter(&(&1["Type"] == "Subtitle"))
+        |> Enum.map(&to_subtitle/1)
+
+      _ ->
+        []
+    end
+  rescue
+    _ -> []
+  end
+
+  defp to_subtitle(stream) do
+    %{
+      index: stream["Index"],
+      lang: stream["Language"] || "und",
+      label: stream["DisplayTitle"] || stream["Title"] || "Subtitle",
+      default: stream["IsDefault"] == true
+    }
+  end
+
+  @doc """
+  Browser-loadable URL for one subtitle track. Uses the public Jellyfin
+  URL (same as HLS) since the video element / browser fetches this
+  directly, and `api_key=` in the query string because `<track>` can't
+  carry auth headers.
+  """
+  def subtitle_url(item_id, stream_index, auth) do
+    "#{public_url()}/Videos/#{item_id}/#{item_id}/Subtitles/#{stream_index}/0/Stream.vtt?api_key=#{auth.token}"
+  end
+
+  @doc """
   Returns an HLS master playlist URL the browser can open directly.
   Built against the public-facing Jellyfin URL (Tailscale-served HTTPS
   in deployed environments) and embeds the user's auth token so the

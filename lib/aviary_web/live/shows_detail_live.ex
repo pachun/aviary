@@ -14,6 +14,7 @@ defmodule AviaryWeb.ShowsDetailLive do
            show: show,
            playing_item: nil,
            playing_segments: nil,
+           playing_subtitles: [],
            kicker: kicker(params["from"])
          )}
 
@@ -46,7 +47,8 @@ defmodule AviaryWeb.ShowsDetailLive do
     {:noreply,
      socket
      |> assign(:playing_item, nil)
-     |> assign(:playing_segments, nil)}
+     |> assign(:playing_segments, nil)
+     |> assign(:playing_subtitles, [])}
   end
 
   def handle_event("report_progress", %{"position" => position}, socket) do
@@ -206,6 +208,7 @@ defmodule AviaryWeb.ShowsDetailLive do
         current_user={@current_user}
         title={@show.title}
         segments={@playing_segments}
+        subtitles={@playing_subtitles}
       />
     </Layouts.app>
     """
@@ -272,9 +275,12 @@ defmodule AviaryWeb.ShowsDetailLive do
   # the very first episode. If there's nothing at all, the button is
   # disabled so this never gets called.
   defp start_playing(socket, item) do
+    user = socket.assigns.current_user
+
     socket
     |> assign(:playing_item, item)
-    |> assign(:playing_segments, Aviary.Jellyfin.segments(item.id, socket.assigns.current_user))
+    |> assign(:playing_segments, Aviary.Jellyfin.segments(item.id, user))
+    |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(item.id, user))
   end
 
   defp pick_continue_episode(show) do

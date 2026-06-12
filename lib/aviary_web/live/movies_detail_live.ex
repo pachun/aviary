@@ -13,6 +13,7 @@ defmodule AviaryWeb.MoviesDetailLive do
            movie: movie,
            playing_item: nil,
            playing_segments: nil,
+           playing_subtitles: [],
            kicker: kicker(params["from"])
          )}
 
@@ -38,19 +39,21 @@ defmodule AviaryWeb.MoviesDetailLive do
 
   def handle_event("play", _, socket) do
     movie = socket.assigns.movie
-    segments = Aviary.Jellyfin.segments(movie.id, socket.assigns.current_user)
+    user = socket.assigns.current_user
 
     {:noreply,
      socket
      |> assign(:playing_item, movie)
-     |> assign(:playing_segments, segments)}
+     |> assign(:playing_segments, Aviary.Jellyfin.segments(movie.id, user))
+     |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(movie.id, user))}
   end
 
   def handle_event("close_player", _, socket) do
     {:noreply,
      socket
      |> assign(:playing_item, nil)
-     |> assign(:playing_segments, nil)}
+     |> assign(:playing_segments, nil)
+     |> assign(:playing_subtitles, [])}
   end
 
   # Hook reports every 10s while playing plus on every pause. Convert
@@ -194,6 +197,7 @@ defmodule AviaryWeb.MoviesDetailLive do
         current_user={@current_user}
         title={@movie.title}
         segments={@playing_segments}
+        subtitles={@playing_subtitles}
       />
     </Layouts.app>
     """

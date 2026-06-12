@@ -16,12 +16,25 @@ defmodule AviaryWeb.Components.VideoPlayer do
     doc:
       "Intro Skipper plugin segments, e.g. %{introduction: %{start: 5.0, end: 87.0}}. Nil when plugin not installed or no data for this item."
 
+  attr :subtitles, :list,
+    default: [],
+    doc:
+      "Subtitle tracks `[%{index, lang, label, default}]` — rendered as <track> elements inside <video>; native CC menu picks them up."
+
   def overlay(assigns) do
     intro = get_in(assigns, [:segments, :introduction])
     assigns = assign(assigns, :intro, intro)
 
     ~H"""
+    <%!--
+      Stable container id so the Fullscreen button can target it
+      via getElementById. We fullscreen the container rather than
+      the video element so the skip controls + close button stay
+      visible — fullscreening just the video would hide every other
+      DOM element on the page.
+    --%>
     <div
+      id={"player-overlay-#{@item.id}"}
       class="fixed inset-0 z-50 bg-black flex items-center justify-center"
       phx-window-keydown="close_player"
       phx-key="Escape"
@@ -34,11 +47,21 @@ defmodule AviaryWeb.Components.VideoPlayer do
         data-intro-start={@intro && @intro.start}
         data-intro-end={@intro && @intro.end}
         controls
+        controlslist="nofullscreen"
         autoplay
         playsinline
+        crossorigin="anonymous"
         x-webkit-airplay="allow"
         class="w-full h-full max-w-screen max-h-screen object-contain"
       >
+        <track
+          :for={s <- @subtitles}
+          src={Aviary.Jellyfin.subtitle_url(@item.id, s.index, @current_user)}
+          kind="subtitles"
+          srclang={s.lang}
+          label={s.label}
+          default={s.default}
+        />
       </video>
 
       <%!--
@@ -89,15 +112,44 @@ defmodule AviaryWeb.Components.VideoPlayer do
         </button>
       </div>
 
-      <button
-        type="button"
-        phx-click="close_player"
-        aria-label="Close player"
-        class="absolute top-4 right-4 z-10 font-sans text-xs tracking-[0.18em] uppercase font-medium text-white/80 hover:text-white cursor-pointer transition-colors px-4 py-2 rounded-sm bg-black/40 backdrop-blur-sm"
-      >
-        Close ✕
-      </button>
+      <%!--
+        Top-right cluster: meta controls (fullscreen + close), grouped
+        so they read as a pair. Fullscreen targets the OVERLAY div, not
+        the video — fullscreening just the video element hides every
+        sibling, killing the skip controls. controlsList="nofullscreen"
+        on the video hides the native fullscreen button on Chromium so
+        the user has one obvious entry point.
+      --%>
+      <div class="absolute top-4 right-4 z-10 flex items-center gap-2">
+        <button
+          type="button"
+          onclick={fullscreen_js(@item.id)}
+          aria-label="Toggle fullscreen"
+          class="font-sans text-xs tracking-[0.18em] uppercase font-medium text-white/80 hover:text-white cursor-pointer transition-colors px-4 py-2 rounded-sm bg-black/40 backdrop-blur-sm"
+        >
+          Fullscreen ⛶
+        </button>
+        <button
+          type="button"
+          phx-click="close_player"
+          aria-label="Close player"
+          class="font-sans text-xs tracking-[0.18em] uppercase font-medium text-white/80 hover:text-white cursor-pointer transition-colors px-4 py-2 rounded-sm bg-black/40 backdrop-blur-sm"
+        >
+          Close ✕
+        </button>
+      </div>
     </div>
+    """
+  end
+
+  defp fullscreen_js(item_id) do
+    """
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      const c = document.getElementById('player-overlay-#{item_id}');
+      if (c && c.requestFullscreen) c.requestFullscreen();
+    }
     """
   end
 

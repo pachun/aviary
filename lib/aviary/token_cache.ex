@@ -23,19 +23,45 @@ defmodule Aviary.TokenCache do
   def start_link(_opts), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
   @doc """
-  `:cached_valid` — recently probed and OK; skip the network call.
-  `:not_cached` — caller should probe and call mark_valid/1 on success.
+  Three states:
+
+    * `:cached_valid` — recently probed and OK; skip the network call.
+    * `:probing` — another request is already probing this token;
+      trust it and return true (the cache will fill momentarily).
+      Prevents the thundering-herd failure mode where a page load
+      with N parallel requests all miss the cache and each issue
+      their own /Users/Me probe, overwhelming Jellyfin and producing
+      spurious 401s that drop the session.
+    * `:not_cached` — caller should grab the probe lock and probe.
   """
   def status(token) do
     case :ets.lookup(@table, token) do
       [{^token, valid_until}] ->
         if System.monotonic_time(:millisecond) < valid_until,
           do: :cached_valid,
-          else: :not_cached
+          else: probe_lock_status(token)
 
       _ ->
-        :not_cached
+        probe_lock_status(token)
     end
+  end
+
+  @doc """
+  Try to take the probe lock for this token. Returns `:ok` if we got
+  it (and must call release_probe_lock/1 after probing), or `:locked`
+  if another request already has it.
+  """
+  def take_probe_lock(token) do
+    if :ets.insert_new(@table, {{:probe_lock, token}, lock_deadline()}) do
+      :ok
+    else
+      :locked
+    end
+  end
+
+  def release_probe_lock(token) do
+    :ets.delete(@table, {:probe_lock, token})
+    :ok
   end
 
   def mark_valid(token) do
@@ -46,8 +72,28 @@ defmodule Aviary.TokenCache do
 
   def invalidate(token) do
     :ets.delete(@table, token)
+    :ets.delete(@table, {:probe_lock, token})
     :ok
   end
+
+  defp probe_lock_status(token) do
+    case :ets.lookup(@table, {:probe_lock, token}) do
+      [{_, deadline}] ->
+        if System.monotonic_time(:millisecond) < deadline,
+          do: :probing,
+          # Stale lock (probe died/crashed) — let the next caller retry.
+          else: :not_cached
+
+      _ ->
+        :not_cached
+    end
+  end
+
+  # Generous deadline — a probe should complete in well under a second,
+  # but the cap protects against a leaked lock if the probing process
+  # dies mid-flight without calling release. After the deadline passes,
+  # the next caller treats it as :not_cached and re-locks.
+  defp lock_deadline, do: System.monotonic_time(:millisecond) + 10_000
 
   ## GenServer
 
