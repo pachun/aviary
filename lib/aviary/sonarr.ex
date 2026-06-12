@@ -137,15 +137,40 @@ defmodule Aviary.Sonarr do
 
   ## Building blocks (public so the polling subscriber can use them)
 
+  # Cache key for the Sonarr-wide /series list. 15s fresh / 60s stale —
+  # the show detail page polls series_status every few seconds and each
+  # poll walks /series; SWR makes the second-and-onward poll instant
+  # (and we still pick up newly-added series within 15s, which is well
+  # below the Sonarr add → Jellyfin scan → user-visible latency).
+  @series_fresh_ms 15_000
+  @series_stale_ms 60_000
+
   def find_series_by_tmdb(tmdb_id) do
-    case get("/series", []) do
-      {:ok, all} when is_list(all) ->
+    case all_series() do
+      {:ok, all} ->
         case Enum.find(all, &(to_string(&1["tmdbId"]) == to_string(tmdb_id))) do
           nil -> :not_found
           series -> {:ok, series}
         end
 
       _ ->
+        :error
+    end
+  end
+
+  defp all_series do
+    Aviary.Cache.swr(:sonarr_series_list, @series_fresh_ms, @series_stale_ms, fn ->
+      case get("/series", []) do
+        {:ok, list} when is_list(list) -> {:ok, list}
+        _ -> :error
+      end
+    end)
+    |> case do
+      {:ok, _} = ok ->
+        ok
+
+      :error ->
+        Aviary.Cache.invalidate(:sonarr_series_list)
         :error
     end
   end
@@ -175,8 +200,14 @@ defmodule Aviary.Sonarr do
       })
 
     case post("/series", body) do
-      {:ok, series} -> {:ok, series}
-      _ -> :error
+      {:ok, series} ->
+        # New series isn't in the cached /series list — invalidate
+        # so the next find_series_by_tmdb sees the addition.
+        Aviary.Cache.invalidate(:sonarr_series_list)
+        {:ok, series}
+
+      _ ->
+        :error
     end
   end
 

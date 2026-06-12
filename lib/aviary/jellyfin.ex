@@ -15,24 +15,44 @@ defmodule Aviary.Jellyfin do
 
   @api_path "/Items"
 
+  # Per-user caches for the catalog and per-series episode lists.
+  # SWR — fresh window short enough that newly-added Sonarr-imports
+  # show up quickly, stale window long enough that the typical
+  # navigation pattern (Library → show detail → Library again)
+  # never re-fetches.
+  @catalog_fresh_ms 30_000
+  @catalog_stale_ms 5 * 60_000
+  @episodes_fresh_ms 5_000
+  @episodes_stale_ms 60_000
+  # Home page reads — these reflect the user's UserData (Played,
+  # resume position, LastPlayedDate). Aggressive invalidation after
+  # any UserData write keeps these fresh; SWR makes back-to-back
+  # navigations between Home/Library/Show instant.
+  @userdata_fresh_ms 5_000
+  @userdata_stale_ms 60_000
+
   ## Catalog reads
 
   def list_shows(auth) do
-    get!(@api_path, auth,
-      IncludeItemTypes: "Series",
-      Recursive: true,
-      Fields: "PremiereDate,EndDate,Status,ProductionYear,ProviderIds"
-    )
-    |> Map.fetch!("Items")
+    Aviary.Cache.swr({:jellyfin_list_shows, auth.id}, @catalog_fresh_ms, @catalog_stale_ms, fn ->
+      get!(@api_path, auth,
+        IncludeItemTypes: "Series",
+        Recursive: true,
+        Fields: "PremiereDate,EndDate,Status,ProductionYear,ProviderIds"
+      )
+      |> Map.fetch!("Items")
+    end)
   end
 
   def list_movies(auth) do
-    get!(@api_path, auth,
-      IncludeItemTypes: "Movie",
-      Recursive: true,
-      Fields: "ProductionYear"
-    )
-    |> Map.fetch!("Items")
+    Aviary.Cache.swr({:jellyfin_list_movies, auth.id}, @catalog_fresh_ms, @catalog_stale_ms, fn ->
+      get!(@api_path, auth,
+        IncludeItemTypes: "Movie",
+        Recursive: true,
+        Fields: "ProductionYear"
+      )
+      |> Map.fetch!("Items")
+    end)
   end
 
   @doc """
@@ -61,18 +81,25 @@ defmodule Aviary.Jellyfin do
   and IndexNumber (episode number within the season).
   """
   def list_episodes(series_id, auth) do
-    Req.get!(base_url() <> "/Shows/" <> series_id <> "/Episodes",
-      params: [
-        userId: auth.id,
-        Fields: "Overview,RunTimeTicks,UserData"
-      ],
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 15_000
-    ).body
-    |> case do
-      %{"Items" => items} when is_list(items) -> items
-      _ -> []
-    end
+    Aviary.Cache.swr(
+      {:jellyfin_list_episodes, series_id, auth.id},
+      @episodes_fresh_ms,
+      @episodes_stale_ms,
+      fn ->
+        Req.get!(base_url() <> "/Shows/" <> series_id <> "/Episodes",
+          params: [
+            userId: auth.id,
+            Fields: "Overview,RunTimeTicks,UserData"
+          ],
+          headers: [{"x-emby-token", auth.token}],
+          receive_timeout: 15_000
+        ).body
+        |> case do
+          %{"Items" => items} when is_list(items) -> items
+          _ -> []
+        end
+      end
+    )
   end
 
   @doc """
@@ -145,20 +172,27 @@ defmodule Aviary.Jellyfin do
   episodes so the home page can group by show.
   """
   def resume_items(auth) do
-    Req.get!(base_url() <> "/UserItems/Resume",
-      params: [
-        userId: auth.id,
-        Limit: 30,
-        MediaTypes: "Video",
-        Fields: "UserData,SeriesId,SeriesPrimaryImageTag,SeriesStudio"
-      ],
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 15_000
-    ).body
-    |> case do
-      %{"Items" => items} when is_list(items) -> items
-      _ -> []
-    end
+    Aviary.Cache.swr(
+      {:jellyfin_resume_items, auth.id},
+      @userdata_fresh_ms,
+      @userdata_stale_ms,
+      fn ->
+        Req.get!(base_url() <> "/UserItems/Resume",
+          params: [
+            userId: auth.id,
+            Limit: 30,
+            MediaTypes: "Video",
+            Fields: "UserData,SeriesId,SeriesPrimaryImageTag,SeriesStudio"
+          ],
+          headers: [{"x-emby-token", auth.token}],
+          receive_timeout: 15_000
+        ).body
+        |> case do
+          %{"Items" => items} when is_list(items) -> items
+          _ -> []
+        end
+      end
+    )
   end
 
   @doc """
@@ -167,19 +201,26 @@ defmodule Aviary.Jellyfin do
   Continue Watching row.
   """
   def next_up_across_library(auth) do
-    Req.get!(base_url() <> "/Shows/NextUp",
-      params: [
-        userId: auth.id,
-        Limit: 50,
-        Fields: "UserData,SeriesPrimaryImageTag"
-      ],
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 15_000
-    ).body
-    |> case do
-      %{"Items" => items} when is_list(items) -> items
-      _ -> []
-    end
+    Aviary.Cache.swr(
+      {:jellyfin_next_up_across_library, auth.id},
+      @userdata_fresh_ms,
+      @userdata_stale_ms,
+      fn ->
+        Req.get!(base_url() <> "/Shows/NextUp",
+          params: [
+            userId: auth.id,
+            Limit: 50,
+            Fields: "UserData,SeriesPrimaryImageTag"
+          ],
+          headers: [{"x-emby-token", auth.token}],
+          receive_timeout: 15_000
+        ).body
+        |> case do
+          %{"Items" => items} when is_list(items) -> items
+          _ -> []
+        end
+      end
+    )
   end
 
   @doc """
@@ -221,24 +262,31 @@ defmodule Aviary.Jellyfin do
   ordering misses pure rewatch activity.
   """
   def recently_watched(auth) do
-    Req.get!(base_url() <> "/Items",
-      params: [
-        userId: auth.id,
-        IncludeItemTypes: "Episode,Movie",
-        Filters: "IsPlayed",
-        SortBy: "DatePlayed",
-        SortOrder: "Descending",
-        Recursive: true,
-        Limit: 30,
-        Fields: "UserData,SeriesId,SeriesPrimaryImageTag,DateCreated"
-      ],
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 15_000
-    ).body
-    |> case do
-      %{"Items" => items} when is_list(items) -> items
-      _ -> []
-    end
+    Aviary.Cache.swr(
+      {:jellyfin_recently_watched, auth.id},
+      @userdata_fresh_ms,
+      @userdata_stale_ms,
+      fn ->
+        Req.get!(base_url() <> "/Items",
+          params: [
+            userId: auth.id,
+            IncludeItemTypes: "Episode,Movie",
+            Filters: "IsPlayed",
+            SortBy: "DatePlayed",
+            SortOrder: "Descending",
+            Recursive: true,
+            Limit: 30,
+            Fields: "UserData,SeriesId,SeriesPrimaryImageTag,DateCreated"
+          ],
+          headers: [{"x-emby-token", auth.token}],
+          receive_timeout: 15_000
+        ).body
+        |> case do
+          %{"Items" => items} when is_list(items) -> items
+          _ -> []
+        end
+      end
+    )
   end
 
   @doc """
@@ -247,19 +295,26 @@ defmodule Aviary.Jellyfin do
   by DateCreated descending on Jellyfin's side.
   """
   def latest_episodes(auth) do
-    Req.get!(base_url() <> "/Users/" <> auth.id <> "/Items/Latest",
-      params: [
-        IncludeItemTypes: "Episode",
-        Limit: 30,
-        Fields: "UserData,SeriesPrimaryImageTag,DateCreated"
-      ],
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 15_000
-    ).body
-    |> case do
-      items when is_list(items) -> items
-      _ -> []
-    end
+    Aviary.Cache.swr(
+      {:jellyfin_latest_episodes, auth.id},
+      @userdata_fresh_ms,
+      @userdata_stale_ms,
+      fn ->
+        Req.get!(base_url() <> "/Users/" <> auth.id <> "/Items/Latest",
+          params: [
+            IncludeItemTypes: "Episode",
+            Limit: 30,
+            Fields: "UserData,SeriesPrimaryImageTag,DateCreated"
+          ],
+          headers: [{"x-emby-token", auth.token}],
+          receive_timeout: 15_000
+        ).body
+        |> case do
+          items when is_list(items) -> items
+          _ -> []
+        end
+      end
+    )
   end
 
   @doc """
@@ -331,6 +386,7 @@ defmodule Aviary.Jellyfin do
       receive_timeout: 5_000
     )
 
+    invalidate_user_episode_caches(auth)
     :ok
   rescue
     _ -> :error
@@ -390,6 +446,7 @@ defmodule Aviary.Jellyfin do
       receive_timeout: 5_000
     )
 
+    invalidate_user_episode_caches(auth)
     :ok
   rescue
     _ -> :error
@@ -410,6 +467,7 @@ defmodule Aviary.Jellyfin do
       receive_timeout: 5_000
     )
 
+    invalidate_user_episode_caches(auth)
     :ok
   rescue
     _ -> :error
@@ -437,8 +495,26 @@ defmodule Aviary.Jellyfin do
       },
       receive_timeout: 5_000
     )
+
+    invalidate_user_episode_caches(auth)
+    :ok
   rescue
     _ -> :error
+  end
+
+  # Wipe every cached UserData-derived entry for this user after a
+  # UserData write (mark_played, mark_unplayed, save_position,
+  # reset_item_progress). Without this, the home page mount that
+  # follows a watch-mark would serve stale Continue Watching for up
+  # to the SWR fresh window — the exact "is this just slow or did
+  # my action not register?" jank.
+  defp invalidate_user_episode_caches(auth) do
+    Aviary.Cache.invalidate_match({:jellyfin_list_episodes, :_, auth.id})
+    Aviary.Cache.invalidate({:jellyfin_resume_items, auth.id})
+    Aviary.Cache.invalidate({:jellyfin_next_up_across_library, auth.id})
+    Aviary.Cache.invalidate({:jellyfin_recently_watched, auth.id})
+    Aviary.Cache.invalidate({:jellyfin_latest_episodes, auth.id})
+    :ok
   end
 
   @doc """

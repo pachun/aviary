@@ -9,7 +9,21 @@ defmodule Aviary.Jellyseerr do
   Auth is a single API key (not per-user) — these endpoints aren't
   user-scoped in any way we depend on, and the data is the same for
   every user. Keyed at the application env via `:jellyseerr_api_key`.
+
+  Caching: all three public functions are cached via `Aviary.Cache`'s
+  stale-while-revalidate. TMDB metadata barely moves within a day, so
+  a 1h fresh / 24h stale window means the first page load eats the
+  network round-trip and every subsequent load (within 24h) returns
+  instantly. Only errors aren't cached — a transient failure shouldn't
+  poison the cache.
   """
+
+  alias Aviary.Cache
+
+  @tv_fresh_ms 60 * 60 * 1_000
+  @tv_stale_ms 24 * 60 * 60 * 1_000
+  @discover_fresh_ms 5 * 60 * 1_000
+  @discover_stale_ms 60 * 60 * 1_000
 
   @doc """
   Returns the raw Jellyseerr `/tv/{tmdbId}` response body, or `:error`.
@@ -18,6 +32,15 @@ defmodule Aviary.Jellyseerr do
   Discover).
   """
   def get_tv(tmdb_id) when is_binary(tmdb_id) or is_integer(tmdb_id) do
+    Cache.swr({:jellyseerr_get_tv, to_string(tmdb_id)}, @tv_fresh_ms, @tv_stale_ms, fn ->
+      do_get_tv(tmdb_id)
+    end)
+    |> uncache_errors({:jellyseerr_get_tv, to_string(tmdb_id)})
+  end
+
+  def get_tv(_), do: :error
+
+  defp do_get_tv(tmdb_id) do
     case api_key() do
       nil ->
         :error
@@ -38,8 +61,6 @@ defmodule Aviary.Jellyseerr do
     _ -> :error
   end
 
-  def get_tv(_), do: :error
-
   @doc """
   Returns Jellyseerr's per-season episode list for a show. Each
   episode entry has airDate, episodeNumber, name, etc. — enough to
@@ -47,6 +68,16 @@ defmodule Aviary.Jellyseerr do
   the show detail page, even for shows not yet in the user's library.
   """
   def get_tv_season(tmdb_id, season_number) do
+    Cache.swr(
+      {:jellyseerr_get_tv_season, to_string(tmdb_id), season_number},
+      @tv_fresh_ms,
+      @tv_stale_ms,
+      fn -> do_get_tv_season(tmdb_id, season_number) end
+    )
+    |> uncache_errors({:jellyseerr_get_tv_season, to_string(tmdb_id), season_number})
+  end
+
+  defp do_get_tv_season(tmdb_id, season_number) do
     case api_key() do
       nil ->
         :error
@@ -75,6 +106,16 @@ defmodule Aviary.Jellyseerr do
   the show is in the library.
   """
   def discover_tv_network(network_id) do
+    Cache.swr(
+      {:jellyseerr_discover_tv_network, network_id},
+      @discover_fresh_ms,
+      @discover_stale_ms,
+      fn -> do_discover_tv_network(network_id) end
+    )
+    |> uncache_errors({:jellyseerr_discover_tv_network, network_id})
+  end
+
+  defp do_discover_tv_network(network_id) do
     with key when not is_nil(key) <- api_key(),
          url = base_url() <> "/api/v1/discover/tv/network/#{network_id}",
          {:ok, %Req.Response{status: 200, body: %{"results" => results}}} <-
@@ -90,6 +131,16 @@ defmodule Aviary.Jellyseerr do
   rescue
     _ -> :error
   end
+
+  # Don't poison the cache with transient errors. If the wrapped
+  # function returned :error, evict the entry so the NEXT call
+  # retries instead of serving :error from cache for an hour.
+  defp uncache_errors(:error, key) do
+    Cache.invalidate(key)
+    :error
+  end
+
+  defp uncache_errors(result, _key), do: result
 
   defp base_url do
     case Application.get_env(:aviary, :jellyseerr_url) do
