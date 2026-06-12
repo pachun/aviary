@@ -117,14 +117,15 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
-  # Moves the show's watch mark to the clicked episode by marking
-  # every prior episode (and the clicked one) as Played in Jellyfin.
-  # Episodes AFTER the click point are deliberately left untouched —
-  # this is an "insert the mark here" operation, not a "wipe the
-  # future" one. After the writes settle we re-fetch the show so the
-  # mark recomputes from the updated UserData. TMDB-only entries
-  # (not-yet-downloaded episodes) are skipped — Jellyfin has nothing
-  # to mark for them.
+  # Moves the show's watch mark to the clicked episode. The mark is a
+  # SINGLE POINT on the timeline: everything before (and the click) is
+  # Played, everything after is unplayed. We fan out mark_played for
+  # 1..click and mark_unplayed for click+1..end — the latter matters
+  # when the user is moving the mark BACKWARD (an earlier test left
+  # E5 played; clicking E2 now should make E3+ unplayed so NextUp and
+  # Continue Watching reflect "caught up through E2"). TMDB-only
+  # entries (not-yet-downloaded episodes) are skipped — Jellyfin has
+  # nothing to mark for them.
   def handle_event("toggle_season", %{"season" => season}, socket) do
     season = String.to_integer(season)
     collapsed = socket.assigns.collapsed_seasons
@@ -148,10 +149,17 @@ defmodule AviaryWeb.ShowsDetailLive do
         {:noreply, socket}
 
       idx ->
-        to_mark =
-          flat
-          |> Enum.take(idx + 1)
-          |> Enum.reject(&String.starts_with?(to_string(&1.id), "tmdb-"))
+        # Watch-mark is an engagement signal — ensure the show is in
+        # library_entries so Upcoming surfaces its drops. (Play and
+        # Sonarr-trigger already do this; without this call, marking
+        # via the marker column would never register.)
+        if show.tmdb_id, do: Aviary.Library.add(user.id, show.tmdb_id)
+
+        not_tmdb? = &(not String.starts_with?(to_string(&1.id), "tmdb-"))
+
+        {prior, future} = Enum.split(flat, idx + 1)
+        to_mark = Enum.filter(prior, not_tmdb?)
+        to_unmark = Enum.filter(future, not_tmdb?)
 
         # Optimistic UI: snap the in-memory show so the marker
         # moves on the next render — N×Jellyfin RTT + a full
@@ -162,9 +170,12 @@ defmodule AviaryWeb.ShowsDetailLive do
         pid = self()
 
         Task.start(fn ->
-          to_mark
+          (Enum.map(to_mark, &{:played, &1}) ++ Enum.map(to_unmark, &{:unplayed, &1}))
           |> Task.async_stream(
-            fn ep -> Aviary.Jellyfin.mark_played(ep.id, user) end,
+            fn
+              {:played, ep} -> Aviary.Jellyfin.mark_played(ep.id, user)
+              {:unplayed, ep} -> Aviary.Jellyfin.mark_unplayed(ep.id, user)
+            end,
             max_concurrency: 5,
             timeout: 5_000,
             on_timeout: :kill_task
@@ -203,21 +214,30 @@ defmodule AviaryWeb.ShowsDetailLive do
      |> assign(:playing_subtitles, [])}
   end
 
-  def handle_event("report_progress", %{"position" => position}, socket) do
+  def handle_event("report_progress", %{"position" => position} = payload, socket) do
     item = socket.assigns.playing_item
 
     if item do
-      position_ticks = trunc(position * 10_000_000)
+      user = socket.assigns.current_user
+      duration = payload["duration"]
 
-      Aviary.Jellyfin.save_position(
-        item.id,
-        position_ticks,
-        socket.assigns.current_user
-      )
+      # Past 95% of the runtime = effectively done. mark_played
+      # (canonical endpoint + position zero) is what makes
+      # Jellyfin's NextUp move on to the next episode; without it
+      # Resume keeps E5 looking in-progress and Continue Watching
+      # surfaces E5 instead of E6.
+      if is_number(duration) and duration > 0 and position / duration >= 0.95 do
+        Aviary.Jellyfin.mark_played(item.id, user)
+        {:noreply, update(socket, :show, &update_episode_progress(&1, item.id, 0.0))}
+      else
+        position_ticks = trunc(position * 10_000_000)
+        Aviary.Jellyfin.save_position(item.id, position_ticks, user)
 
-      # Mirror the in-memory resume_seconds on the corresponding episode
-      # so the Continue button label stays accurate after closing.
-      {:noreply, update(socket, :show, &update_episode_progress(&1, item.id, position))}
+        # Mirror the in-memory resume_seconds on the corresponding
+        # episode so the Continue button label stays accurate after
+        # closing.
+        {:noreply, update(socket, :show, &update_episode_progress(&1, item.id, position))}
+      end
     else
       {:noreply, socket}
     end
@@ -905,12 +925,11 @@ defmodule AviaryWeb.ShowsDetailLive do
   end
 
   # Mirrors what Jellyfin will look like once the background writes
-  # settle: every episode 1..idx (tmdb-only ones included; they're
-  # filtered out at write time but harmless to predict-mark since
-  # watch_mark only looks at real ones via last_played_at) gets
-  # played_percentage=100, resume cleared, and a fresh last_played_at.
-  # Timestamps ascend with index so the *clicked* episode wins
-  # max_by — that's what makes the mark land on it instead of E1.
+  # settle: every episode 1..idx gets played_percentage=100, resume
+  # cleared, and a fresh last_played_at; every episode idx+1..end
+  # gets played_percentage=0, last_played_at cleared. Timestamps
+  # ascend with index so the *clicked* episode wins max_by — that's
+  # what makes the mark land on it instead of E1.
   defp apply_optimistic_watch_point(show, flat, idx) do
     now = DateTime.utc_now()
 
@@ -920,13 +939,21 @@ defmodule AviaryWeb.ShowsDetailLive do
       |> Enum.take(idx + 1)
       |> Map.new(fn {ep, i} -> {ep.id, DateTime.add(now, i, :microsecond)} end)
 
+    unmarked = MapSet.new(Enum.drop(flat, idx + 1), & &1.id)
+
     updated =
       Enum.map(show.episodes_by_season, fn {season, eps} ->
         {season,
          Enum.map(eps, fn ep ->
-           case Map.get(marked, ep.id) do
-             nil -> ep
-             ts -> %{ep | played_percentage: 100.0, resume_seconds: nil, last_played_at: ts}
+           cond do
+             ts = Map.get(marked, ep.id) ->
+               %{ep | played_percentage: 100.0, resume_seconds: nil, last_played_at: ts}
+
+             MapSet.member?(unmarked, ep.id) ->
+               %{ep | played_percentage: 0.0, resume_seconds: nil, last_played_at: nil}
+
+             true ->
+               ep
            end
          end)}
       end)

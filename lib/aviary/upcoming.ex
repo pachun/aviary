@@ -1,16 +1,22 @@
 defmodule Aviary.Upcoming do
   @moduledoc """
-  "What of mine is dropping in the next two weeks." For each show in
-  the user's library, derives the next upcoming episode directly from
-  TMDB's per-season episode list (via Jellyseerr) — not from the
-  `nextEpisodeToAir` convenience pointer, which lags TMDB's actual
-  per-episode air dates by hours to days.
+  "What of mine is dropping in the next two weeks." Per-user, gated
+  on `library_entries` — a household member who never engaged with
+  the show another member downloaded shouldn't see its upcoming
+  episodes. `library_entries` auto-populates from any engagement
+  signal (Play, watch-mark, Sonarr trigger, plus a self-heal pass
+  in `Aviary.Home.continue_watching/1` for actively-watched series).
 
-  Surfaces an entry whenever the next-not-already-downloaded episode
-  has an air date in the next two weeks, independent of whether the
-  user has caught up on the rest of the show. The "next episode
-  coming" is series-level information; the user's watch state is
-  orthogonal.
+  Derives the next upcoming episode directly from TMDB's per-season
+  episode list (via Jellyseerr) — not from the `nextEpisodeToAir`
+  convenience pointer, which lags TMDB's actual per-episode air
+  dates by hours to days.
+
+  Surfaces an entry whenever the next-not-already-downloaded
+  episode has an air date in the next two weeks, independent of
+  whether the user has caught up on the rest of the show. The
+  "next episode coming" is series-level information; the user's
+  watch state is orthogonal.
   """
 
   alias Aviary.Jellyseerr

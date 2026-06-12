@@ -14,16 +14,14 @@ defmodule AviaryWeb.HomeLive do
      )}
   end
 
-  # Dismiss from Continue Watching. Shows take the light path now:
-  # delete the library_entry, watch history left alone. Sister-watched
-  # / "remove from library" with full watch-state reset will be its
-  # own deliberate action on the show detail page (separate from this
-  # dismiss). Movies keep their old Jellyfin-reset path since they
-  # don't go through library_entries yet — same UX as before for
-  # them. The home item carries `tmdb_id` from `Home.normalize`, so
-  # that's what we hand to `Library.remove`.
-  def handle_event("dismiss", %{"id" => tmdb_id, "kind" => "show"}, socket) do
-    Aviary.Library.remove(socket.assigns.current_user.id, tmdb_id)
+  # Dismiss from Continue Watching = "mark this entirely unwatched."
+  # Reset every episode's UserData (shows) or the movie's UserData,
+  # so the show / movie drops off Continue Watching because there's
+  # nothing to continue. `library_entries` is untouched — there's no
+  # "remove from library" UI yet, and Continue Watching is gated on
+  # watch state, not on library membership.
+  def handle_event("dismiss", %{"id" => series_id, "kind" => "show"}, socket) do
+    Aviary.Jellyfin.reset_series_progress(series_id, socket.assigns.current_user)
     {:noreply, refresh_continue_watching(socket)}
   end
 

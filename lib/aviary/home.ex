@@ -1,11 +1,25 @@
 defmodule Aviary.Home do
   @moduledoc """
-  Computes the Continue Watching feed for the home page. Merges three
-  Jellyfin streams — in-progress items, NextUp episodes, and recently
-  added episodes — into a single ordered list where the most-recent
-  event (started watching, finished an episode, new episode aired)
-  determines position. Each unique show appears once; movies appear
-  once.
+  Computes the Continue Watching feed for the home page. Gated purely
+  on Jellyfin watch state — a show appears when the user has watch
+  activity AND there's a next episode to play; movies appear when the
+  user is mid-watch. `library_entries` is intentionally NOT consulted
+  here: it's a separate "interest" set used by Upcoming, and the only
+  way out of Continue Watching is to reset the watch state (the X
+  button), not to delete the library entry.
+
+  Side effect: also self-heals `library_entries` from observed
+  engagement. Any actively-watched series whose TMDB id isn't already
+  recorded gets added (idempotently) so the Upcoming feed reflects
+  ongoing interest even if some engagement path forgot to call
+  `Library.add`.
+
+  Sources merged: in-progress (resume), Jellyfin's NextUp, a locally
+  derived next-up for series NextUp's index missed, recently added
+  episodes, and recently watched. Dedupe picks "what to play next"
+  per show (resume > NextUp/derived > latest > recent), then sorts
+  the deduped list by the show's most-recent activity timestamp so
+  the marquee leads with whatever the user touched last.
   """
 
   alias Aviary.Jellyfin
@@ -20,13 +34,56 @@ defmodule Aviary.Home do
     latest = Jellyfin.latest_episodes(auth)
     recent = Jellyfin.recently_watched(auth)
 
-    all_items = next_up ++ resume ++ latest ++ recent
+    jellyfin_next_up_set = MapSet.new(next_up, & &1["SeriesId"])
 
-    # NextUp's whole job is "what should the user watch next on this
-    # show" — a show NOT in this set means the user is caught up on
-    # it. Use that as the filter: an episode item is only surfaced if
-    # its series has something to watch next.
-    available_series = MapSet.new(next_up, & &1["SeriesId"])
+    # Jellyfin's `/Shows/NextUp` index lags UserData writes — after
+    # the watch-mark UI fans out mark_played calls, NextUp may not
+    # include the affected series for some time (and sometimes
+    # never, when its library scanner hasn't picked up the next
+    # downloaded file yet). For any series the user is actively
+    # engaged with (resume position or recently played) that NextUp
+    # skipped, look up the next unplayed in-library episode
+    # ourselves. The synthesized item joins `all_items` so the
+    # dedupe step has a fresh "what to play next" candidate, and
+    # the series joins `available_series` so the caught_up gate
+    # doesn't filter it.
+    active_series_ids = active_series_ids(resume, recent)
+
+    derived =
+      active_series_ids
+      |> Enum.reject(&MapSet.member?(jellyfin_next_up_set, &1))
+      |> Task.async_stream(
+        fn series_id -> {series_id, Jellyfin.next_unplayed_episode(series_id, auth)} end,
+        max_concurrency: 8,
+        timeout: 10_000,
+        on_timeout: :kill_task
+      )
+      |> Enum.map(fn
+        {:ok, kv} -> kv
+        _ -> nil
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.reject(fn {_, ep} -> ep == nil end)
+
+    synthesized = Enum.map(derived, fn {_, ep} -> ep end)
+    derived_series_ids = MapSet.new(derived, fn {sid, _} -> sid end)
+    available_series = MapSet.union(jellyfin_next_up_set, derived_series_ids)
+
+    # Tag every item with its source priority. Sources that point at
+    # "what to play next" (resume, NextUp, our synthesized derivation)
+    # outrank sources that point at "what was just played or recently
+    # added" — without this, a freshly-marked-played episode would
+    # win dedupe over the actual next-up episode just because its
+    # LastPlayedDate is now. Resume beats NextUp so a mid-episode
+    # always shows up as the resume target.
+    tagged =
+      Enum.map(resume, &{0, &1}) ++
+        Enum.map(next_up, &{1, &1}) ++
+        Enum.map(synthesized, &{1, &1}) ++
+        Enum.map(latest, &{3, &1}) ++
+        Enum.map(recent, &{4, &1})
+
+    all_items = Enum.map(tagged, fn {_, item} -> item end)
 
     # Series → TMDB id map. One batch Jellyfin call covers every
     # unique series that came through any of the four sources, so
@@ -40,15 +97,40 @@ defmodule Aviary.Home do
       |> Enum.uniq()
 
     tmdb_map = Jellyfin.series_tmdb_map(series_ids, auth)
-    library = MapSet.new(Aviary.Library.list_tmdb_ids(auth.id))
 
-    all_items
-    |> Enum.map(&normalize(&1, tmdb_map))
+    # Self-heal library_entries from active engagement. Any series the
+    # user is currently watching (resume) or has marked played
+    # (recent) should be in their library so Upcoming sees it. This
+    # catches gaps from older code paths that didn't add (and pre-fix
+    # state where dismiss used to delete library entries). Idempotent
+    # at the DB layer via on_conflict: :nothing.
+    Enum.each(active_series_ids, fn series_id ->
+      case Map.get(tmdb_map, series_id) do
+        nil -> :ok
+        "" -> :ok
+        tmdb_id -> Aviary.Library.add(auth.id, tmdb_id)
+      end
+    end)
+
+    tagged
+    |> Enum.map(fn {priority, item} ->
+      case normalize(item, tmdb_map) do
+        nil -> nil
+        n -> Map.put(n, :priority, priority)
+      end
+    end)
     |> Enum.reject(&is_nil/1)
     |> Enum.reject(&caught_up?(&1, available_series))
-    |> Enum.filter(&in_library?(&1, library))
     |> dedupe_by_key()
     |> Enum.sort_by(& &1.sort_at, {:desc, DateTime})
+  end
+
+  defp active_series_ids(resume, recent) do
+    (resume ++ recent)
+    |> Enum.filter(&(&1["Type"] == "Episode"))
+    |> Enum.map(& &1["SeriesId"])
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
   end
 
   defp caught_up?(%{kind: :show, dedupe_key: "series:" <> series_id}, available_series) do
@@ -56,19 +138,6 @@ defmodule Aviary.Home do
   end
 
   defp caught_up?(_, _), do: false
-
-  # Library gating: a show is surfaced only if the user has it in
-  # their library_entries. Movies don't go through library entries
-  # (yet) — they always pass through. Discover-flow library shows
-  # without a known TMDB id (rare, but possible if ProviderIds.Tmdb
-  # is missing) get dropped — without a TMDB id we can't reliably
-  # link them to library entries or Sonarr/Jellyseerr downstream.
-  defp in_library?(%{kind: :movie}, _library), do: true
-  defp in_library?(%{kind: :show, tmdb_id: nil}, _library), do: false
-
-  defp in_library?(%{kind: :show, tmdb_id: tmdb_id}, library) do
-    MapSet.member?(library, tmdb_id)
-  end
 
   # Collapses raw Jellyfin items into a uniform shape the home marquee
   # can render without further branching. `dedupe_key` makes the same
@@ -130,13 +199,26 @@ defmodule Aviary.Home do
     end
   end
 
-  # When the same show is surfaced by both Resume and NextUp/Latest,
-  # the one with the most recent sort_at wins. We sort by sort_at desc
-  # first, then take the first occurrence of each dedupe_key.
+  # Per dedupe_key, pick the item that best answers "what should this
+  # user play next for this show?" — by source priority (resume >
+  # NextUp/synthesized > latest > recent), tie-broken by recency. We
+  # then stamp the winner's sort_at with the *most recent* sort_at
+  # across the group, so the outer marquee ordering still reflects
+  # how recently the show saw any activity — otherwise a R&M just
+  # marked-watched would show E3 but get pushed down the row because
+  # E3's DateCreated is older than the just-marked LastPlayedDate.
   defp dedupe_by_key(items) do
     items
-    |> Enum.sort_by(& &1.sort_at, {:desc, DateTime})
-    |> Enum.uniq_by(& &1.dedupe_key)
+    |> Enum.group_by(& &1.dedupe_key)
+    |> Enum.map(fn {_key, group} ->
+      winner =
+        Enum.min_by(group, fn item ->
+          {item.priority, -DateTime.to_unix(item.sort_at, :millisecond)}
+        end)
+
+      max_sort_at = Enum.max_by(group, & &1.sort_at, DateTime).sort_at
+      %{winner | sort_at: max_sort_at}
+    end)
   end
 
   defp parse_date(nil), do: nil

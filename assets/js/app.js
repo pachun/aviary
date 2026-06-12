@@ -73,17 +73,23 @@ const HlsPlayer = {
     }
 
     // Progress reporting: every 10 seconds while playing, plus on each
-    // pause (which catches close, seek, system fullscreen exit, etc).
-    // 1-second floor to ignore the initial transient.
+    // pause (which catches close, seek, system fullscreen exit, etc),
+    // plus once on natural end so the server can mark Played without
+    // relying on a partial-watch threshold. 1-second floor ignores
+    // the initial transient.
     const reportProgress = () => {
       if (video.currentTime > 1) {
-        this.pushEvent("report_progress", {position: video.currentTime})
+        this.pushEvent("report_progress", {
+          position: video.currentTime,
+          duration: Number.isFinite(video.duration) ? video.duration : null,
+        })
       }
     }
     this.progressInterval = setInterval(() => {
       if (!video.paused) reportProgress()
     }, 10000)
     video.addEventListener("pause", reportProgress)
+    video.addEventListener("ended", reportProgress)
 
     // Auto-hide controls after stillness — mirrors native HTML5 video
     // behavior. Any mouse movement or touch shows controls and

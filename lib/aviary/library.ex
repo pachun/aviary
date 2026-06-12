@@ -1,13 +1,16 @@
 defmodule Aviary.Library do
   @moduledoc """
   Per-user library membership — "which shows is each household member
-  interested in." Single source of truth for the user's library: not
-  watch history, not download state, just declared interest.
+  interested in." A separate concern from watch history, download
+  state, or what's surfaced on Home — those each have their own
+  source of truth (Jellyfin, Sonarr, derived in `Aviary.Home`).
 
   Every play action (Watch a show, Watch a season, Play an episode)
-  auto-adds the show to the user's library — pressing any action
-  button is taken as a commitment signal. Removal is the X-dismiss
-  in Continue Watching.
+  auto-adds the show — pressing any action button is taken as a
+  commitment signal. There's no removal path yet; the X on Continue
+  Watching resets Jellyfin watch state, it does not touch this
+  table. Consumers today: `Aviary.Upcoming` (filters the user's
+  upcoming-episode feed to shows they care about).
 
   Stays small on purpose: no schema for users (Jellyfin owns identity),
   no schema for shows (TMDB owns metadata), no schema for downloads

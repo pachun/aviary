@@ -76,6 +76,42 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
+  Returns the next unplayed, in-library episode for a series (or nil).
+  Used by the home page's Continue Watching to recover from cases
+  where Jellyfin's `/Shows/NextUp` index hasn't caught up with our
+  UserData writes (visible after the watch-mark UI marks a stretch
+  of episodes played — NextUp can take time to reflect, or never
+  surfaces the series if its library scanner hasn't seen the next
+  file yet). We sort episodes by (season, episode) and take the
+  first one whose UserData says unplayed and whose LocationType
+  isn't `Virtual`.
+  """
+  def next_unplayed_episode(series_id, auth) do
+    Req.get!(base_url() <> "/Shows/" <> series_id <> "/Episodes",
+      params: [
+        userId: auth.id,
+        Fields:
+          "Overview,RunTimeTicks,UserData,LocationType,SeriesPrimaryImageTag,DateCreated,PremiereDate"
+      ],
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 15_000
+    ).body
+    |> case do
+      %{"Items" => items} when is_list(items) -> items
+      _ -> []
+    end
+    |> Enum.sort_by(fn ep ->
+      {ep["ParentIndexNumber"] || 0, ep["IndexNumber"] || 0}
+    end)
+    |> Enum.find(fn ep ->
+      get_in(ep, ["UserData", "Played"]) != true and
+        ep["LocationType"] != "Virtual"
+    end)
+  rescue
+    _ -> nil
+  end
+
+  @doc """
   Items the user is mid-watch on — movies with saved positions, plus
   episodes in progress. Includes the SeriesId / SeriesName for
   episodes so the home page can group by show.
@@ -244,22 +280,26 @@ defmodule Aviary.Jellyfin do
   ## Playback state
 
   @doc """
-  Resets a single item's UserData to "never watched" — Played=false,
-  PlaybackPositionTicks=0, PlayedPercentage=0. Used by the Home page's
-  dismiss action for movies. For shows, see `reset_series_progress/2`
-  which iterates across every episode (necessary because Jellyfin's
-  NextUp would otherwise resurface the series the moment a single
-  finished episode is reset).
+  Resets a single item to "never watched": canonical mark-unplayed
+  (clears Played, PlayCount, LastPlayedDate via DELETE
+  /UserPlayedItems) followed by a UserData write that zeroes
+  PlaybackPositionTicks so any resume position is gone too. Used
+  by the Home page's dismiss action — for shows, see
+  `reset_series_progress/2`.
+
+  Two calls is the price of getting Jellyfin's indexes (NextUp,
+  recently_watched, Resume) to all reflect the change: a raw
+  UserData write to `Played=false` succeeds at the document level
+  but those indexes don't all consult it, so the show keeps
+  reappearing in Continue Watching.
   """
   def reset_item_progress(item_id, auth) do
+    mark_unplayed(item_id, auth)
+
     Req.post(base_url() <> "/UserItems/" <> item_id <> "/UserData",
       params: [userId: auth.id],
       headers: [{"x-emby-token", auth.token}],
-      json: %{
-        "Played" => false,
-        "PlaybackPositionTicks" => 0,
-        "PlayedPercentage" => 0
-      },
+      json: %{"PlaybackPositionTicks" => 0, "PlayedPercentage" => 0},
       receive_timeout: 5_000
     )
 
@@ -287,26 +327,58 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
-  Marks a single item as fully played in the user's UserData —
-  `Played=true, PlaybackPositionTicks=0, PlayedPercentage=100`. Used
-  by the watch-mark feature on the show detail page: clicking the
-  marker column on episode N fans this call out across episodes 1..N
-  so Jellyfin's NextUp moves past the mark and Continue Watching
+  Marks a single item as fully played for the user. Used by the
+  watch-mark feature on the show detail page: clicking the marker
+  column on episode N fans this call out across episodes 1..N so
+  Jellyfin's NextUp moves past the mark and Continue Watching
   surfaces the next-after.
 
-  LastPlayedDate stamped to now so the marked episodes sort correctly
-  by recency (Jellyfin's NextUp uses this).
+  Uses the canonical `POST /UserPlayedItems/{itemId}` endpoint
+  rather than a raw UserData overwrite — the raw write sets the
+  `Played` flag but skips the bookkeeping NextUp's index relies on
+  (PlayCount, parent-series UnplayedItemCount, UserDataSaved event).
+  Without the canonical call, marked-only shows never re-enter
+  Continue Watching even when an unwatched episode is in the
+  library.
   """
   def mark_played(item_id, auth) do
+    Req.post(base_url() <> "/UserPlayedItems/" <> item_id,
+      params: [
+        userId: auth.id,
+        datePlayed: DateTime.utc_now() |> DateTime.to_iso8601()
+      ],
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 5_000
+    )
+
+    # Canonical endpoint sets Played=true but doesn't reliably zero
+    # PlaybackPositionTicks. Without this follow-up write, Jellyfin's
+    # Resume/NextUp keep treating the episode as in-progress (the
+    # symptom that landed E5 in Continue Watching instead of E6).
     Req.post(base_url() <> "/UserItems/" <> item_id <> "/UserData",
       params: [userId: auth.id],
       headers: [{"x-emby-token", auth.token}],
-      json: %{
-        "Played" => true,
-        "PlaybackPositionTicks" => 0,
-        "PlayedPercentage" => 100,
-        "LastPlayedDate" => DateTime.utc_now() |> DateTime.to_iso8601()
-      },
+      json: %{"PlaybackPositionTicks" => 0},
+      receive_timeout: 5_000
+    )
+
+    :ok
+  rescue
+    _ -> :error
+  end
+
+  @doc """
+  Inverse of `mark_played/2` — clears Played=true and zeroes PlayCount
+  via `DELETE /UserPlayedItems/{itemId}`. Used by the watch-mark
+  feature: when the user sets the mark BACKWARD (e.g., from E5 to
+  E2), anything past the new mark needs its played state cleared,
+  otherwise NextUp correctly concludes the user has nothing left to
+  watch.
+  """
+  def mark_unplayed(item_id, auth) do
+    Req.delete(base_url() <> "/UserPlayedItems/" <> item_id,
+      params: [userId: auth.id],
+      headers: [{"x-emby-token", auth.token}],
       receive_timeout: 5_000
     )
 

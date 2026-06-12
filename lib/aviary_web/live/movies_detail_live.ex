@@ -62,16 +62,22 @@ defmodule AviaryWeb.MoviesDetailLive do
   # resume_seconds so if the user closes the player and the page
   # rerenders, the Resume button reflects the latest position without
   # a roundtrip back to Jellyfin.
-  def handle_event("report_progress", %{"position" => position}, socket) do
-    position_ticks = trunc(position * 10_000_000)
+  def handle_event("report_progress", %{"position" => position} = payload, socket) do
+    item = socket.assigns.playing_item
+    user = socket.assigns.current_user
+    duration = payload["duration"]
 
-    Aviary.Jellyfin.save_position(
-      socket.assigns.playing_item.id,
-      position_ticks,
-      socket.assigns.current_user
-    )
-
-    {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, position))}
+    # Past 95% of the runtime = effectively done. mark_played
+    # (canonical endpoint + position zero) keeps Jellyfin's
+    # Resume/NextUp from treating the movie as still in-progress.
+    if is_number(duration) and duration > 0 and position / duration >= 0.95 do
+      Aviary.Jellyfin.mark_played(item.id, user)
+      {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, nil))}
+    else
+      position_ticks = trunc(position * 10_000_000)
+      Aviary.Jellyfin.save_position(item.id, position_ticks, user)
+      {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, position))}
+    end
   end
 
   def render(assigns) do
