@@ -34,12 +34,19 @@ defmodule Aviary.Sonarr do
   @behaviour_default_root_folder "/shows"
 
   @doc """
-  "Watch the whole show" — adds the series with monitor=all and
-  triggers a full SeriesSearch. If the series already exists in
-  Sonarr, widens monitoring to all + triggers search.
+  "Watch the whole show" — adds the series with monitor=all, ensures
+  S1 E1 is searched first (so the user can start watching ASAP), then
+  fires a SeriesSearch for the rest. Without the explicit E1 search,
+  Sonarr's per-indexer responses dictate queue order; the user would
+  see E8 finish before E1 just because that release happened to be
+  cached at the indexer.
+
+  When the series already exists in Sonarr, widens monitoring + does
+  the same dual search.
   """
   def watch_show(tmdb_id) do
-    with {:ok, series} <- ensure_series(tmdb_id, monitor: "all") do
+    with {:ok, series} <- ensure_series(tmdb_id, monitor: "all", search: false) do
+      prioritize_first_episode(series["id"])
       command("SeriesSearch", %{seriesId: series["id"]})
       {:ok, series}
     end
@@ -55,6 +62,7 @@ defmodule Aviary.Sonarr do
   def watch_season(tmdb_id, season_number) when is_integer(season_number) do
     with {:ok, series} <- ensure_series(tmdb_id, monitor: "none"),
          :ok <- monitor_seasons_from(series["id"], season_number) do
+      prioritize_first_episode(series["id"], season_number)
       command("SeasonSearch", %{seriesId: series["id"], seasonNumber: season_number})
       {:ok, series}
     end
@@ -162,6 +170,26 @@ defmodule Aviary.Sonarr do
   end
 
   ## Internals
+
+  # Fires a single EpisodeSearch for the first episode of the given
+  # scope (whole show ⇒ S1 E1; season ⇒ S<n> E1) BEFORE the broader
+  # SeriesSearch/SeasonSearch runs, so the user's "first thing to
+  # watch" is the first thing Sonarr finds a release for. Skipped
+  # when the episode already has a file (re-clicks are idempotent
+  # AND don't waste an indexer query).
+  defp prioritize_first_episode(sonarr_series_id, season_number \\ 1) do
+    case find_episode(sonarr_series_id, season_number, 1) do
+      {:ok, %{"hasFile" => true}} ->
+        :ok
+
+      {:ok, ep} ->
+        command("EpisodeSearch", %{episodeIds: [ep["id"]]})
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
 
   defp ensure_series(tmdb_id, opts) do
     case find_series_by_tmdb(tmdb_id) do

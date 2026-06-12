@@ -207,7 +207,7 @@ defmodule AviaryWeb.ShowsDetailLive do
           <span class="relative">{pct}%</span>
         </div>
       <% :queued -> %>
-        <div class="bg-oxblood/40 text-paper/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
+        <div class="inline-block bg-oxblood/40 text-paper/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
           Queued
         </div>
       <% _ -> %>
@@ -717,11 +717,17 @@ defmodule AviaryWeb.ShowsDetailLive do
       %{has_file: true} ->
         :playable
 
+      # Monitored = Sonarr has accepted the intent. From the user's
+      # perspective, "I clicked Watch" → the work has started; the
+      # button should reflect that until bytes either start flowing
+      # (transitions to :downloading) or the file lands
+      # (transitions to :playable). Without this, the window between
+      # add-to-Sonarr and search-finding-a-release looked indistin-
+      # guishable from "nothing happened."
       %{id: episode_id, monitored: true} ->
         case download_progress(status.queue, episode_id) do
           {:ok, pct} -> {:downloading, pct}
-          :queued -> :queued
-          :ready -> :ready
+          _ -> :queued
         end
 
       _ ->
