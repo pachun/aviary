@@ -34,7 +34,16 @@ defmodule AviaryWeb.Layouts do
         their hover rings.
       --%>
       <header class="sticky top-0 z-20 bg-paper px-4 sm:px-8 lg:px-12 pt-8 pb-6 sm:pt-10 sm:pb-8">
-        <div class="mx-auto max-w-[1100px] flex items-baseline justify-between gap-8">
+        <%!--
+          items-center on the outer flex so the bird logo's middle
+          lines up with the nav text's middle. items-baseline (the
+          prior value) was correct for the nav-link group on its own,
+          but with the bird being a 36px <img>, baseline-aligning it
+          to a 12px text run pushed the bird's center way too high.
+          The inner nav keeps items-baseline to align nav links to
+          each other.
+        --%>
+        <div class="mx-auto max-w-[1100px] flex items-center justify-between gap-8">
           <nav class="flex items-baseline gap-8 text-[0.78rem] font-sans tracking-[0.15em] uppercase">
             <.section_link href={~p"/home"} active={@current_section == "home"}>
               Home

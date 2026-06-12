@@ -40,10 +40,17 @@ defmodule AviaryWeb.LibraryLive do
       <%!--
         Sub-toggle. Same uppercase tracked Instrument Sans + oxblood
         active underline as the masthead nav, dropped down a tier
-        (smaller text, tighter tracking) so it reads as a filter under
-        the primary "Library" header rather than competing with it.
+        (smaller text, tighter tracking) so it reads as a filter
+        under the primary "Library" header rather than competing with
+        it.
+
+        Sticky so it stays reachable when the catalog grid scrolls
+        past viewport. Top offset matches the masthead's rendered
+        height (pt-8/10 + 36px bird + pb-6/8), z-10 puts it below
+        the masthead (z-20) so they don't overlap. bg-paper +
+        vertical padding so content scrolls cleanly behind.
       --%>
-      <nav class="flex items-baseline gap-6 mb-8 font-sans text-[0.7rem] tracking-[0.18em] uppercase">
+      <nav class="sticky top-[92px] sm:top-[108px] z-10 bg-paper flex items-baseline gap-6 py-3 mb-8 font-sans text-[0.7rem] tracking-[0.18em] uppercase">
         <.tab patch={~p"/library?type=shows"} active={@type == :shows}>Shows</.tab>
         <.tab patch={~p"/library?type=movies"} active={@type == :movies}>Movies</.tab>
       </nav>
