@@ -57,7 +57,14 @@ defmodule Aviary.Sonarr do
   """
   def watch_show(tmdb_id) do
     with {:ok, series} <- ensure_series(tmdb_id, monitor: "all", search: false) do
-      search_each_missing(series["id"])
+      # search_each_missing runs in a Task because it has to wait out
+      # Sonarr's async RefreshEpisodeService — the /series POST returns
+      # before episodes are populated, so we'd see [] from /episode and
+      # fire zero searches on a fresh add. Backgrounding lets the
+      # LiveView return immediately (the button flips to "Searching"
+      # right away) while the wait-then-fire happens off the request
+      # path.
+      Task.start(fn -> search_each_missing(series["id"]) end)
       {:ok, series}
     end
   end
@@ -74,7 +81,9 @@ defmodule Aviary.Sonarr do
   def watch_season(tmdb_id, season_number) when is_integer(season_number) do
     with {:ok, series} <- ensure_series(tmdb_id, monitor: "none"),
          :ok <- monitor_seasons_from(series["id"], season_number) do
-      search_each_missing(series["id"], season_number)
+      # See watch_show/1 — same race with Sonarr's async episode
+      # refresh on fresh adds, same fix.
+      Task.start(fn -> search_each_missing(series["id"], season_number) end)
       {:ok, series}
     end
   end
@@ -225,7 +234,8 @@ defmodule Aviary.Sonarr do
   defp search_each_missing(sonarr_series_id, season_filter \\ nil) do
     today = Date.utc_today()
 
-    list_episodes(sonarr_series_id)
+    sonarr_series_id
+    |> wait_for_episodes()
     |> Enum.filter(fn ep ->
       ep["monitored"] == true and
         ep["hasFile"] != true and
@@ -236,6 +246,24 @@ defmodule Aviary.Sonarr do
     |> Enum.each(fn ep ->
       command("EpisodeSearch", %{episodeIds: [ep["id"]]})
     end)
+  end
+
+  # Sonarr's POST /series returns BEFORE RefreshEpisodeService
+  # populates the episode list. If we call /episode in that gap we get
+  # [] back and would silently fire zero searches — that's what left
+  # Silo stuck on "Searching" with no qBit handoff on a fresh add.
+  # Poll /episode until it returns something or we've waited long
+  # enough. Sonarr's refresh typically finishes in ~1s; the cap at 30s
+  # is for badly-degraded states (cold Sonarr, slow metadata source).
+  defp wait_for_episodes(sonarr_series_id, attempts \\ 60) do
+    case list_episodes(sonarr_series_id) do
+      [] when attempts > 0 ->
+        Process.sleep(500)
+        wait_for_episodes(sonarr_series_id, attempts - 1)
+
+      result ->
+        result
+    end
   end
 
   defp aired?(%{"airDate" => air}, today) when is_binary(air) and air != "" do

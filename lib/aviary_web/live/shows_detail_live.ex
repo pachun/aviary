@@ -284,7 +284,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     ~H"""
     <%= case @state do %>
       <% {:downloading, pct} -> %>
-        <span class="relative inline-block overflow-hidden font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-paper px-3 py-1.5 rounded-sm shrink-0 bg-oxblood/20 tabular-nums">
+        <span class="relative inline-block overflow-hidden font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-white px-3 py-1.5 rounded-sm shrink-0 bg-oxblood/20 tabular-nums">
           <span
             class="absolute inset-y-0 left-0 bg-oxblood transition-all duration-700 ease-out"
             style={"width: #{pct}%"}
@@ -293,19 +293,19 @@ defmodule AviaryWeb.ShowsDetailLive do
           <span class="relative">{pct}%</span>
         </span>
       <% :searching -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-paper/80 px-3 py-1.5 rounded-sm shrink-0">
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
           Searching…
         </span>
       <% :queued -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-paper/80 px-3 py-1.5 rounded-sm shrink-0">
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
           Queued
         </span>
       <% :imported -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-paper/80 px-3 py-1.5 rounded-sm shrink-0">
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
           Importing…
         </span>
       <% _ -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-paper px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-white px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
           {@label}
         </span>
     <% end %>
@@ -329,7 +329,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     ~H"""
     <%= case @state do %>
       <% {:downloading, pct} -> %>
-        <div class="relative overflow-hidden inline-block bg-oxblood/20 text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm tabular-nums">
+        <div class="relative overflow-hidden inline-block bg-oxblood/20 text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm tabular-nums">
           <span
             class="absolute inset-y-0 left-0 bg-oxblood transition-all duration-700 ease-out"
             style={"width: #{pct}%"}
@@ -338,15 +338,15 @@ defmodule AviaryWeb.ShowsDetailLive do
           <span class="relative">{pct}%</span>
         </div>
       <% :searching -> %>
-        <div class="inline-block bg-oxblood/40 text-paper/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
+        <div class="inline-block bg-oxblood/40 text-white/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
           Searching…
         </div>
       <% :queued -> %>
-        <div class="inline-block bg-oxblood/40 text-paper/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
+        <div class="inline-block bg-oxblood/40 text-white/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
           Queued
         </div>
       <% :imported -> %>
-        <div class="inline-block bg-oxblood/40 text-paper/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
+        <div class="inline-block bg-oxblood/40 text-white/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
           Importing…
         </div>
       <% _ -> %>
@@ -354,7 +354,7 @@ defmodule AviaryWeb.ShowsDetailLive do
           type="button"
           phx-click="play"
           disabled={@disabled}
-          class="bg-oxblood text-paper font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+          class="bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
         >
           {@label}
         </button>

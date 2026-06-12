@@ -91,7 +91,7 @@ defmodule AviaryWeb.LibraryLive do
       patch={@patch}
       class={[
         "px-4 py-1.5 rounded-sm border font-medium transition-colors duration-200",
-        @active && "bg-oxblood text-paper border-oxblood",
+        @active && "bg-oxblood text-white border-oxblood",
         !@active &&
           "bg-transparent text-muted border-rule hover:text-ink hover:border-ink"
       ]}
