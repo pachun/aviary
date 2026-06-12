@@ -46,10 +46,36 @@ defmodule Aviary.Catalog do
   which gates the episode list + button behavior.
   """
   def get_show(id, auth) do
-    if jellyfin_id?(id) do
-      get_library_show(id, auth)
-    else
-      get_discover_show(id)
+    # Resolve TMDB ids to Jellyfin ids when the show is already in
+    # the user's library — without this, a show downloaded via the
+    # Discover-tab Watch flow would render forever as a discover
+    # show, with every episode wearing a `tmdb-` id and every click
+    # re-routing to Sonarr instead of playing the downloaded files.
+    case resolve(id, auth) do
+      {:library, jellyfin_id} -> get_library_show(jellyfin_id, auth)
+      {:discover, tmdb_id} -> get_discover_show(tmdb_id)
+    end
+  end
+
+  defp resolve(id, auth) do
+    cond do
+      jellyfin_id?(id) ->
+        {:library, id}
+
+      jellyfin_id = lookup_jellyfin_id_for_tmdb(id, auth) ->
+        {:library, jellyfin_id}
+
+      true ->
+        {:discover, id}
+    end
+  end
+
+  defp lookup_jellyfin_id_for_tmdb(tmdb_id, auth) do
+    Aviary.Jellyfin.list_shows(auth)
+    |> Enum.find(&(get_in(&1, ["ProviderIds", "Tmdb"]) == tmdb_id))
+    |> case do
+      %{"Id" => id} -> id
+      _ -> nil
     end
   end
 

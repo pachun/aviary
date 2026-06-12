@@ -76,31 +76,36 @@ defmodule AviaryWeb.ShowsDetailLive do
   # library shows (mix of Jellyfin ids and `tmdb-` ids for episodes
   # not yet downloaded).
 
+  # Each handler shares the same shape: an episode id that's a real
+  # Jellyfin id routes to playback, a `tmdb-` id routes to Sonarr
+  # IF the episode isn't already being worked on. Already-in-progress
+  # episodes no-op so a click on a downloading or searching chip
+  # doesn't fire a duplicate Sonarr command (and doesn't spam another
+  # "grabbing…" flash for work already in flight).
+
   def handle_event("play", _, socket) do
-    case pick_continue_episode(socket.assigns.show) do
-      nil ->
-        trigger_sonarr(socket, :show, nil, nil)
-
-      %{id: "tmdb-" <> _} ->
-        trigger_sonarr(socket, :show, nil, nil)
-
-      ep ->
-        {:noreply, start_playing(socket, ep)}
+    if in_progress?(show_state(socket.assigns.show, socket.assigns.sonarr_status)) do
+      {:noreply, socket}
+    else
+      case pick_continue_episode(socket.assigns.show) do
+        nil -> trigger_sonarr(socket, :show, nil, nil)
+        %{id: "tmdb-" <> _} -> trigger_sonarr(socket, :show, nil, nil)
+        ep -> {:noreply, start_playing(socket, ep)}
+      end
     end
   end
 
   def handle_event("watch_season", %{"season" => season_str}, socket) do
     season = String.to_integer(season_str)
 
-    case first_episode_of_season(socket.assigns.show, season) do
-      nil ->
-        {:noreply, put_flash(socket, :error, "No episodes in this season.")}
-
-      %{id: "tmdb-" <> _} ->
-        trigger_sonarr(socket, :season, season, nil)
-
-      ep ->
-        {:noreply, start_playing(socket, ep)}
+    if in_progress?(season_state(socket.assigns.show, season, socket.assigns.sonarr_status)) do
+      {:noreply, socket}
+    else
+      case first_episode_of_season(socket.assigns.show, season) do
+        nil -> {:noreply, put_flash(socket, :error, "No episodes in this season.")}
+        %{id: "tmdb-" <> _} -> trigger_sonarr(socket, :season, season, nil)
+        ep -> {:noreply, start_playing(socket, ep)}
+      end
     end
   end
 
@@ -110,7 +115,11 @@ defmodule AviaryWeb.ShowsDetailLive do
         {:noreply, socket}
 
       %{id: "tmdb-" <> _} = ep ->
-        trigger_sonarr(socket, :episode, ep.season, ep.episode)
+        if in_progress?(episode_state(socket.assigns.show, ep, socket.assigns.sonarr_status)) do
+          {:noreply, socket}
+        else
+          trigger_sonarr(socket, :episode, ep.season, ep.episode)
+        end
 
       ep ->
         {:noreply, start_playing(socket, ep)}
@@ -169,6 +178,10 @@ defmodule AviaryWeb.ShowsDetailLive do
           </span>
           <span class="relative">{pct}%</span>
         </span>
+      <% :searching -> %>
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-paper/80 px-3 py-1.5 rounded-sm shrink-0">
+          Searching…
+        </span>
       <% :queued -> %>
         <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-paper/80 px-3 py-1.5 rounded-sm shrink-0">
           Queued
@@ -205,6 +218,10 @@ defmodule AviaryWeb.ShowsDetailLive do
           >
           </span>
           <span class="relative">{pct}%</span>
+        </div>
+      <% :searching -> %>
+        <div class="inline-block bg-oxblood/40 text-paper/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
+          Searching…
         </div>
       <% :queued -> %>
         <div class="inline-block bg-oxblood/40 text-paper/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
@@ -690,6 +707,10 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
+  defp in_progress?(:searching), do: true
+  defp in_progress?({:downloading, _}), do: true
+  defp in_progress?(_), do: false
+
   defp first_episode_of_season(show, season) do
     case Enum.find(show.episodes_by_season, fn {s, _} -> s == season end) do
       {_, [first | _]} -> first
@@ -717,17 +738,20 @@ defmodule AviaryWeb.ShowsDetailLive do
       %{has_file: true} ->
         :playable
 
-      # Monitored = Sonarr has accepted the intent. From the user's
-      # perspective, "I clicked Watch" → the work has started; the
-      # button should reflect that until bytes either start flowing
-      # (transitions to :downloading) or the file lands
-      # (transitions to :playable). Without this, the window between
-      # add-to-Sonarr and search-finding-a-release looked indistin-
-      # guishable from "nothing happened."
+      # Three sub-states once Sonarr is monitoring the episode:
+      #   - in queue with progress  → :downloading {pct}%
+      #   - in queue, no bytes yet  → :downloading 0%
+      #   - monitored, NOT in queue → :searching (Sonarr is still
+      #     looking for / waiting on a release)
+      # Splitting :searching from :downloading kills the confusing
+      # "Queued" label the user saw on episodes that weren't actually
+      # in qBit's queue — those are conceptually "we're looking,"
+      # not "in the download queue."
       %{id: episode_id, monitored: true} ->
         case download_progress(status.queue, episode_id) do
           {:ok, pct} -> {:downloading, pct}
-          _ -> :queued
+          :in_queue_no_bytes -> {:downloading, 0}
+          :not_in_queue -> :searching
         end
 
       _ ->
@@ -770,10 +794,10 @@ defmodule AviaryWeb.ShowsDetailLive do
         {:ok, round((size - left) / size * 100)}
 
       %{} ->
-        :queued
+        :in_queue_no_bytes
 
       nil ->
-        :ready
+        :not_in_queue
     end
   end
 
