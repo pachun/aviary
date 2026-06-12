@@ -91,6 +91,17 @@ ENV MIX_ENV="prod"
 # Only copy the final release from the build stage
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/aviary ./
 
+# Make /app world-readable while preserving executable bits, so the
+# container can be run under a uid other than `nobody` (e.g. when
+# compose overrides `user:` to match a host user that owns a bind-
+# mounted data dir). Without this, scripts copied with mix release's
+# default 0750 mode produce `/bin/sh: cannot open /app/bin/server:
+# Permission denied` for anyone outside the nobody/root pair. The
+# capital `X` in `a+rX` adds execute for ALL only where execute is
+# already set for someone (i.e. directories and shell scripts), so
+# BEAM files stay at 0644.
+RUN chmod -R a+rX /app
+
 USER nobody
 
 # If using an environment that doesn't automatically reap zombie processes, it is
