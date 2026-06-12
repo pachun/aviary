@@ -57,6 +57,16 @@
   --font-heading: "Newsreader", "Fraunces", Georgia, serif;
 }
 
+/* Reserve the scrollbar gutter on every page so the layout doesn't
+   shift sideways the moment a page grows past viewport height. The
+   discover page populates rows progressively after mount — without
+   this, the scrollbar would pop in mid-load and shove the masthead +
+   content a scrollbar-width to the left. Other pages with stable
+   content-height never had the issue. */
+html {
+  scrollbar-gutter: stable;
+}
+
 /* Body styles. Setting these directly so every page inherits without
    each LiveView having to remember. */
 body {
