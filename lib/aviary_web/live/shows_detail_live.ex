@@ -108,13 +108,15 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
 
     if has_imported? do
-      sonarr_path = status && Map.get(status, :path)
-
-      if sonarr_path do
-        throttle({:jellyfin_scan, sonarr_path}, 10_000, fn ->
-          Aviary.Jellyfin.refresh_path(sonarr_path, user)
-        end)
-      end
+      # Library-wide refresh, throttled globally — depot's compose
+      # files mount the shows directory at different paths inside
+      # Sonarr's and Jellyfin's containers (Sonarr: /shows,
+      # Jellyfin: /media/shows), so a path-targeted scan needs
+      # translation we don't currently do. The library-wide scan
+      # works regardless and Jellyfin dedupes concurrent triggers.
+      throttle(:jellyfin_library_refresh, 15_000, fn ->
+        Aviary.Jellyfin.refresh_library(user)
+      end)
 
       Aviary.Cache.invalidate({:jellyfin_list_episodes, show.id, user.id})
 

@@ -361,27 +361,30 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
-  Asks Jellyfin to scan a specific folder path right now via
-  `/Library/Media/Updated` — the same hook Sonarr's "Connect"
-  integration uses when an import lands. Critically, this
-  *discovers new files on disk*, unlike `/Items/{id}/Refresh`
-  which only re-processes existing items. Used by the show
-  detail page when an episode is in our `:imported` state
-  (Sonarr has the file, Jellyfin hasn't seen it yet) to skip the
-  multi-minute wait for Jellyfin's scheduled scan.
+  Asks Jellyfin to rescan all libraries right now via
+  `/Library/Refresh`. Used when Sonarr has just imported a new
+  episode but Jellyfin hasn't seen it yet — without the nudge,
+  the chip can sit on "Importing…" until Jellyfin's scheduled
+  scan fires (12 h default).
 
-  Returns immediately; the scan is async on Jellyfin's side.
-  The freshly-discovered episode appears in `list_episodes`
-  results once the scan worker processes it (typically seconds).
+  Why a library-wide scan instead of the more surgical
+  `/Library/Media/Updated` with a path: depot's compose files
+  bind-mount the shows directory at different in-container
+  paths for Sonarr (`/shows`) and Jellyfin (`/media/shows`). A
+  path-targeted scan needs the path Jellyfin understands, and
+  Sonarr's path doesn't translate without configuration in
+  aviary. `/Library/Refresh` sidesteps the path-translation
+  problem entirely — Jellyfin scans every library and finds
+  files wherever they actually are.
+
+  Trade-off: it's a heavier scan. Throttled at the caller (15 s
+  per process via `Aviary.Cache.fetch`) so we don't fire it
+  every poll tick, and Jellyfin's task scheduler dedupes
+  concurrent triggers.
   """
-  def refresh_path(path, auth) when is_binary(path) and path != "" do
-    Req.post(base_url() <> "/Library/Media/Updated",
+  def refresh_library(auth) do
+    Req.post(base_url() <> "/Library/Refresh",
       headers: [{"x-emby-token", auth.token}],
-      json: %{
-        "Updates" => [
-          %{"Path" => path, "UpdateType" => "Created"}
-        ]
-      },
       receive_timeout: 5_000
     )
 
@@ -389,8 +392,6 @@ defmodule Aviary.Jellyfin do
   rescue
     _ -> :error
   end
-
-  def refresh_path(_, _), do: :error
 
   ## Playback state
 
