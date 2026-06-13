@@ -17,6 +17,13 @@ defmodule Aviary.Upcoming do
   whether the user has caught up on the rest of the show. The
   "next episode coming" is series-level information; the user's
   watch state is orthogonal.
+
+  Exception: **season premieres ride the feed regardless of how
+  far out they are**, until the file actually downloads. The
+  user wanted explicit "this big thing is coming" telemetry that
+  beats the 14-day rule of thumb. Implemented in `surface?/2` —
+  E1 of any season is always surfaced; other episodes still
+  apply the window.
   """
 
   alias Aviary.Jellyseerr
@@ -88,16 +95,28 @@ defmodule Aviary.Upcoming do
   defp find_upcoming_in_episodes(episodes, jellyfin, today) do
     episodes
     |> Enum.map(&Map.put(&1, :parsed_date, parse_iso_date(&1["airDate"])))
-    |> Enum.filter(&in_window?(&1, today))
+    |> Enum.filter(&future?(&1, today))
     |> Enum.sort_by(& &1.parsed_date, Date)
-    |> Enum.find(&(not episode_in_library?(jellyfin, &1["seasonNumber"], &1["episodeNumber"])))
+    |> Enum.find(fn ep ->
+      not episode_in_library?(jellyfin, ep["seasonNumber"], ep["episodeNumber"]) and
+        surface?(ep, today)
+    end)
   end
 
-  defp in_window?(%{parsed_date: nil}, _today), do: false
+  defp future?(%{parsed_date: nil}, _today), do: false
 
-  defp in_window?(%{parsed_date: date}, today) do
-    days = Date.diff(date, today)
-    days >= 0 and days <= @window_days
+  defp future?(%{parsed_date: date}, today), do: Date.diff(date, today) >= 0
+
+  # Season premieres (E1 of any season) ride the feed for as long
+  # as the date is known and the file isn't downloaded yet — the
+  # user explicitly wants the "save the date" signal regardless of
+  # how far out it is. Mid-season continuation episodes still ride
+  # the 14-day window because at any greater distance the user
+  # doesn't care.
+  defp surface?(%{"episodeNumber" => 1}, _today), do: true
+
+  defp surface?(%{parsed_date: date}, today) do
+    Date.diff(date, today) <= @window_days
   end
 
   defp build_release(episode, jellyfin, name_fallback, today) do
