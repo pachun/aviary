@@ -34,7 +34,7 @@ defmodule Aviary.Upcoming do
   Returns the user's upcoming releases sorted by air date ascending.
   """
   def releases(auth) do
-    today = Date.utc_today()
+    today = Aviary.LocalTime.today()
 
     auth.id
     |> Aviary.Library.list_tmdb_ids()

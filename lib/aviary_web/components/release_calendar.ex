@@ -39,7 +39,7 @@ defmodule AviaryWeb.Components.ReleaseCalendar do
     # Explicit nil-coalesce instead.
     assigns =
       assigns
-      |> assign(:today, assigns[:today] || Date.utc_today())
+      |> assign(:today, assigns[:today] || Aviary.LocalTime.today())
       |> then(fn a -> assign(a, :mode, a.schedule.kind) end)
 
     ~H"""

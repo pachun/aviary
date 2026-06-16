@@ -120,7 +120,7 @@ defmodule Aviary.Catalog do
         # derivation is authoritative: skip anything already
         # downloaded, take the first remaining unaired or today-airing
         # episode.
-        schedule = derive_schedule(episodes_by_season, Date.utc_today())
+        schedule = derive_schedule(episodes_by_season, Aviary.LocalTime.today())
 
         show =
           item
@@ -169,7 +169,7 @@ defmodule Aviary.Catalog do
         next_up: nil,
         season_count: length(seasons),
         rating: Aviary.RottenTomatoes.fetch(body["name"], :tv),
-        schedule: derive_schedule(episodes_by_season, Date.utc_today()),
+        schedule: derive_schedule(episodes_by_season, Aviary.LocalTime.today()),
         poster_url: tmdb_poster_url(body["posterPath"])
       }
 
@@ -217,7 +217,7 @@ defmodule Aviary.Catalog do
   # shows use for episodes_by_season — so the template renders both
   # sources through one path.
   defp fetch_discover_episodes(tmdb_id, seasons) do
-    today = Date.utc_today()
+    today = Aviary.LocalTime.today()
 
     seasons
     |> Task.async_stream(

@@ -295,7 +295,7 @@ defmodule Aviary.Sonarr do
   # get nothing. Per-episode searches guarantee each gets its own
   # indexer-query result depth.
   defp search_each_missing(sonarr_series_id, season_filter \\ nil) do
-    today = Date.utc_today()
+    today = Aviary.LocalTime.today()
 
     sonarr_series_id
     |> wait_for_episodes()

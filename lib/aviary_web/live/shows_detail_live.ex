@@ -885,7 +885,7 @@ defmodule AviaryWeb.ShowsDetailLive do
   # "tomorrow" / day-name / "next [day]" / month-day. Mirrors the
   # calendar caption's tiers but terser since this lives on a button.
   defp waiting_phrase(air_date) do
-    today = Date.utc_today()
+    today = Aviary.LocalTime.today()
     days = Date.diff(air_date, today)
 
     cond do
@@ -1276,7 +1276,7 @@ defmodule AviaryWeb.ShowsDetailLive do
   # consistent with the show detail Play button's waiting_phrase
   # vocabulary so the user sees one language across the page.
   defp air_date_label(%Date{} = date) do
-    today = Date.utc_today()
+    today = Aviary.LocalTime.today()
     days = Date.diff(date, today)
 
     cond do

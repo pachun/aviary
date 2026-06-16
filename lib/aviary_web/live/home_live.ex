@@ -123,7 +123,7 @@ defmodule AviaryWeb.HomeLive do
   # than extracting to a shared module yet: a third caller would be
   # the moment to consolidate.
   defp waiting_phrase(air_date) do
-    today = Date.utc_today()
+    today = Aviary.LocalTime.today()
     days = Date.diff(air_date, today)
 
     cond do
