@@ -379,7 +379,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     {:noreply,
      socket
      |> assign(:in_library, false)
-     |> put_flash(:info, "#{show.title} removed from your library. Files stay; add anytime.")}
+     |> put_flash(:info, "#{show.title} removed from your library.")}
   end
 
   def handle_event("add_to_library", _, socket) do
@@ -595,7 +595,7 @@ defmodule AviaryWeb.ShowsDetailLive do
                     :if={@in_library}
                     type="button"
                     phx-click="remove_from_library"
-                    data-confirm={"Remove #{@show.title} from your library? Files will stay; you can re-add anytime."}
+                    data-confirm={"Remove #{@show.title} from your library?"}
                     class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-muted hover:text-ink underline-offset-4 hover:underline cursor-pointer focus:outline-none focus-visible:underline transition-colors"
                   >
                     Remove from library
