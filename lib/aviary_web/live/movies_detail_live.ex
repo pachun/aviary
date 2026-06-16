@@ -4,18 +4,30 @@ defmodule AviaryWeb.MoviesDetailLive do
   alias AviaryWeb.Components.CatalogGrid
   alias AviaryWeb.Components.VideoPlayer
 
+  # Mirrors @sonarr_poll_ms in ShowsDetailLive. Five seconds is the
+  # sweet spot between "the page feels alive" and "we're not hammering
+  # Radarr." Polling stops when the LV dies.
+  @radarr_poll_ms 5_000
+
   def mount(%{"id" => id} = params, _session, socket) do
     case Aviary.Catalog.get_movie(id, socket.assigns.current_user) do
       {:ok, movie} ->
-        {:ok,
-         assign(socket,
-           page_title: "#{movie.title} · Aviary",
-           movie: movie,
-           playing_item: nil,
-           playing_segments: nil,
-           playing_subtitles: [],
-           kicker: kicker(params["from"], params["q"])
-         )}
+        socket =
+          socket
+          |> assign(
+            page_title: "#{movie.title} · Aviary",
+            movie: movie,
+            playing_item: nil,
+            playing_segments: nil,
+            playing_subtitles: [],
+            kicker: kicker(params["from"], params["q"]),
+            radarr_status: nil,
+            imported_stuck_since: nil
+          )
+          |> fetch_radarr_status()
+          |> schedule_radarr_poll()
+
+        {:ok, socket}
 
       :error ->
         {:ok,
@@ -23,6 +35,108 @@ defmodule AviaryWeb.MoviesDetailLive do
          |> put_flash(:error, "Movie not found")
          |> push_navigate(to: ~p"/library?type=movies")}
     end
+  end
+
+  def handle_info(:poll_radarr, socket) do
+    {:noreply,
+     socket
+     |> fetch_radarr_status()
+     |> refresh_movie_if_imported()
+     |> schedule_radarr_poll()}
+  end
+
+  # Side-effects that piggyback on the Radarr poll — same shape as
+  # ShowsDetailLive.refresh_show_if_imported but per-movie:
+  #
+  #   * Active download → kick Radarr to refresh qBit progress now.
+  #     Radarr's own RefreshMonitoredDownloads fires every ~90s; this
+  #     nudge keeps the chip moving smoothly.
+  #
+  #   * Radarr has the file but Jellyfin doesn't → trigger a
+  #     library-wide Jellyfin refresh. Throttled so a multi-second poll
+  #     cadence doesn't pile up. Once Jellyfin picks up the file, the
+  #     next get_movie call resolves the TMDB id to a Jellyfin id and
+  #     the page flips to the library Play view automatically.
+  defp refresh_movie_if_imported(socket) do
+    movie = socket.assigns.movie
+    user = socket.assigns.current_user
+    state = movie_state(movie, socket.assigns.radarr_status)
+
+    cond do
+      match?({:downloading, _}, state) ->
+        throttle({:radarr_dl_refresh, movie.id}, 5_000, fn ->
+          Aviary.Radarr.refresh_monitored_downloads()
+        end)
+
+        socket
+
+      state == :imported ->
+        throttle(:jellyfin_library_refresh, 15_000, fn ->
+          Aviary.Jellyfin.refresh_library(user)
+        end)
+
+        # Force-invalidate the movies cache and re-resolve via Catalog
+        # so the moment Jellyfin sees the file, this LV swaps to the
+        # library view. The TMDB id stays as the URL token; resolve
+        # finds the Jellyfin counterpart and Catalog returns a
+        # source: :library shape.
+        Aviary.Cache.invalidate({:jellyfin_list_movies, user.id})
+
+        case Aviary.Catalog.get_movie(movie.tmdb_id || movie.id, user) do
+          {:ok, refreshed} -> assign(socket, :movie, refreshed)
+          _ -> socket
+        end
+
+      true ->
+        assign(socket, :imported_stuck_since, nil)
+    end
+  end
+
+  defp throttle(key, cooldown_ms, fun) do
+    Aviary.Cache.fetch(key, cooldown_ms, fn ->
+      fun.()
+      :stamped
+    end)
+
+    :ok
+  end
+
+  defp fetch_radarr_status(socket) do
+    status =
+      case socket.assigns.movie do
+        # No point asking Radarr about a movie Jellyfin already has —
+        # the file is here, we're done. Skipping also keeps a misconfigured
+        # Radarr (or no Radarr at all) from spamming the warning log on
+        # every library-movie page load.
+        %{source: :library} ->
+          nil
+
+        %{tmdb_id: tmdb_id} when is_binary(tmdb_id) ->
+          case Aviary.Radarr.movie_status(tmdb_id) do
+            {:ok, status} -> status
+            _ -> nil
+          end
+
+        _ ->
+          nil
+      end
+
+    assign(socket, :radarr_status, status)
+  end
+
+  defp schedule_radarr_poll(socket) do
+    if connected?(socket) and poll_needed?(socket) do
+      Process.send_after(self(), :poll_radarr, @radarr_poll_ms)
+    end
+
+    socket
+  end
+
+  # Stop polling once the movie is playable — there's nothing more for
+  # Radarr to tell us, and the LV stays inert until the user navigates
+  # away.
+  defp poll_needed?(socket) do
+    socket.assigns.movie.source == :discover
   end
 
   # Resolve the kicker (back link above the title) from the `from`
@@ -49,6 +163,26 @@ defmodule AviaryWeb.MoviesDetailLive do
      |> assign(:playing_item, movie)
      |> assign(:playing_segments, Aviary.Jellyfin.segments(movie.id, user))
      |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(movie.id, user))}
+  end
+
+  def handle_event("watch", _, socket) do
+    movie = socket.assigns.movie
+
+    if in_progress?(movie_state(movie, socket.assigns.radarr_status)) do
+      {:noreply, socket}
+    else
+      case Aviary.Radarr.watch_movie(movie.tmdb_id) do
+        {:ok, _} ->
+          {:noreply,
+           socket
+           |> fetch_radarr_status()
+           |> put_flash(:info, "Grabbing #{movie.title}…")}
+
+        _ ->
+          {:noreply,
+           put_flash(socket, :error, "Couldn't reach Radarr. Try again in a moment.")}
+      end
+    end
   end
 
   def handle_event("close_player", _, socket) do
@@ -164,27 +298,17 @@ defmodule AviaryWeb.MoviesDetailLive do
                 />
 
                 <%!--
-                  Play (library) or a disabled "Not in your library"
-                  affordance (discover). The disabled state is the
-                  honest UI until Radarr is wired up: same shape and
-                  position as Play so the layout doesn't shift, muted
-                  so it doesn't beg a click that goes nowhere.
+                  Library: Play (or Resume). Discover: one of Watch /
+                  Searching… / {pct}% / Importing… driven by
+                  movie_state(movie, radarr_status). Same geometry
+                  across every state so the layout never shifts as
+                  the state machine progresses.
                 --%>
                 <div>
-                  <button
-                    :if={@movie.source == :library}
-                    type="button"
-                    phx-click="play"
-                    class="bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                  >
-                    {if @movie.resume_seconds, do: "Resume", else: "Play"}
-                  </button>
-                  <span
-                    :if={@movie.source == :discover}
-                    class="inline-block bg-oxblood/40 text-white/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm"
-                  >
-                    Not in your library
-                  </span>
+                  <.movie_action_button
+                    movie={@movie}
+                    state={movie_state(@movie, @radarr_status)}
+                  />
                 </div>
               </div>
 
@@ -226,6 +350,79 @@ defmodule AviaryWeb.MoviesDetailLive do
     </Layouts.app>
     """
   end
+
+  # Top-of-page action button — Play for library, the Radarr state
+  # machine for discover. Mirrors top_action_button/1 in
+  # ShowsDetailLive but for a movie (no Resume vs Continue branching,
+  # no caught-up special case).
+  attr :movie, :map, required: true
+  attr :state, :any, required: true
+
+  defp movie_action_button(assigns) do
+    ~H"""
+    <%= case @state do %>
+      <% :playable -> %>
+        <button
+          type="button"
+          phx-click="play"
+          class="bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+        >
+          {if @movie.resume_seconds, do: "Resume", else: "Play"}
+        </button>
+      <% {:downloading, pct} -> %>
+        <div class="relative overflow-hidden inline-block bg-oxblood/20 text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm tabular-nums">
+          <span
+            class="absolute inset-y-0 left-0 bg-oxblood transition-all duration-700 ease-out"
+            style={"width: #{pct}%"}
+          >
+          </span>
+          <span class="relative">{pct}%</span>
+        </div>
+      <% :searching -> %>
+        <div class="inline-block bg-oxblood/40 text-white/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
+          Searching…
+        </div>
+      <% :imported -> %>
+        <div class="inline-block bg-oxblood/40 text-white/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
+          Importing…
+        </div>
+      <% _ -> %>
+        <button
+          type="button"
+          phx-click="watch"
+          class="bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+        >
+          Watch
+        </button>
+    <% end %>
+    """
+  end
+
+  ## State machine
+
+  # Resolves the current movie to one of:
+  #   :playable          — Jellyfin has the file, click plays it
+  #   :imported          — Radarr has the file, Jellyfin doesn't yet
+  #   {:downloading, n}  — actively downloading, n% complete
+  #   :searching         — Radarr is monitoring + has no release yet
+  #   :ready             — not yet in Radarr; click triggers Watch
+  def movie_state(%{source: :library}, _status), do: :playable
+  def movie_state(_movie, nil), do: :ready
+  def movie_state(_movie, %{has_file: true}), do: :imported
+
+  def movie_state(_movie, %{queue: %{"size" => size, "sizeleft" => left}})
+      when is_number(size) and is_number(left) and size > 0 do
+    {:downloading, round((size - left) / size * 100)}
+  end
+
+  def movie_state(_movie, %{queue: %{}}), do: {:downloading, 0}
+  def movie_state(_movie, %{monitored: true}), do: :searching
+  def movie_state(_movie, _status), do: :ready
+
+  defp in_progress?(:searching), do: true
+  defp in_progress?({:downloading, _}), do: true
+  defp in_progress?(:imported), do: true
+  defp in_progress?(_), do: false
 
   # Builds the comma-bullet metadata string: "Adventure · 3h 28m ·
   # PG-13 · 2001". Each part is included only when present; the join

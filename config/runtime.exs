@@ -52,6 +52,13 @@ config :aviary,
   # Watch buttons fall through to "not in your library yet" flashes.
   sonarr_url: System.get_env("SONARR_URL"),
   sonarr_api_key: System.get_env("SONARR_API_KEY"),
+  # Radarr is Sonarr's movie sibling — drives the movie detail page's
+  # Watch button and progress chip the same way Sonarr drives shows.
+  # Optional; when unset, movies not in the library render the
+  # "Not in your library" disabled affordance instead of a Watch
+  # button.
+  radarr_url: System.get_env("RADARR_URL"),
+  radarr_api_key: System.get_env("RADARR_API_KEY"),
   # Shared secret Sonarr's Connect webhook sends in the
   # `x-aviary-secret` header. depot's aviary configure.sh generates
   # this and persists it alongside SECRET_KEY_BASE, then registers
