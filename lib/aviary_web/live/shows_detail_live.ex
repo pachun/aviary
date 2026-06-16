@@ -23,7 +23,7 @@ defmodule AviaryWeb.ShowsDetailLive do
             playing_item: nil,
             playing_segments: nil,
             playing_subtitles: [],
-            kicker: kicker(params["from"]),
+            kicker: kicker(params["from"], params["q"]),
             sonarr_status: nil,
             collapsed_seasons: initial_collapsed_seasons(show),
             imported_stuck_since: nil,
@@ -220,10 +220,15 @@ defmodule AviaryWeb.ShowsDetailLive do
 
   defp in_library?(_, _), do: false
 
-  defp kicker("home"), do: %{label: "Home", path: "/home"}
-  defp kicker("discover"), do: %{label: "Discover", path: "/discover"}
-  defp kicker("library_movies"), do: %{label: "Library", path: "/library?type=movies"}
-  defp kicker(_), do: %{label: "Library", path: "/library?type=shows"}
+  defp kicker("home", _), do: %{label: "Home", path: "/home"}
+  defp kicker("discover", _), do: %{label: "Discover", path: "/discover"}
+  defp kicker("library_movies", _), do: %{label: "Library", path: "/library?type=movies"}
+
+  defp kicker("search", q) when is_binary(q) and q != "",
+    do: %{label: "Search", path: "/search?q=" <> URI.encode_www_form(q)}
+
+  defp kicker("search", _), do: %{label: "Search", path: "/search"}
+  defp kicker(_, _), do: %{label: "Library", path: "/library?type=shows"}
 
   # Three handlers, one routing rule: an episode id with the `tmdb-`
   # prefix means "not in Jellyfin's library yet" and routes to

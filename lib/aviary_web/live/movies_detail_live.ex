@@ -14,7 +14,7 @@ defmodule AviaryWeb.MoviesDetailLive do
            playing_item: nil,
            playing_segments: nil,
            playing_subtitles: [],
-           kicker: kicker(params["from"])
+           kicker: kicker(params["from"], params["q"])
          )}
 
       :error ->
@@ -27,15 +27,18 @@ defmodule AviaryWeb.MoviesDetailLive do
 
   # Resolve the kicker (back link above the title) from the `from`
   # query param. Default lands on the Movies tab of /library since
-  # there's no movie-other natural landing place.
-  defp kicker(from) do
-    case from do
-      "home" -> %{label: "Home", path: "/home"}
-      "discover" -> %{label: "Discover", path: "/discover"}
-      "library_shows" -> %{label: "Library", path: "/library?type=shows"}
-      _ -> %{label: "Library", path: "/library?type=movies"}
-    end
-  end
+  # there's no movie-other natural landing place. Search preserves
+  # the query so the user lands back on their results, not a blank
+  # search screen.
+  defp kicker("home", _), do: %{label: "Home", path: "/home"}
+  defp kicker("discover", _), do: %{label: "Discover", path: "/discover"}
+  defp kicker("library_shows", _), do: %{label: "Library", path: "/library?type=shows"}
+
+  defp kicker("search", q) when is_binary(q) and q != "",
+    do: %{label: "Search", path: "/search?q=" <> URI.encode_www_form(q)}
+
+  defp kicker("search", _), do: %{label: "Search", path: "/search"}
+  defp kicker(_, _), do: %{label: "Library", path: "/library?type=movies"}
 
   def handle_event("play", _, socket) do
     movie = socket.assigns.movie
@@ -93,9 +96,16 @@ defmodule AviaryWeb.MoviesDetailLive do
             identity on mobile that the poster's aesthetic contribution
             isn't worth its real-estate cost there.
           --%>
+          <%!--
+            poster_url is set by Catalog.get_movie — for library movies
+            it's the aviary image proxy keyed by Jellyfin id; for
+            discover movies (Search hits) it's the TMDB CDN via our
+            disk-cached proxy. Same field, same render, source
+            abstracted away — mirrors how show detail does it.
+          --%>
           <div class="hidden md:block">
             <img
-              src={"/image/#{@movie.id}"}
+              src={@movie.poster_url}
               alt={@movie.title}
               class="w-full aspect-[2/3] object-cover rounded-sm bg-rule"
             />
@@ -154,19 +164,27 @@ defmodule AviaryWeb.MoviesDetailLive do
                 />
 
                 <%!--
-                  Play button lives with the decision-relevant info
-                  (title, metadata, RT) rather than below the synopsis.
-                  Keeps it above the fold and pairs it visually with the
-                  RT scores it sits next to.
+                  Play (library) or a disabled "Not in your library"
+                  affordance (discover). The disabled state is the
+                  honest UI until Radarr is wired up: same shape and
+                  position as Play so the layout doesn't shift, muted
+                  so it doesn't beg a click that goes nowhere.
                 --%>
                 <div>
                   <button
+                    :if={@movie.source == :library}
                     type="button"
                     phx-click="play"
                     class="bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     {if @movie.resume_seconds, do: "Resume", else: "Play"}
                   </button>
+                  <span
+                    :if={@movie.source == :discover}
+                    class="inline-block bg-oxblood/40 text-white/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm"
+                  >
+                    Not in your library
+                  </span>
                 </div>
               </div>
 

@@ -180,8 +180,20 @@ defmodule AviaryWeb.Components.Marquee do
 
   defp thumbnail_src(%{thumbnail_item_id: id}), do: "/image/#{id}"
 
-  defp detail_href(%{kind: :movie, detail_id: id}, from), do: "/movies/#{id}?from=#{from}"
-  defp detail_href(%{kind: :show, detail_id: id}, from), do: "/shows/#{id}?from=#{from}"
+  defp detail_href(%{kind: :movie, detail_id: id} = item, from),
+    do: "/movies/#{id}?from=#{from}" <> kicker_q(item)
+
+  defp detail_href(%{kind: :show, detail_id: id} = item, from),
+    do: "/shows/#{id}?from=#{from}" <> kicker_q(item)
+
+  # Optional `kicker_q` on an item embeds the originating query into the
+  # detail href so the detail page's back link can rebuild the exact
+  # state the user came from. Today only Search sets it — Discover and
+  # Home rows have a stable landing page that needs no parameters.
+  defp kicker_q(%{kicker_q: q}) when is_binary(q) and q != "",
+    do: "&q=" <> URI.encode_www_form(q)
+
+  defp kicker_q(_), do: ""
 
   defp has_score?(%{rating: %{critic: c, audience: a}}) when not (is_nil(c) and is_nil(a)), do: true
   defp has_score?(_), do: false

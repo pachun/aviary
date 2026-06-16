@@ -30,12 +30,47 @@ defmodule Aviary.Catalog do
     |> Enum.sort_by(&sort_key/1)
   end
 
+  @doc """
+  Fetch a single movie. Same id-shape dispatch as `get_show/2`:
+  Jellyfin GUID → library detail (full progress + Play affordance);
+  anything else is treated as a TMDB id and loaded via Jellyseerr
+  (read-only Discover-style detail). Both branches return the SAME
+  shape so `MoviesDetailLive` doesn't need to branch on the source
+  beyond the `:source` gate on the action button.
+  """
   def get_movie(id, auth) do
+    case resolve_movie(id, auth) do
+      {:library, jellyfin_id} -> get_library_movie(jellyfin_id, auth)
+      {:discover, tmdb_id} -> get_discover_movie(tmdb_id)
+    end
+  end
+
+  defp resolve_movie(id, auth) do
+    cond do
+      jellyfin_id?(id) -> {:library, id}
+      jellyfin_id = lookup_jellyfin_id_for_movie_tmdb(id, auth) -> {:library, jellyfin_id}
+      true -> {:discover, id}
+    end
+  end
+
+  defp lookup_jellyfin_id_for_movie_tmdb(tmdb_id, auth) do
+    Aviary.Jellyfin.list_movies(auth)
+    |> Enum.find(&(get_in(&1, ["ProviderIds", "Tmdb"]) == tmdb_id))
+    |> case do
+      %{"Id" => id} -> id
+      _ -> nil
+    end
+  end
+
+  defp get_library_movie(id, auth) do
     case Aviary.Jellyfin.get_item(id, auth) do
       {:ok, item} ->
         movie =
           item
           |> to_movie_detail()
+          |> Map.put(:source, :library)
+          |> Map.put(:tmdb_id, tmdb_id(item))
+          |> Map.put(:poster_url, "/image/#{item["Id"]}")
           |> Map.put(:rating, Aviary.RottenTomatoes.fetch(item["Name"], :movie))
 
         {:ok, movie}
@@ -44,6 +79,41 @@ defmodule Aviary.Catalog do
         :error
     end
   end
+
+  # Build a movie shape from Jellyseerr for movies not in the library
+  # yet — Search hits this. Same fields as get_library_movie returns
+  # so MoviesDetailLive renders one layout for both. resume_seconds
+  # is always nil (nothing to resume from); Play is gated on :source
+  # at the template layer.
+  defp get_discover_movie(tmdb_id) do
+    with {:ok, body} <- Aviary.Jellyseerr.get_movie(tmdb_id) do
+      movie = %{
+        id: to_string(tmdb_id),
+        source: :discover,
+        tmdb_id: to_string(tmdb_id),
+        title: body["title"],
+        year: tmdb_movie_year(body["releaseDate"]),
+        runtime_minutes: body["runtime"],
+        official_rating: nil,
+        genre: tmdb_first_genre(body),
+        synopsis: body["overview"],
+        trailer_url: tmdb_trailer_url(body),
+        resume_seconds: nil,
+        poster_url: tmdb_poster_url(body["posterPath"]),
+        rating: Aviary.RottenTomatoes.fetch(body["title"], :movie)
+      }
+
+      {:ok, movie}
+    else
+      _ -> :error
+    end
+  end
+
+  defp tmdb_movie_year(date_str) when is_binary(date_str) and date_str != "" do
+    date_str |> String.slice(0, 4) |> String.to_integer()
+  end
+
+  defp tmdb_movie_year(_), do: nil
 
   @doc """
   Fetch a single show with episodes, next-up, and RT scores.

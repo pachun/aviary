@@ -3,10 +3,11 @@ defmodule Aviary.Nav do
   Decides which top-level nav tabs are visible for the current user
   and where "/" should land them.
 
-  Discover is always visible — even an empty library can browse it,
-  and search will eventually live there. Home and Library are
-  conditional on whether their sections would actually have anything
-  to render; an empty tab is worse than no tab.
+  Discover and Search are always visible — both are entry points
+  that work even for a brand-new user with nothing in their library.
+  Home and Library are conditional on whether their sections would
+  actually have anything to render; an empty tab is worse than no
+  tab.
 
   All four underlying fetches happen in parallel via Task.await_many,
   so the wall-clock is bounded by the slowest single one (typically
@@ -17,9 +18,9 @@ defmodule Aviary.Nav do
   alias Aviary.{Home, Jellyfin, Upcoming}
 
   @doc """
-  Returns `%{home: bool, library: bool, discover: true}` for the
-  given user. Discover stays true even when home/library would be
-  hidden — it's the always-on entry point.
+  Returns `%{home: bool, library: bool, discover: true, search: true}`
+  for the given user. Discover and Search stay true even when
+  home/library would be hidden — they're the always-on entry points.
   """
   def visibility(user) do
     [home_items, upcoming, shows, movies] =
@@ -40,6 +41,7 @@ defmodule Aviary.Nav do
 
     %{
       discover: true,
+      search: true,
       home: home_items != [] or upcoming != [],
       library: shows != [] or movies != []
     }

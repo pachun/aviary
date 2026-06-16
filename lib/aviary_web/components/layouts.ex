@@ -16,16 +16,16 @@ defmodule AviaryWeb.Layouts do
 
   attr :current_section, :string,
     default: nil,
-    doc: "which top-level section is active — \"home\", \"discover\", \"library\", or nil"
+    doc: "which top-level section is active — \"home\", \"discover\", \"search\", \"library\", or nil"
 
   attr :current_user, :map,
     default: nil,
     doc: "currently signed-in user; surfaces as a chip in the masthead"
 
   attr :nav_visibility, :map,
-    default: %{discover: true, home: true, library: true},
+    default: %{discover: true, home: true, library: true, search: true},
     doc:
-      "Which top-level nav links to render — Discover is always true; Home and Library hide when the user has no content for them, so a brand-new user sees only Discover."
+      "Which top-level nav links to render — Discover and Search are always true; Home and Library hide when the user has no content for them, so a brand-new user sees only Discover and Search."
 
   slot :inner_block, required: true
 
@@ -59,6 +59,9 @@ defmodule AviaryWeb.Layouts do
             </.section_link>
             <.section_link href={~p"/discover"} active={@current_section == "discover"}>
               Discover
+            </.section_link>
+            <.section_link href={~p"/search"} active={@current_section == "search"}>
+              Search
             </.section_link>
             <.section_link
               :if={@nav_visibility.library}

@@ -62,6 +62,42 @@ defmodule Aviary.Jellyseerr do
   end
 
   @doc """
+  Returns Jellyseerr's `/movie/{tmdbId}` response body, or `:error`.
+  Used by `Aviary.Catalog.get_movie/2` to build a full movie detail
+  for a TMDB id (a movie surfaced via Search that isn't in the user's
+  library — and which we therefore can't load from Jellyfin).
+  """
+  def get_movie(tmdb_id) when is_binary(tmdb_id) or is_integer(tmdb_id) do
+    Cache.swr({:jellyseerr_get_movie, to_string(tmdb_id)}, @tv_fresh_ms, @tv_stale_ms, fn ->
+      do_get_movie(tmdb_id)
+    end)
+    |> uncache_errors({:jellyseerr_get_movie, to_string(tmdb_id)})
+  end
+
+  def get_movie(_), do: :error
+
+  defp do_get_movie(tmdb_id) do
+    case api_key() do
+      nil ->
+        :error
+
+      key ->
+        url = base_url() <> "/api/v1/movie/#{tmdb_id}"
+
+        case Req.get(url,
+               headers: [{"x-api-key", key}],
+               receive_timeout: 5_000,
+               retry: false
+             ) do
+          {:ok, %Req.Response{status: 200, body: body}} -> {:ok, body}
+          _ -> :error
+        end
+    end
+  rescue
+    _ -> :error
+  end
+
+  @doc """
   Returns Jellyseerr's per-season episode list for a show. Each
   episode entry has airDate, episodeNumber, name, etc. — enough to
   render the full episode list with aired/not-aired indicators on
@@ -97,6 +133,48 @@ defmodule Aviary.Jellyseerr do
   rescue
     _ -> :error
   end
+
+  @doc """
+  Multi-search across TV + movies via Jellyseerr's `/search/multi`.
+  Returns `{:ok, results}` where each result has `mediaType` ("tv" or
+  "movie"; "person" results are filtered upstream), TMDB id, name/
+  title, posterPath, backdropPath, and a mediaInfo block that carries
+  the Jellyfin id when the item is already in the library — same
+  shape the discover endpoints use, so search results flow through
+  the same card render unchanged.
+
+  Not SWR-cached: a typed query is a unique key and the user expects
+  liveness as they refine. We still bound the request timeout so a
+  slow Jellyseerr doesn't hang the LiveView.
+  """
+  def search(query) when is_binary(query) and query != "" do
+    # Jellyseerr's `query` validator is strict RFC-3986: spaces MUST be
+    # `%20`, apostrophes MUST be `%27`. Req's `params:` option form-
+    # encodes (space → `+`), which Jellyseerr 400s with "must be url
+    # encoded." Build the querystring by hand with `URI.encode/2` so
+    # only unreserved chars stay raw.
+    encoded_q = URI.encode(query, &URI.char_unreserved?/1)
+
+    with key when not is_nil(key) <- api_key(),
+         url = base_url() <> "/api/v1/search?query=#{encoded_q}&page=1",
+         {:ok, %Req.Response{status: 200, body: %{"results" => results}}} <-
+           Req.get(url,
+             headers: [{"x-api-key", key}],
+             receive_timeout: 5_000,
+             retry: false
+           ) do
+      filtered =
+        Enum.filter(results, &(&1["mediaType"] in ["tv", "movie"]))
+
+      {:ok, filtered}
+    else
+      _ -> :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  def search(_), do: {:ok, []}
 
   @doc """
   Returns `{:ok, results}` where results is the TMDB show list for the
