@@ -468,6 +468,17 @@ defmodule AviaryWeb.ShowsDetailLive do
         <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
           Importing…
         </span>
+      <% :stuck -> %>
+        <%!--
+          Visually neutral (no oxblood) so it reads as "halted, waiting
+          on you" rather than "aviary is doing something." Sonarr's
+          flagged the queue record with a warning the user has to
+          resolve — typically "Not an upgrade for existing episode
+          file(s)" or similar. Aviary can't unstick it on its own.
+        --%>
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-rule text-muted px-3 py-1.5 rounded-sm shrink-0">
+          Blocked
+        </span>
       <% _ -> %>
         <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-white px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
           {@label}
@@ -512,6 +523,11 @@ defmodule AviaryWeb.ShowsDetailLive do
       <% :imported -> %>
         <div class="inline-block bg-oxblood/40 text-white/80 font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
           Importing…
+        </div>
+      <% :stuck -> %>
+        <%!-- See action_chip :stuck for rationale on the neutral palette. --%>
+        <div class="inline-block bg-rule text-muted font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm">
+          Blocked
         </div>
       <% _ -> %>
         <button
@@ -1138,6 +1154,10 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp in_progress?(:searching), do: true
   defp in_progress?({:downloading, _}), do: true
   defp in_progress?(:imported), do: true
+  # Sonarr's stuck on this one (importBlocked or import warning) —
+  # clicking shouldn't fire a fresh grab; the user has to resolve the
+  # block in Sonarr's UI before anything moves.
+  defp in_progress?(:stuck), do: true
   defp in_progress?(_), do: false
 
   # The single "watch mark" for a show: which episode carries the
@@ -1302,6 +1322,7 @@ defmodule AviaryWeb.ShowsDetailLive do
         case download_progress(status.queue, sonarr_episode_id) do
           {:ok, pct} -> {:downloading, pct}
           :imported -> :imported
+          :stuck -> :stuck
           :in_queue_no_bytes -> {:downloading, 0}
           :not_in_queue -> nil
         end
@@ -1339,6 +1360,7 @@ defmodule AviaryWeb.ShowsDetailLive do
         case download_progress(status.queue, episode_id) do
           {:ok, pct} -> {:downloading, pct}
           :imported -> :imported
+          :stuck -> :stuck
           :in_queue_no_bytes -> {:downloading, 0}
           :not_in_queue -> :searching
         end
@@ -1392,13 +1414,20 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
-  # Maps a raw Sonarr queue record to one of the four states
-  # above. trackedDownloadState is the canonical post-download
-  # signal — `importPending` / `importing` / `importBlocked` all
-  # mean "bytes are done, file isn't in place yet." sizeleft=0
-  # is the defensive fallback for older Sonarr versions or queue
-  # records mid-transition where trackedDownloadState hasn't been
-  # populated.
+  # Maps a raw Sonarr queue record to one of the states above. The
+  # warning check must come first: a record can be `importPending`
+  # with `trackedDownloadStatus: "warning"` and a non-empty
+  # statusMessages list — Sonarr's signal for "I'm not going to
+  # finish this import without your help" (e.g. "Not an upgrade for
+  # existing episode file(s)"). Without distinguishing this from a
+  # healthy `importPending`, the chip would sit on "Importing…"
+  # forever even though nothing will resolve on its own.
+  defp queue_record_state(%{
+         "trackedDownloadStatus" => "warning",
+         "statusMessages" => [_ | _]
+       }),
+       do: :stuck
+
   defp queue_record_state(%{"trackedDownloadState" => state})
        when state in ["importPending", "importing", "importBlocked", "imported"],
        do: :imported
