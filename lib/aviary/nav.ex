@@ -27,7 +27,12 @@ defmodule Aviary.Nav do
         [
           Task.async(fn -> Home.continue_watching(user) end),
           Task.async(fn -> Upcoming.releases(user) end),
-          Task.async(fn -> Jellyfin.list_shows(user) end),
+          # Catalog.list_shows is filtered by library_entries (per-user),
+          # so the Library tab only shows up when this user actually
+          # has shows in their library — same gate the Library page
+          # applies. Movies aren't user-curated yet, so list_movies
+          # stays on Jellyfin direct.
+          Task.async(fn -> Aviary.Catalog.list_shows(user) end),
           Task.async(fn -> Jellyfin.list_movies(user) end)
         ],
         15_000

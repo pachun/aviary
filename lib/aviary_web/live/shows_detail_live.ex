@@ -26,7 +26,8 @@ defmodule AviaryWeb.ShowsDetailLive do
             kicker: kicker(params["from"]),
             sonarr_status: nil,
             collapsed_seasons: initial_collapsed_seasons(show),
-            imported_stuck_since: nil
+            imported_stuck_since: nil,
+            in_library: in_library?(show, socket.assigns.current_user)
           )
           |> fetch_sonarr_status()
           |> schedule_sonarr_poll()
@@ -209,6 +210,16 @@ defmodule AviaryWeb.ShowsDetailLive do
     socket
   end
 
+  # Whether THIS user has the show in their library_entries — gates
+  # the "Remove from library" vs "Add to library" affordance. Discover-
+  # source shows (not yet in Jellyfin at all) skip this entirely; the
+  # existing Watch flow handles them.
+  defp in_library?(%{source: :library, tmdb_id: tmdb_id}, user) when is_binary(tmdb_id) do
+    Aviary.Library.member?(user.id, tmdb_id)
+  end
+
+  defp in_library?(_, _), do: false
+
   defp kicker("home"), do: %{label: "Home", path: "/home"}
   defp kicker("discover"), do: %{label: "Discover", path: "/discover"}
   defp kicker("library_movies"), do: %{label: "Library", path: "/library?type=movies"}
@@ -349,6 +360,40 @@ defmodule AviaryWeb.ShowsDetailLive do
      |> assign(:playing_item, nil)
      |> assign(:playing_segments, nil)
      |> assign(:playing_subtitles, [])}
+  end
+
+  # Per-user library curation. "Remove" is reversible and doesn't
+  # touch files — it just deletes the library_entries row, which gates
+  # the Library page and the Upcoming feed for this user. The same
+  # show stays in Jellyfin / Sonarr / qBit untouched, so a later add
+  # for this user or a fresh add for another household member is a
+  # single DB insert with no download step.
+  def handle_event("remove_from_library", _, socket) do
+    user = socket.assigns.current_user
+    show = socket.assigns.show
+
+    if show.tmdb_id do
+      Aviary.Library.remove(user.id, show.tmdb_id)
+    end
+
+    {:noreply,
+     socket
+     |> assign(:in_library, false)
+     |> put_flash(:info, "#{show.title} removed from your library. Files stay; add anytime.")}
+  end
+
+  def handle_event("add_to_library", _, socket) do
+    user = socket.assigns.current_user
+    show = socket.assigns.show
+
+    if show.tmdb_id do
+      Aviary.Library.add(user.id, show.tmdb_id)
+    end
+
+    {:noreply,
+     socket
+     |> assign(:in_library, true)
+     |> put_flash(:info, "#{show.title} added to your library.")}
   end
 
   def handle_event("report_progress", %{"position" => position} = payload, socket) do
@@ -534,6 +579,35 @@ defmodule AviaryWeb.ShowsDetailLive do
                     label={action_label(@show)}
                     disabled={action_disabled?(@show)}
                   />
+                </div>
+
+                <%!--
+                  Per-user library curation, only meaningful for shows
+                  Jellyfin already has files for. The Remove button
+                  uses data-confirm for the small-but-real chance of
+                  an accidental click; the Add path is non-destructive
+                  so it just fires. Both are no-ops on Jellyfin and
+                  Sonarr — files stay, and re-adds are instant because
+                  there's no download step.
+                --%>
+                <div :if={@show.source == :library and @show.tmdb_id} class="mt-1">
+                  <button
+                    :if={@in_library}
+                    type="button"
+                    phx-click="remove_from_library"
+                    data-confirm={"Remove #{@show.title} from your library? Files will stay; you can re-add anytime."}
+                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-muted hover:text-ink underline-offset-4 hover:underline cursor-pointer focus:outline-none focus-visible:underline transition-colors"
+                  >
+                    Remove from library
+                  </button>
+                  <button
+                    :if={not @in_library}
+                    type="button"
+                    phx-click="add_to_library"
+                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-muted hover:text-oxblood underline-offset-4 hover:underline cursor-pointer focus:outline-none focus-visible:underline transition-colors"
+                  >
+                    Add to library
+                  </button>
                 </div>
               </div>
 

@@ -8,8 +8,19 @@ defmodule Aviary.Catalog do
   """
 
   def list_shows(auth) do
+    library_tmdb_ids =
+      MapSet.new(Aviary.Library.list_tmdb_ids(auth.id))
+
     Aviary.Jellyfin.list_shows(auth)
     |> Enum.map(&to_show/1)
+    |> Enum.filter(fn s ->
+      # Filter out shows the user has removed from their library. We
+      # gate on library_entries here so the Library page actually
+      # reflects each user's per-household-member curation, not the
+      # server-wide Jellyfin catalog. A show needs both a TMDB id
+      # (so it can have an entry) AND that entry to pass.
+      s.tmdb_id && MapSet.member?(library_tmdb_ids, to_string(s.tmdb_id))
+    end)
     |> Enum.sort_by(&sort_key/1)
   end
 
@@ -287,7 +298,15 @@ defmodule Aviary.Catalog do
       last_played_at: nil,
       played_percentage: 0.0,
       air_date: air_date,
-      aired: air_date != nil and Date.compare(air_date, today) != :gt
+      # "Aired" means the broadcast has happened, not just "the air
+      # date is today or earlier." TMDB only gives us date (no time),
+      # so we approximate by requiring the air date to be strictly
+      # before today — an episode airing tonight is "not yet aired"
+      # all day. Trade-off: a few hours of conservative UX after
+      # actual broadcast, but no false "SEARCHING…" chip on episodes
+      # that haven't broadcast yet, and no clickable watch-mark on
+      # things the user couldn't possibly have watched.
+      aired: air_date != nil and Date.compare(air_date, today) == :lt
     }
   end
 
@@ -351,7 +370,8 @@ defmodule Aviary.Catalog do
       type: :show,
       id: item["Id"],
       title: item["Name"],
-      year: show_year(item)
+      year: show_year(item),
+      tmdb_id: get_in(item, ["ProviderIds", "Tmdb"])
     }
   end
 

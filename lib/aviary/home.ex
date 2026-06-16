@@ -1,18 +1,22 @@
 defmodule Aviary.Home do
   @moduledoc """
-  Computes the Continue Watching feed for the home page. Gated purely
-  on Jellyfin watch state — a show appears when the user has watch
-  activity AND there's a next episode to play; movies appear when the
-  user is mid-watch. `library_entries` is intentionally NOT consulted
-  here: it's a separate "interest" set used by Upcoming, and the only
-  way out of Continue Watching is to reset the watch state (the X
-  button), not to delete the library entry.
+  Computes the Continue Watching feed for the home page. Two
+  filters in series:
 
-  Side effect: also self-heals `library_entries` from observed
-  engagement. Any actively-watched series whose TMDB id isn't already
-  recorded gets added (idempotently) so the Upcoming feed reflects
-  ongoing interest even if some engagement path forgot to call
-  `Library.add`.
+    1. Jellyfin watch state — a show appears when the user has watch
+       activity AND there's a next episode to play; movies appear
+       when the user is mid-watch.
+    2. `library_entries` membership — only shows the user has in
+       their library pass. This is the gate the Remove-from-library
+       button leans on: removing a show keeps it out of Continue
+       Watching even if Jellyfin still has watch state on it.
+       Movies aren't library-curated yet, so they bypass this gate.
+
+  Watch-state reset (the X button on a Continue Watching card) and
+  library removal (the link on the show detail page) are two separate
+  actions with two separate effects — X clears Jellyfin state, the
+  detail-page link removes the library entry. Either one is enough
+  to keep a show out of CW.
 
   Sources merged: in-progress (resume), Jellyfin's NextUp, a locally
   derived next-up for series NextUp's index missed, recently added
@@ -98,19 +102,12 @@ defmodule Aviary.Home do
 
     tmdb_map = Jellyfin.series_tmdb_map(series_ids, auth)
 
-    # Self-heal library_entries from active engagement. Any series the
-    # user is currently watching (resume) or has marked played
-    # (recent) should be in their library so Upcoming sees it. This
-    # catches gaps from older code paths that didn't add (and pre-fix
-    # state where dismiss used to delete library entries). Idempotent
-    # at the DB layer via on_conflict: :nothing.
-    Enum.each(active_series_ids, fn series_id ->
-      case Map.get(tmdb_map, series_id) do
-        nil -> :ok
-        "" -> :ok
-        tmdb_id -> Aviary.Library.add(auth.id, tmdb_id)
-      end
-    end)
+    # Per-user library gate. After we added the Remove-from-library
+    # button, "is this in my library_entries" became a real signal
+    # of intent: removing a show should keep it out of Continue
+    # Watching even if Jellyfin still has watch state on it. Movies
+    # aren't library-curated yet, so they pass through untouched.
+    library_set = MapSet.new(Aviary.Library.list_tmdb_ids(auth.id))
 
     tagged
     |> Enum.map(fn {priority, item} ->
@@ -121,9 +118,21 @@ defmodule Aviary.Home do
     end)
     |> Enum.reject(&is_nil/1)
     |> Enum.reject(&caught_up?(&1, available_series))
+    |> Enum.filter(&in_user_library?(&1, library_set))
     |> dedupe_by_key()
     |> Enum.sort_by(& &1.sort_at, {:desc, DateTime})
   end
+
+  # Shows have to be in the user's library_entries to surface.
+  # Movies aren't per-user-curated yet, so they always pass.
+  defp in_user_library?(%{kind: :movie}, _library_set), do: true
+
+  defp in_user_library?(%{kind: :show, tmdb_id: tmdb_id}, library_set)
+       when is_binary(tmdb_id) do
+    MapSet.member?(library_set, tmdb_id)
+  end
+
+  defp in_user_library?(_, _), do: false
 
   defp active_series_ids(resume, recent) do
     (resume ++ recent)
