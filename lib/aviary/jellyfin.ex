@@ -393,6 +393,41 @@ defmodule Aviary.Jellyfin do
     _ -> :error
   end
 
+  @doc """
+  Heavy refresh on a single series — `MetadataRefreshMode=FullRefresh`
+  + `ReplaceAllMetadata=true` together. Empirically the only thing
+  that unsticks Jellyfin when its scanner has cached a "skip this
+  series" decision and `/Library/Refresh` no longer touches the
+  underlying files: it forces Jellyfin to throw out its existing
+  series record and rebuild from scratch, which re-walks the disk
+  and picks up any episode files it had given up on.
+
+  Expensive (re-fetches metadata from providers, refreshes images).
+  Caller should throttle aggressively — once per series per ~10
+  minutes is plenty.
+
+  Used as the auto-retry path when an episode stays in `:imported`
+  state for more than ~2 minutes, suggesting the cheap
+  `/Library/Refresh` couldn't get Jellyfin to notice the file.
+  """
+  def full_refresh_series(series_id, auth) do
+    Req.post(base_url() <> "/Items/" <> series_id <> "/Refresh",
+      params: [
+        Recursive: true,
+        MetadataRefreshMode: "FullRefresh",
+        ImageRefreshMode: "Default",
+        ReplaceAllMetadata: true,
+        ReplaceAllImages: false
+      ],
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 10_000
+    )
+
+    :ok
+  rescue
+    _ -> :error
+  end
+
   ## Playback state
 
   @doc """

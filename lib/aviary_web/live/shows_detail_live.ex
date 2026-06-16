@@ -25,7 +25,8 @@ defmodule AviaryWeb.ShowsDetailLive do
             playing_subtitles: [],
             kicker: kicker(params["from"]),
             sonarr_status: nil,
-            collapsed_seasons: initial_collapsed_seasons(show)
+            collapsed_seasons: initial_collapsed_seasons(show),
+            imported_stuck_since: nil
           )
           |> fetch_sonarr_status()
           |> schedule_sonarr_poll()
@@ -118,6 +119,8 @@ defmodule AviaryWeb.ShowsDetailLive do
         Aviary.Jellyfin.refresh_library(user)
       end)
 
+      socket = auto_escalate_if_stuck(socket, show, user)
+
       Aviary.Cache.invalidate({:jellyfin_list_episodes, show.id, user.id})
 
       case Aviary.Catalog.get_show(show.id, user) do
@@ -125,7 +128,53 @@ defmodule AviaryWeb.ShowsDetailLive do
         _ -> socket
       end
     else
-      socket
+      # No episode is :imported anymore — clear the stuck stamp so
+      # if it re-enters the state later, the 2-minute clock starts
+      # from zero rather than counting from a previous incident.
+      assign(socket, :imported_stuck_since, nil)
+    end
+  end
+
+  # The light /Library/Refresh fires every 15s while any episode is
+  # `:imported`. That usually unsticks things within a poll or two.
+  # If it hasn't — i.e. the show has been in :imported state for
+  # more than 2 minutes — Jellyfin's scanner has likely cached a
+  # "skip this series" decision that only a full refresh + replace
+  # metadata can dislodge. We fire that here, throttled to once per
+  # 10 minutes per series so it doesn't run unboundedly in pathological
+  # cases where even the heavy refresh can't fix the underlying
+  # problem (corrupt file, codec Jellyfin can't probe, etc.).
+  #
+  # The user never sees this happen — the chip continues to say
+  # "Importing…" while the auto-retry runs in the background. If
+  # the retry works, the chip flips to "Play" on the next poll. If
+  # it doesn't, well, we tried; future poll cycles keep trying at
+  # the 10-min cadence.
+  @stuck_threshold_ms 120_000
+  defp auto_escalate_if_stuck(socket, show, user) do
+    now = System.monotonic_time(:millisecond)
+    stuck_since = socket.assigns[:imported_stuck_since]
+
+    cond do
+      is_nil(stuck_since) ->
+        # First time seeing :imported this session — start the clock.
+        assign(socket, :imported_stuck_since, now)
+
+      now - stuck_since >= @stuck_threshold_ms ->
+        # show.id is a Jellyfin series id only for library shows;
+        # discover shows have a TMDB id there, which Jellyfin would
+        # reject. The library-wide /Library/Refresh upstream of this
+        # function still runs for both cases.
+        if show.source == :library do
+          throttle({:jellyfin_full_refresh, show.id}, 600_000, fn ->
+            Aviary.Jellyfin.full_refresh_series(show.id, user)
+          end)
+        end
+
+        socket
+
+      true ->
+        socket
     end
   end
 
