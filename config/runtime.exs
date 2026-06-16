@@ -51,7 +51,14 @@ config :aviary,
   # episode" intents from aviary and runs the download. Without it,
   # Watch buttons fall through to "not in your library yet" flashes.
   sonarr_url: System.get_env("SONARR_URL"),
-  sonarr_api_key: System.get_env("SONARR_API_KEY")
+  sonarr_api_key: System.get_env("SONARR_API_KEY"),
+  # Shared secret Sonarr's Connect webhook sends in the
+  # `x-aviary-secret` header. depot's aviary configure.sh generates
+  # this and persists it alongside SECRET_KEY_BASE, then registers
+  # the webhook in Sonarr with the same secret. Optional in dev; if
+  # unset the controller accepts any POST (suitable for local
+  # bring-up before the secret exists).
+  sonarr_webhook_secret: System.get_env("SONARR_WEBHOOK_SECRET")
 
 # Database — prod lives on a mounted volume so it survives container
 # rebuilds. depot's aviary/configure.sh sets DATABASE_PATH; default is

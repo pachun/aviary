@@ -116,6 +116,51 @@ defmodule Aviary.Sonarr do
   end
 
   @doc """
+  Fires an EpisodeSearch command for one or more episode ids. Public
+  because `Aviary.Reconcile` re-uses it to retry grabs that failed
+  on Sonarr's side without aviary having issued them in the first
+  place.
+  """
+  def episode_search(episode_ids) when is_list(episode_ids) do
+    command("EpisodeSearch", %{episodeIds: episode_ids})
+  end
+
+  @doc """
+  Returns `{:ok, %{"records" => […], "totalRecords" => N}}` from
+  Sonarr's paginated `/wanted/missing` endpoint. Used by
+  `Aviary.Reconcile` to enumerate monitored-aired-missing episodes
+  for catch-up.
+  """
+  def wanted_missing(opts \\ []) do
+    page = Keyword.get(opts, :page, 1)
+    page_size = Keyword.get(opts, :pageSize, 100)
+
+    case get("/wanted/missing",
+           page: page,
+           pageSize: page_size,
+           sortKey: "airDateUtc",
+           sortDirection: "descending"
+         ) do
+      {:ok, body} when is_map(body) -> {:ok, body}
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Returns Sonarr's `/queue` body. Used by `Aviary.Reconcile` to skip
+  re-firing searches on episodes that are already actively
+  downloading.
+  """
+  def queue(opts \\ []) do
+    page_size = Keyword.get(opts, :pageSize, 100)
+
+    case get("/queue", pageSize: page_size, includeEpisode: true) do
+      {:ok, body} when is_map(body) -> {:ok, body}
+      _ -> :error
+    end
+  end
+
+  @doc """
   Returns a `%{monitored: bool, episodes: map, queue: list}` snapshot
   for a single show. The episodes map is keyed by
   `{season, episode}` so callers can look up state per episode

@@ -31,6 +31,17 @@ defmodule AviaryWeb.Router do
     post "/login", SessionController, :create
   end
 
+  ## Sonarr webhook receiver. Unauthenticated session-wise; the
+  ## shared secret in `x-aviary-secret` header is the auth. Sonarr
+  ## POSTs here when its health state changes (qBit reachability,
+  ## etc.) and aviary kicks `Aviary.Reconcile` to retry any grabs
+  ## that failed during the unhealthy window.
+  scope "/api", AviaryWeb do
+    pipe_through :api
+
+    post "/sonarr/webhook", SonarrWebhookController, :receive
+  end
+
   scope "/", AviaryWeb do
     pipe_through :browser
 
