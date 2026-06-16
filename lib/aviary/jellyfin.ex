@@ -809,7 +809,16 @@ defmodule Aviary.Jellyfin do
       "AudioCodec" => "aac",
       "SegmentContainer" => "ts",
       "MaxAudioChannels" => "2",
-      "TranscodingMaxAudioChannels" => "2"
+      "TranscodingMaxAudioChannels" => "2",
+      # Without this, Jellyfin's transcoder defaults to ~3 Mbps for
+      # 1080p — fine for slow uplinks, awful (visibly grainy) on a
+      # tailnet LAN where bandwidth isn't the bottleneck. 20 Mbps is
+      # comfortably above the perceptually-transparent threshold for
+      # 1080p h264 and matches what the Jellyfin web client sends.
+      # Direct-stream (h264 source → no re-encode) honors the source
+      # bitrate directly, so this cap only governs cases where we
+      # actually need to re-encode.
+      "MaxStreamingBitrate" => "20000000"
     }
 
     # Locking AudioStreamIndex prevents Jellyfin from picking an
