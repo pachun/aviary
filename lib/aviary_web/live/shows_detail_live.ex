@@ -1301,6 +1301,7 @@ defmodule AviaryWeb.ShowsDetailLive do
       %{id: sonarr_episode_id} ->
         case download_progress(status.queue, sonarr_episode_id) do
           {:ok, pct} -> {:downloading, pct}
+          :imported -> :imported
           :in_queue_no_bytes -> {:downloading, 0}
           :not_in_queue -> nil
         end
@@ -1337,6 +1338,7 @@ defmodule AviaryWeb.ShowsDetailLive do
       %{id: episode_id, monitored: true} ->
         case download_progress(status.queue, episode_id) do
           {:ok, pct} -> {:downloading, pct}
+          :imported -> :imported
           :in_queue_no_bytes -> {:downloading, 0}
           :not_in_queue -> :searching
         end
@@ -1370,23 +1372,47 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
-  # Looks up an episode's current queue record. Returns:
-  #   {:ok, pct} when bytes are being transferred
-  #   :queued    when Sonarr knows about it but it's not yet downloading
-  #   :ready     when not in queue at all
+  # Looks up an episode's current queue record. Returns one of:
+  #   {:ok, pct}           bytes actively transferring
+  #   :imported            download finished, Sonarr is importing
+  #                        (or import-blocked / import-pending) — the
+  #                        queue record persists during this phase with
+  #                        sizeleft=0, and the chip should say
+  #                        "Importing…" rather than sticking at 100%
+  #                        forever
+  #   :in_queue_no_bytes   Sonarr knows about it but no bytes yet
+  #   :not_in_queue        not in queue at all
   defp download_progress(queue, episode_id) do
     case Enum.find(queue, &(&1["episodeId"] == episode_id)) do
-      %{"size" => size, "sizeleft" => left}
-      when is_number(size) and is_number(left) and size > 0 ->
-        {:ok, round((size - left) / size * 100)}
-
-      %{} ->
-        :in_queue_no_bytes
-
       nil ->
         :not_in_queue
+
+      record ->
+        queue_record_state(record)
     end
   end
+
+  # Maps a raw Sonarr queue record to one of the four states
+  # above. trackedDownloadState is the canonical post-download
+  # signal — `importPending` / `importing` / `importBlocked` all
+  # mean "bytes are done, file isn't in place yet." sizeleft=0
+  # is the defensive fallback for older Sonarr versions or queue
+  # records mid-transition where trackedDownloadState hasn't been
+  # populated.
+  defp queue_record_state(%{"trackedDownloadState" => state})
+       when state in ["importPending", "importing", "importBlocked", "imported"],
+       do: :imported
+
+  defp queue_record_state(%{"size" => size, "sizeleft" => 0})
+       when is_number(size) and size > 0,
+       do: :imported
+
+  defp queue_record_state(%{"size" => size, "sizeleft" => left})
+       when is_number(size) and is_number(left) and size > 0 and left > 0 do
+    {:ok, round((size - left) / size * 100)}
+  end
+
+  defp queue_record_state(_), do: :in_queue_no_bytes
 
   # Short tiered air-date label for unaired-episode rows: stays
   # consistent with the show detail Play button's waiting_phrase
