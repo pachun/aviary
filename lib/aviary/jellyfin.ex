@@ -797,10 +797,18 @@ defmodule Aviary.Jellyfin do
   in deployed environments) and embeds the user's auth token so the
   request from the user's device is authenticated as them.
   """
-  def hls_url(item_id, auth, audio_stream_index \\ nil) do
+  def hls_url(item_id, auth, _audio_stream_index \\ nil) do
     session_id = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
 
-    base = %{
+    # Minimal set — same params the working setup used before recent
+    # transcoding tweaks. Adding MaxStreamingBitrate and
+    # AudioStreamIndex was changing Jellyfin's playback-decision
+    # pipeline in ways that caused the browser to rebuffer constantly,
+    # so they're removed pending a more careful re-introduction (audio
+    # picker should only fire on files that actually have a
+    # description track; bitrate should only override when transcoding
+    # is required).
+    params_map = %{
       "api_key" => auth.token,
       "MediaSourceId" => item_id,
       "PlaySessionId" => session_id,
@@ -809,27 +817,8 @@ defmodule Aviary.Jellyfin do
       "AudioCodec" => "aac",
       "SegmentContainer" => "ts",
       "MaxAudioChannels" => "2",
-      "TranscodingMaxAudioChannels" => "2",
-      # Without this, Jellyfin's transcoder defaults to ~3 Mbps for
-      # 1080p — fine for slow uplinks, awful (visibly grainy) on a
-      # tailnet LAN where bandwidth isn't the bottleneck. 20 Mbps is
-      # comfortably above the perceptually-transparent threshold for
-      # 1080p h264 and matches what the Jellyfin web client sends.
-      # Direct-stream (h264 source → no re-encode) honors the source
-      # bitrate directly, so this cap only governs cases where we
-      # actually need to re-encode.
-      "MaxStreamingBitrate" => "20000000"
+      "TranscodingMaxAudioChannels" => "2"
     }
-
-    # Locking AudioStreamIndex prevents Jellyfin from picking an
-    # audio-description track as the default — see
-    # `audio_description?/1`. When the caller passes nil we let
-    # Jellyfin choose (matches the pre-default-picking behavior).
-    params_map =
-      case audio_stream_index do
-        nil -> base
-        idx -> Map.put(base, "AudioStreamIndex", to_string(idx))
-      end
 
     "#{public_url()}/Videos/#{item_id}/master.m3u8?#{URI.encode_query(params_map)}"
   end
