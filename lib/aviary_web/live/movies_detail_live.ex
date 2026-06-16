@@ -22,7 +22,15 @@ defmodule AviaryWeb.MoviesDetailLive do
             playing_subtitles: [],
             kicker: kicker(params["from"], params["q"]),
             radarr_status: nil,
-            imported_stuck_since: nil
+            imported_stuck_since: nil,
+            # Latches true the first time we observe the movie actively
+            # downloading. Once latched, a transient queue-gone +
+            # has_file=false state is read as :imported instead of
+            # :searching — Radarr clears the queue record briefly
+            # before flipping hasFile=true, and that gap was making
+            # the chip flicker back to "Searching…" between 100% and
+            # "Importing…".
+            download_seen: false
           )
           |> fetch_radarr_status()
           |> schedule_radarr_poll()
@@ -60,7 +68,9 @@ defmodule AviaryWeb.MoviesDetailLive do
   defp refresh_movie_if_imported(socket) do
     movie = socket.assigns.movie
     user = socket.assigns.current_user
-    state = movie_state(movie, socket.assigns.radarr_status)
+
+    state =
+      movie_state(movie, socket.assigns.radarr_status, socket.assigns.download_seen)
 
     cond do
       match?({:downloading, _}, state) ->
@@ -68,7 +78,7 @@ defmodule AviaryWeb.MoviesDetailLive do
           Aviary.Radarr.refresh_monitored_downloads()
         end)
 
-        socket
+        assign(socket, :download_seen, true)
 
       state == :imported ->
         throttle(:jellyfin_library_refresh, 15_000, fn ->
@@ -168,7 +178,7 @@ defmodule AviaryWeb.MoviesDetailLive do
   def handle_event("watch", _, socket) do
     movie = socket.assigns.movie
 
-    if in_progress?(movie_state(movie, socket.assigns.radarr_status)) do
+    if in_progress?(movie_state(movie, socket.assigns.radarr_status, socket.assigns.download_seen)) do
       {:noreply, socket}
     else
       case Aviary.Radarr.watch_movie(movie.tmdb_id) do
@@ -307,7 +317,7 @@ defmodule AviaryWeb.MoviesDetailLive do
                 <div>
                   <.movie_action_button
                     movie={@movie}
-                    state={movie_state(@movie, @radarr_status)}
+                    state={movie_state(@movie, @radarr_status, @download_seen)}
                   />
                 </div>
               </div>
@@ -406,18 +416,26 @@ defmodule AviaryWeb.MoviesDetailLive do
   #   {:downloading, n}  — actively downloading, n% complete
   #   :searching         — Radarr is monitoring + has no release yet
   #   :ready             — not yet in Radarr; click triggers Watch
-  def movie_state(%{source: :library}, _status), do: :playable
-  def movie_state(_movie, nil), do: :ready
-  def movie_state(_movie, %{has_file: true}), do: :imported
+  def movie_state(movie, status, download_seen \\ false)
+  def movie_state(%{source: :library}, _status, _seen), do: :playable
+  def movie_state(_movie, nil, _seen), do: :ready
+  def movie_state(_movie, %{has_file: true}, _seen), do: :imported
 
-  def movie_state(_movie, %{queue: %{"size" => size, "sizeleft" => left}})
+  def movie_state(_movie, %{queue: %{"size" => size, "sizeleft" => left}}, _seen)
       when is_number(size) and is_number(left) and size > 0 do
     {:downloading, round((size - left) / size * 100)}
   end
 
-  def movie_state(_movie, %{queue: %{}}), do: {:downloading, 0}
-  def movie_state(_movie, %{monitored: true}), do: :searching
-  def movie_state(_movie, _status), do: :ready
+  def movie_state(_movie, %{queue: %{}}, _seen), do: {:downloading, 0}
+
+  # Once we've watched the download progress this session, queue=nil
+  # + has_file=false is the post-download import gap (Radarr clears
+  # the queue record briefly before flipping hasFile). Render it as
+  # :imported instead of :searching so the chip doesn't flicker back
+  # to "Searching…" between 100% and "Importing…".
+  def movie_state(_movie, %{monitored: true}, true), do: :imported
+  def movie_state(_movie, %{monitored: true}, _seen), do: :searching
+  def movie_state(_movie, _status, _seen), do: :ready
 
   defp in_progress?(:searching), do: true
   defp in_progress?({:downloading, _}), do: true

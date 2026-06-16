@@ -49,7 +49,13 @@ defmodule Aviary.Jellyfin do
       get!(@api_path, auth,
         IncludeItemTypes: "Movie",
         Recursive: true,
-        Fields: "ProductionYear"
+        # ProviderIds carries the TMDB id we use to resolve a discover-
+        # source movie (URL is its TMDB id) back to its Jellyfin
+        # counterpart once Jellyfin sees the freshly-imported file.
+        # Without it the MoviesDetailLive poll loop can never flip
+        # "Importing…" to "Play" — the lookup walks this list comparing
+        # `nil` to the TMDB id and never matches.
+        Fields: "ProductionYear,ProviderIds"
       )
       |> Map.fetch!("Items")
     end)
