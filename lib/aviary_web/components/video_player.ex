@@ -21,6 +21,11 @@ defmodule AviaryWeb.Components.VideoPlayer do
     doc:
       "Subtitle tracks `[%{index, lang, label, default}]` — rendered as <track> elements inside <video>; native CC menu picks them up."
 
+  attr :audio_stream_index, :any,
+    default: nil,
+    doc:
+      "Locks Jellyfin to a specific audio track in the HLS master playlist. nil lets Jellyfin pick its own default. Used to skip the Audio Description track that ships with Apple TV+ content."
+
   def overlay(assigns) do
     intro = get_in(assigns, [:segments, :introduction])
     assigns = assign(assigns, :intro, intro)
@@ -50,7 +55,7 @@ defmodule AviaryWeb.Components.VideoPlayer do
       <video
         id={"player-#{@item.id}"}
         phx-hook="HlsPlayer"
-        data-src={Aviary.Jellyfin.hls_url(@item.id, @current_user)}
+        data-src={Aviary.Jellyfin.hls_url(@item.id, @current_user, @audio_stream_index)}
         data-resume-at={@item.resume_seconds || 0}
         data-intro-start={@intro && @intro.start}
         data-intro-end={@intro && @intro.end}

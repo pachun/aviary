@@ -699,6 +699,89 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
+  Returns the item's audio tracks as
+  `[%{index, lang, label, default, description?}]`, empty list on
+  error. `description?` flags Audio Description streams (a narration
+  track for visually-impaired viewers) so callers can prefer the
+  non-description track as the default — Jellyfin will otherwise
+  occasionally pick the description track on content (Apple TV+
+  shows in particular) that flags it `IsDefault`.
+  """
+  def audio_streams(item_id, auth) do
+    case Req.get(base_url() <> "/Items",
+           params: [Ids: item_id, userId: auth.id, Fields: "MediaStreams"],
+           headers: [{"x-emby-token", auth.token}],
+           receive_timeout: 5_000,
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: %{"Items" => [%{"MediaStreams" => streams} | _]}}}
+      when is_list(streams) ->
+        streams
+        |> Enum.filter(&(&1["Type"] == "Audio"))
+        |> Enum.map(&to_audio/1)
+
+      _ ->
+        []
+    end
+  rescue
+    _ -> []
+  end
+
+  defp to_audio(stream) do
+    %{
+      index: stream["Index"],
+      lang: stream["Language"] || "und",
+      label: stream["DisplayTitle"] || stream["Title"] || "Audio",
+      default: stream["IsDefault"] == true,
+      description?: audio_description?(stream)
+    }
+  end
+
+  # Audio Description tracks ship with Apple TV+ content (Silo, Severance,
+  # etc.) and many newer films. Jellyfin sometimes picks them as the
+  # default audio track — the user hears a narrator describe what's on
+  # screen instead of dialogue. Detect by the well-known fields first
+  # (DispositionFlags, Role); fall back to the human-readable label
+  # since older Jellyfin builds don't always populate the flags.
+  defp audio_description?(stream) do
+    disposition = stream["DispositionFlags"] || ""
+    role = stream["Role"] || ""
+
+    haystack =
+      [
+        stream["DisplayTitle"],
+        stream["Title"],
+        stream["Profile"]
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" ")
+      |> String.downcase()
+
+    String.contains?(String.downcase(to_string(disposition)), "description") or
+      String.downcase(to_string(role)) == "description" or
+      String.contains?(haystack, "description") or
+      String.contains?(haystack, "descriptive") or
+      String.contains?(haystack, "narration") or
+      String.contains?(haystack, "[ad]") or
+      String.contains?(haystack, "(ad)")
+  end
+
+  @doc """
+  Picks the audio stream index aviary should default to: prefers a
+  non-description track marked `IsDefault`, falls back to the first
+  non-description track, then any track at all. Returns nil when the
+  list is empty — callers should then omit `AudioStreamIndex` from
+  the HLS URL and let Jellyfin pick.
+  """
+  def default_audio_index([]), do: nil
+
+  def default_audio_index(streams) do
+    non_desc = Enum.reject(streams, & &1.description?)
+    default = Enum.find(non_desc, & &1.default) || List.first(non_desc) || List.first(streams)
+    default && default.index
+  end
+
+  @doc """
   Browser-loadable URL for one subtitle track. Uses the public Jellyfin
   URL (same as HLS) since the video element / browser fetches this
   directly, and `api_key=` in the query string because `<track>` can't
@@ -714,23 +797,32 @@ defmodule Aviary.Jellyfin do
   in deployed environments) and embeds the user's auth token so the
   request from the user's device is authenticated as them.
   """
-  def hls_url(item_id, auth) do
+  def hls_url(item_id, auth, audio_stream_index \\ nil) do
     session_id = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
 
-    params =
-      URI.encode_query(%{
-        "api_key" => auth.token,
-        "MediaSourceId" => item_id,
-        "PlaySessionId" => session_id,
-        "DeviceId" => "aviary-web",
-        "VideoCodec" => "h264",
-        "AudioCodec" => "aac",
-        "SegmentContainer" => "ts",
-        "MaxAudioChannels" => "2",
-        "TranscodingMaxAudioChannels" => "2"
-      })
+    base = %{
+      "api_key" => auth.token,
+      "MediaSourceId" => item_id,
+      "PlaySessionId" => session_id,
+      "DeviceId" => "aviary-web",
+      "VideoCodec" => "h264",
+      "AudioCodec" => "aac",
+      "SegmentContainer" => "ts",
+      "MaxAudioChannels" => "2",
+      "TranscodingMaxAudioChannels" => "2"
+    }
 
-    "#{public_url()}/Videos/#{item_id}/master.m3u8?#{params}"
+    # Locking AudioStreamIndex prevents Jellyfin from picking an
+    # audio-description track as the default — see
+    # `audio_description?/1`. When the caller passes nil we let
+    # Jellyfin choose (matches the pre-default-picking behavior).
+    params_map =
+      case audio_stream_index do
+        nil -> base
+        idx -> Map.put(base, "AudioStreamIndex", to_string(idx))
+      end
+
+    "#{public_url()}/Videos/#{item_id}/master.m3u8?#{URI.encode_query(params_map)}"
   end
 
   ## Internals

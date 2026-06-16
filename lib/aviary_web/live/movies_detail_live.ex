@@ -20,6 +20,7 @@ defmodule AviaryWeb.MoviesDetailLive do
             playing_item: nil,
             playing_segments: nil,
             playing_subtitles: [],
+            playing_audio_index: nil,
             kicker: kicker(params["from"], params["q"]),
             radarr_status: nil,
             imported_stuck_since: nil,
@@ -168,11 +169,18 @@ defmodule AviaryWeb.MoviesDetailLive do
     movie = socket.assigns.movie
     user = socket.assigns.current_user
 
+    # Resolve the audio track up front so Jellyfin doesn't pick an
+    # audio-description stream as the default. See
+    # Jellyfin.default_audio_index/1 for the heuristic.
+    audio_streams = Aviary.Jellyfin.audio_streams(movie.id, user)
+    audio_index = Aviary.Jellyfin.default_audio_index(audio_streams)
+
     {:noreply,
      socket
      |> assign(:playing_item, movie)
      |> assign(:playing_segments, Aviary.Jellyfin.segments(movie.id, user))
-     |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(movie.id, user))}
+     |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(movie.id, user))
+     |> assign(:playing_audio_index, audio_index)}
   end
 
   def handle_event("watch", _, socket) do
@@ -200,7 +208,8 @@ defmodule AviaryWeb.MoviesDetailLive do
      socket
      |> assign(:playing_item, nil)
      |> assign(:playing_segments, nil)
-     |> assign(:playing_subtitles, [])}
+     |> assign(:playing_subtitles, [])
+     |> assign(:playing_audio_index, nil)}
   end
 
   # Hook reports every 10s while playing plus on every pause. Convert
@@ -356,6 +365,7 @@ defmodule AviaryWeb.MoviesDetailLive do
         title={@movie.title}
         segments={@playing_segments}
         subtitles={@playing_subtitles}
+        audio_stream_index={@playing_audio_index}
       />
     </Layouts.app>
     """

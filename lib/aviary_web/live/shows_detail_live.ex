@@ -23,6 +23,7 @@ defmodule AviaryWeb.ShowsDetailLive do
             playing_item: nil,
             playing_segments: nil,
             playing_subtitles: [],
+            playing_audio_index: nil,
             kicker: kicker(params["from"], params["q"]),
             sonarr_status: nil,
             collapsed_seasons: initial_collapsed_seasons(show),
@@ -364,7 +365,8 @@ defmodule AviaryWeb.ShowsDetailLive do
      socket
      |> assign(:playing_item, nil)
      |> assign(:playing_segments, nil)
-     |> assign(:playing_subtitles, [])}
+     |> assign(:playing_subtitles, [])
+     |> assign(:playing_audio_index, nil)}
   end
 
   # Per-user library curation. "Remove" is reversible and doesn't
@@ -849,6 +851,7 @@ defmodule AviaryWeb.ShowsDetailLive do
         title={@show.title}
         segments={@playing_segments}
         subtitles={@playing_subtitles}
+        audio_stream_index={@playing_audio_index}
       />
     </Layouts.app>
     """
@@ -1000,10 +1003,17 @@ defmodule AviaryWeb.ShowsDetailLive do
     # erroring.
     if show.tmdb_id, do: Aviary.Library.add(user.id, show.tmdb_id)
 
+    # Lock the audio track up front so Jellyfin doesn't pick an
+    # audio-description stream as the default. See
+    # Jellyfin.default_audio_index/1 for the heuristic.
+    audio_streams = Aviary.Jellyfin.audio_streams(item.id, user)
+    audio_index = Aviary.Jellyfin.default_audio_index(audio_streams)
+
     socket
     |> assign(:playing_item, item)
     |> assign(:playing_segments, Aviary.Jellyfin.segments(item.id, user))
     |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(item.id, user))
+    |> assign(:playing_audio_index, audio_index)
   end
 
   defp pick_continue_episode(show) do
