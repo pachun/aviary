@@ -1277,10 +1277,37 @@ defmodule AviaryWeb.ShowsDetailLive do
     sonarr_episode_state(s, e, status)
   end
 
-  def episode_state(_show, %{id: id}, _status) when is_binary(id), do: :playable
+  # Library episode (real Jellyfin id). Default is :playable, but if a
+  # user-initiated re-grab is currently in Sonarr's queue for this
+  # episode (Interactive Search → Add to download queue), surface the
+  # download progress so the page reflects the in-flight work. The
+  # episode row stays a button so the existing file is still
+  # play-clickable while the re-grab runs.
+  def episode_state(_show, %{id: id, season: s, episode: e}, status) when is_binary(id) do
+    case library_episode_active_download(s, e, status) do
+      nil -> :playable
+      progress -> progress
+    end
+  end
 
   def episode_state(_show, %{season: s, episode: e}, status) do
     sonarr_episode_state(s, e, status)
+  end
+
+  defp library_episode_active_download(_s, _e, nil), do: nil
+
+  defp library_episode_active_download(s, e, status) do
+    case Map.get(status.episodes, {s, e}) do
+      %{id: sonarr_episode_id} ->
+        case download_progress(status.queue, sonarr_episode_id) do
+          {:ok, pct} -> {:downloading, pct}
+          :in_queue_no_bytes -> {:downloading, 0}
+          :not_in_queue -> nil
+        end
+
+      _ ->
+        nil
+    end
   end
 
   defp sonarr_episode_state(_s, _e, nil), do: :ready
