@@ -599,13 +599,26 @@ defmodule AviaryWeb.ShowsDetailLive do
                   Sonarr — files stay, and re-adds are instant because
                   there's no download step.
                 --%>
+                <%!--
+                  Outlined-pill treatment so it actually reads as a
+                  click target — earlier it was bare uppercase text
+                  with an underline-on-hover and didn't look
+                  interactive. Same scale + structure as the back
+                  button (border + uppercase tracking) but smaller
+                  padding so it doesn't compete with the page's
+                  primary CTAs. Add and Remove share the rest pose
+                  (neutral ink outline) and only diverge on hover:
+                  Add brightens toward oxblood (engagement, the
+                  invited direction), Remove brightens to ink
+                  (neutral — destructive but not alarming).
+                --%>
                 <div :if={@show.source == :library and @show.tmdb_id} class="mt-1">
                   <button
                     :if={@in_library}
                     type="button"
                     phx-click="remove_from_library"
                     data-confirm={"Remove #{@show.title} from your library?"}
-                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-muted hover:text-ink underline-offset-4 hover:underline cursor-pointer focus:outline-none focus-visible:underline transition-colors"
+                    class="w-fit font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-ink hover:text-ink hover:bg-ink/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     Remove from library
                   </button>
@@ -613,7 +626,7 @@ defmodule AviaryWeb.ShowsDetailLive do
                     :if={not @in_library}
                     type="button"
                     phx-click="add_to_library"
-                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-muted hover:text-oxblood underline-offset-4 hover:underline cursor-pointer focus:outline-none focus-visible:underline transition-colors"
+                    class="w-fit font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     Add to library
                   </button>
