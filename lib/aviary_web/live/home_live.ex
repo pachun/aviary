@@ -105,7 +105,15 @@ defmodule AviaryWeb.HomeLive do
               </span>
               <span class="font-sans uppercase tracking-[0.18em] text-[0.7rem] text-muted whitespace-nowrap">
                 S{r.season} · E{r.episode}
-                <span :if={r.kind == :new_season} class="text-oxblood ml-2">
+                <%!--
+                  Hidden below sm (phones in portrait, < 640px) because
+                  the row is grid-cols-[140px_1fr_auto] and the "Premieres
+                  in N days" left column plus this "New season" tag
+                  squeezes the 1fr title column down to a single letter
+                  truncation. Tag returns on tablet portrait and up
+                  where there's room.
+                --%>
+                <span :if={r.kind == :new_season} class="hidden sm:inline text-oxblood ml-2">
                   New season
                 </span>
               </span>
