@@ -121,12 +121,13 @@ defmodule AviaryWeb.SearchLive do
           <input
             type="text"
             name="q"
+            id="search-input"
             value={@query}
             phx-keyup="search"
             phx-debounce="300"
+            phx-hook="AutoFocus"
             placeholder="Search shows and movies…"
             autocomplete="off"
-            autofocus
             class="w-full bg-transparent border-0 outline-none font-display text-ink text-2xl md:text-3xl placeholder:text-muted/60 placeholder:italic"
             style="font-variation-settings: 'opsz' 36;"
           />

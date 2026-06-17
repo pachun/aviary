@@ -347,11 +347,27 @@ const Marquee = {
   },
 }
 
+// AutoFocus hook — calls .focus() on the element when it's mounted.
+// The HTML `autofocus` attribute alone isn't enough here: it only
+// applies on a real page load, so LiveView's SPA navigation into
+// /search wouldn't honor it; and mobile browsers (notably iOS Safari)
+// suppress the soft keyboard for `autofocus` even when they do focus
+// the field. Programmatic .focus() from a hook works across both —
+// LiveView fires `mounted` whenever the element enters the DOM, which
+// covers both fresh page loads AND soft-navigations. requestAnimationFrame
+// defers to after the browser's first layout pass so iOS Safari treats
+// the focus call as "in response to navigation" and pops the keyboard.
+const AutoFocus = {
+  mounted() {
+    requestAnimationFrame(() => this.el.focus())
+  },
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, HlsPlayer, Marquee},
+  hooks: {...colocatedHooks, HlsPlayer, Marquee, AutoFocus},
 })
 
 // Show progress bar on live navigation and form submits
