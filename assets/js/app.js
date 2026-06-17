@@ -175,29 +175,175 @@ const HlsPlayer = {
   },
 }
 
-// Per-row marquee scroll restore. The window-level handler below
-// captures scrollLeft on page-loading-start and writes it to
-// sessionStorage; restoring it is done from this hook so it works
-// even when the row is rendered async (Discover, Search) and isn't
-// in the DOM at page-loading-stop time. mounted() fires whenever
-// the <ul> first enters the DOM — which for async rows happens
-// after the LV's first patch completes.
-const MarqueeScrollRestore = {
+// Marquee hook — three responsibilities, all driven by the row's
+// scroll state:
+//
+//   1. Restore scrollLeft on mount from sessionStorage, so a row
+//      whose user navigated away comes back to the same scroll
+//      position. mounted() fires whenever the wrapper enters the
+//      DOM, which handles both sync-rendered rows (Home) and
+//      rows whose items arrive asynchronously after the initial
+//      page-loading-stop event (Discover, Search).
+//
+//   2. Track whether the row CAN scroll further in either direction
+//      and set data-can-scroll-left / data-can-scroll-right on the
+//      wrapper accordingly. The marquee component's CSS reads those
+//      attributes through tailwind's group-data-[…=true]/marquee:
+//      variants and fades in the edge scroll buttons only when more
+//      content actually exists in that direction. A row that fits
+//      its viewport exactly shows nothing (correct: it's not
+//      scrollable; no need to suggest it is).
+//
+//   3. Wire the edge buttons to scroll the row by ~80% of its visible
+//      width when clicked. 80% (not 100%) preserves a strip of
+//      overlap on the trailing side so the user can see continuity
+//      with where they just were. Smooth scroll by default; honor
+//      prefers-reduced-motion by jumping instead.
+const Marquee = {
   mounted() {
-    this.restore()
-  },
-  restore() {
-    const key = this.el.dataset.marqueeKey
-    if (!key) return
-    const path = window.location.pathname
-    let saved
-    try {
-      saved = JSON.parse(sessionStorage.getItem(SCROLL_STORE_KEY) || "{}")[path]
-    } catch {
-      return
+    const ul = this.el.querySelector("ul")
+    if (!ul) return
+    this._ul = ul
+
+    // Restore previous scrollLeft, if any.
+    const key = ul.dataset.marqueeKey
+    if (key) {
+      const path = window.location.pathname
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(SCROLL_STORE_KEY) || "{}")[path]
+        const x = saved && saved.rows && saved.rows[key]
+        if (typeof x === "number") ul.scrollLeft = x
+      } catch {
+        // sessionStorage unavailable; the restore is polish, not
+        // required behavior. No-op.
+      }
     }
-    const x = saved && saved.rows && saved.rows[key]
-    if (typeof x === "number") this.el.scrollLeft = x
+
+    // Edge-button visibility tracking. Use set/remove with an
+    // explicit "true" value so the tailwind variant
+    // group-data-[can-scroll-X=true] matches on the value rather
+    // than mere attribute presence — some tailwind v4 builds compile
+    // the two cases differently.
+    this._update = () => {
+      const canLeft = ul.scrollLeft > 0
+      // -1px epsilon absorbs sub-pixel rounding at the exact end of
+      // the scroll range so the right button doesn't flicker on the
+      // final frame of a fling-scroll.
+      const canRight = ul.scrollLeft + ul.clientWidth < ul.scrollWidth - 1
+      if (canLeft) {
+        this.el.setAttribute("data-can-scroll-left", "true")
+      } else {
+        this.el.removeAttribute("data-can-scroll-left")
+      }
+      if (canRight) {
+        this.el.setAttribute("data-can-scroll-right", "true")
+      } else {
+        this.el.removeAttribute("data-can-scroll-right")
+      }
+    }
+    this._update()
+    ul.addEventListener("scroll", this._update, { passive: true })
+
+    // Recompute when the row's viewport-sized box changes (window
+    // resize, sidebar collapse, etc). ResizeObserver fires AFTER
+    // layout, so a synchronous _update here reads correct values.
+    this._ro = new ResizeObserver(this._update)
+    this._ro.observe(ul)
+
+    // The hard case: when one row's items load (Discover streams a
+    // separate async fetch per service), LiveView re-renders the
+    // page template and morphdom replaces the <li> children inside
+    // EVERY marquee's <ul> — even rows whose logical content didn't
+    // change. That fires every row's MutationObserver at the same
+    // moment, and a sync scrollWidth read inside the MO callback
+    // sees mid-reflow values (or freshly-replaced <img>s the browser
+    // hasn't measured yet), decides canRight=false, and snaps every
+    // other row's chevron away the instant the slow row's chevron
+    // appears.
+    //
+    // The fix is to never trust a synchronous read taken at a
+    // potentially-bad moment. scheduleBackoff queues a series of
+    // recomputes at staggered delays after any disruptive event;
+    // by 1500ms the browser has definitely settled. Calling it
+    // again resets the schedule rather than stacking it, so a
+    // burst of mutations doesn't pile up timers.
+    this._backoffTimers = []
+    const scheduleBackoff = () => {
+      this._backoffTimers.forEach(clearTimeout)
+      this._backoffTimers = [0, 100, 500, 1500].map((delay) =>
+        setTimeout(this._update, delay)
+      )
+    }
+
+    // Image-load listeners cover the related case where a row's
+    // cards arrive but their <img>s haven't decoded yet. Cached
+    // images often mark complete=true between morphdom finishing
+    // and our MO callback firing, which would otherwise let the
+    // load event slip past unobserved — so for complete images we
+    // run the backoff immediately rather than waiting on a load
+    // event that already fired.
+    const watchImage = (img) => {
+      if (img.complete) {
+        scheduleBackoff()
+        return
+      }
+      img.addEventListener("load", scheduleBackoff, { once: true })
+      img.addEventListener("error", scheduleBackoff, { once: true })
+    }
+    ul.querySelectorAll("img").forEach(watchImage)
+
+    // MO does NOT call _update synchronously — that's the bug we're
+    // dodging. It only schedules the backoff and wires up image
+    // watchers on any new children.
+    this._mo = new MutationObserver((mutations) => {
+      scheduleBackoff()
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node instanceof Element) {
+            node.querySelectorAll("img").forEach(watchImage)
+          }
+        }
+      }
+    })
+    this._mo.observe(ul, { childList: true })
+
+    // First-paint race: mount can fire before the browser has run
+    // layout for our subtree at all.
+    this._raf = requestAnimationFrame(this._update)
+    scheduleBackoff()
+
+    // Edge-button click → page-step scroll. behavior=smooth gives a
+    // controlled slide; prefers-reduced-motion users get an instant
+    // jump instead, because scrollBy({behavior:'smooth'}) ignores the
+    // CSS @media query — we have to honor it explicitly here.
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    const behavior = prefersReducedMotion ? "auto" : "smooth"
+    this._leftBtn = this.el.querySelector('[data-marquee-scroll="left"]')
+    this._rightBtn = this.el.querySelector('[data-marquee-scroll="right"]')
+    this._onLeftClick = () => {
+      ul.scrollBy({ left: -Math.round(ul.clientWidth * 0.8), behavior })
+    }
+    this._onRightClick = () => {
+      ul.scrollBy({ left: Math.round(ul.clientWidth * 0.8), behavior })
+    }
+    if (this._leftBtn) this._leftBtn.addEventListener("click", this._onLeftClick)
+    if (this._rightBtn) this._rightBtn.addEventListener("click", this._onRightClick)
+  },
+
+  destroyed() {
+    if (this._ro) this._ro.disconnect()
+    if (this._mo) this._mo.disconnect()
+    if (this._raf) cancelAnimationFrame(this._raf)
+    if (this._backoffTimers) this._backoffTimers.forEach(clearTimeout)
+    if (this._ul && this._update) {
+      this._ul.removeEventListener("scroll", this._update)
+    }
+    if (this._leftBtn && this._onLeftClick) {
+      this._leftBtn.removeEventListener("click", this._onLeftClick)
+    }
+    if (this._rightBtn && this._onRightClick) {
+      this._rightBtn.removeEventListener("click", this._onRightClick)
+    }
   },
 }
 
@@ -205,7 +351,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, HlsPlayer, MarqueeScrollRestore},
+  hooks: {...colocatedHooks, HlsPlayer, Marquee},
 })
 
 // Show progress bar on live navigation and form submits

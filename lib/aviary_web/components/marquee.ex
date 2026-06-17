@@ -8,7 +8,7 @@ defmodule AviaryWeb.Components.Marquee do
   title, subtitle}` — kind is `:movie` or `:show` and determines the
   detail-page URL prefix.
   """
-  use Phoenix.Component
+  use AviaryWeb, :html
 
   attr :items, :list, required: true
   attr :from, :string, required: true, doc: "kicker source — \"home\", \"discover\", \"shows\", \"movies\""
@@ -33,21 +33,101 @@ defmodule AviaryWeb.Components.Marquee do
       </p>
     <% else %>
       <%!--
-        Stays within the content gutter (no negative-margin full bleed)
-        so items clip cleanly at the same edges as the label above
-        when scrolled. Scrollbar hidden via webkit + Firefox properties;
-        snap-x for clean card-by-card scrolling.
+        Wrapper provides a positioned context for the edge-fade overlays
+        and a NAMED group scope (group/marquee) for their reactivity
+        to the hook's data attributes. The name is essential: each
+        card already uses class="group" for its own hover ring, and
+        an unnamed group on the wrapper would clobber that scope so
+        hovering any card would highlight every card in the row.
+        Named groups in tailwind v4 stay scoped to their name.
       --%>
-      <ul
+      <div
         id={"marquee-" <> (@key || "anon-" <> Integer.to_string(:erlang.phash2(@items)))}
-        data-marquee-key={@key}
-        phx-hook="MarqueeScrollRestore"
-        class="flex gap-3 sm:gap-4 overflow-x-auto overscroll-x-contain snap-x snap-mandatory p-1 pb-4 scroll-p-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
+        phx-hook="Marquee"
+        class="relative group/marquee"
       >
-        <li :for={item <- @items} class="snap-start shrink-0">
-          <.card item={item} from={@from} dismissible={@dismissible} />
-        </li>
-      </ul>
+        <%!--
+          Stays within the content gutter (no negative-margin full
+          bleed) so items clip cleanly at the same edges as the label
+          above when scrolled. Scrollbar hidden via webkit + Firefox
+          properties; snap-x for clean card-by-card scrolling.
+        --%>
+        <ul
+          data-marquee-key={@key}
+          class="flex gap-3 sm:gap-4 overflow-x-auto overscroll-x-contain snap-x snap-mandatory p-1 pb-4 scroll-p-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
+        >
+          <li :for={item <- @items} class="snap-start shrink-0">
+            <.card item={item} from={@from} dismissible={@dismissible} />
+          </li>
+        </ul>
+        <%!--
+          Edge scroll controls. Each shows only when scroll is
+          possible in that direction; a row that exactly fits its
+          viewport shows neither — no false hints.
+
+          Shape: a small floating circle on each edge, vertically
+          centered and slightly inset from the row edge. A circle
+          has no straight edges to visibly misalign with the card
+          behind it as the row scrolls — the previous rectangular
+          tab read as "off" whenever its top/bottom didn't happen
+          to line up with a card boundary mid-scroll. Centering
+          vertically also keeps the circle clear of the RT badge at
+          the top-right of the rightmost card (and the dismiss X on
+          Continue Watching). Translucent paper backdrop +
+          backdrop-blur keeps the chevron legible against whatever
+          poster art is behind it.
+
+          Clicking page-scrolls the row by ~80% of clientWidth —
+          enough that new content registers clearly, with ~20%
+          overlap on the trailing side preserving spatial continuity.
+
+          Oxblood is held in reserve for hover/focus, where the
+          chevron picks it up as a small reward for engagement. The
+          default text-ink keeps the resting state museum-label quiet.
+
+          pointer-events is paired with the opacity gate: when
+          can-scroll-X=false the circle is BOTH invisible AND
+          uninteractable, so it never hijacks clicks on the card
+          underneath. focus-visible:ring-inset keeps the focus ring
+          inside the circle rather than haloing over neighboring
+          cards.
+
+          The hook (assets/js/app.js → Marquee) binds the click
+          handler — direction comes from data-marquee-scroll.
+        --%>
+        <button
+          type="button"
+          data-marquee-scroll="left"
+          aria-label="Scroll back"
+          class={[
+            "absolute left-3 top-1/2 -translate-y-1/2 size-12 flex items-center justify-center cursor-pointer rounded-full",
+            "bg-paper/75 backdrop-blur-sm text-ink",
+            "opacity-0 pointer-events-none transition-all duration-300",
+            "group-data-[can-scroll-left=true]/marquee:opacity-100",
+            "group-data-[can-scroll-left=true]/marquee:pointer-events-auto",
+            "hover:bg-paper/90 hover:text-oxblood",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood focus-visible:ring-inset"
+          ]}
+        >
+          <.icon name="hero-chevron-left" class="size-6" />
+        </button>
+        <button
+          type="button"
+          data-marquee-scroll="right"
+          aria-label="Scroll ahead"
+          class={[
+            "absolute right-3 top-1/2 -translate-y-1/2 size-12 flex items-center justify-center cursor-pointer rounded-full",
+            "bg-paper/75 backdrop-blur-sm text-ink",
+            "opacity-0 pointer-events-none transition-all duration-300",
+            "group-data-[can-scroll-right=true]/marquee:opacity-100",
+            "group-data-[can-scroll-right=true]/marquee:pointer-events-auto",
+            "hover:bg-paper/90 hover:text-oxblood",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood focus-visible:ring-inset"
+          ]}
+        >
+          <.icon name="hero-chevron-right" class="size-6" />
+        </button>
+      </div>
     <% end %>
     """
   end
