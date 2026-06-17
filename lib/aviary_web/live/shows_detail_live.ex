@@ -434,7 +434,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     ~H"""
     <%= case @state do %>
       <% {:downloading, pct} -> %>
-        <span class="relative inline-block overflow-hidden font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-white px-3 py-1.5 rounded-sm shrink-0 bg-oxblood/20 tabular-nums">
+        <span class="relative inline-block min-w-28 text-center overflow-hidden font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-white px-3 py-1.5 rounded-sm shrink-0 bg-oxblood/20 tabular-nums">
           <span
             class="absolute inset-y-0 left-0 bg-oxblood transition-all duration-700 ease-out"
             style={"width: #{pct}%"}
@@ -443,15 +443,15 @@ defmodule AviaryWeb.ShowsDetailLive do
           <span class="relative">{pct}%</span>
         </span>
       <% :searching -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
+        <span class="inline-block min-w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
           Searching…
         </span>
       <% :queued -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
+        <span class="inline-block min-w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
           Queued
         </span>
       <% :imported -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
+        <span class="inline-block min-w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
           Importing…
         </span>
       <% :stuck -> %>
@@ -462,11 +462,11 @@ defmodule AviaryWeb.ShowsDetailLive do
           resolve — typically "Not an upgrade for existing episode
           file(s)" or similar. Aviary can't unstick it on its own.
         --%>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-rule text-muted px-3 py-1.5 rounded-sm shrink-0">
+        <span class="inline-block min-w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-rule text-muted px-3 py-1.5 rounded-sm shrink-0">
           Blocked
         </span>
       <% _ -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-white px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
+        <span class="inline-block min-w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-white px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
           {@label}
         </span>
     <% end %>
