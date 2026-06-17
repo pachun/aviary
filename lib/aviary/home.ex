@@ -183,8 +183,15 @@ defmodule Aviary.Home do
       tmdb_id: Map.get(tmdb_map, series_id),
       play_item_id: item["Id"],
       detail_id: series_id,
-      thumbnail_item_id: item["Id"],
-      thumbnail_kind: :primary,
+      # Use the series backdrop, not the episode's own Primary image.
+      # Per-episode stills are unreliable — Jellyfin 404s on any
+      # episode whose metadata didn't backfill a thumbnail (common
+      # for newer eps, local imports without artwork). The series
+      # backdrop is widescreen (matches the card's 16:9 aspect) and
+      # almost always populated. Episode identity is already in the
+      # subtitle line, so the thumbnail's job is "which show."
+      thumbnail_item_id: series_id,
+      thumbnail_kind: :backdrop,
       title: item["SeriesName"] || item["Name"],
       subtitle: episode_subtitle(item),
       sort_at:
