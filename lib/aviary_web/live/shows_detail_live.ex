@@ -434,7 +434,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     ~H"""
     <%= case @state do %>
       <% {:downloading, pct} -> %>
-        <span class="relative inline-block min-w-28 text-center overflow-hidden font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-white px-3 py-1.5 rounded-sm shrink-0 bg-oxblood/20 tabular-nums">
+        <span class="relative inline-block overflow-hidden font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-white px-3 py-1.5 rounded-sm shrink-0 bg-oxblood/20 tabular-nums">
           <span
             class="absolute inset-y-0 left-0 bg-oxblood transition-all duration-700 ease-out"
             style={"width: #{pct}%"}
@@ -443,15 +443,15 @@ defmodule AviaryWeb.ShowsDetailLive do
           <span class="relative">{pct}%</span>
         </span>
       <% :searching -> %>
-        <span class="inline-block min-w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
           Searching…
         </span>
       <% :queued -> %>
-        <span class="inline-block min-w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
           Queued
         </span>
       <% :imported -> %>
-        <span class="inline-block min-w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
           Importing…
         </span>
       <% :stuck -> %>
@@ -462,11 +462,11 @@ defmodule AviaryWeb.ShowsDetailLive do
           resolve — typically "Not an upgrade for existing episode
           file(s)" or similar. Aviary can't unstick it on its own.
         --%>
-        <span class="inline-block min-w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-rule text-muted px-3 py-1.5 rounded-sm shrink-0">
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-rule text-muted px-3 py-1.5 rounded-sm shrink-0">
           Blocked
         </span>
       <% _ -> %>
-        <span class="inline-block min-w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-white px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
+        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-white px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
           {@label}
         </span>
     <% end %>
@@ -806,7 +806,16 @@ defmodule AviaryWeb.ShowsDetailLive do
                   <span class="font-sans text-muted text-sm tabular-nums w-8 shrink-0">
                     {pad_episode(ep.episode)}
                   </span>
-                  <span class="font-display text-ink flex-1 truncate">{ep.title}</span>
+                  <%!--
+                    min-w-0 is the standard flexbox truncate fix: flex
+                    items default to min-width:auto (won't shrink below
+                    intrinsic content width), which means a long title
+                    pushes the chip off the row instead of clipping.
+                    min-w-0 lets the title shrink to whatever space the
+                    siblings leave and the truncate utility then adds
+                    the ellipsis.
+                  --%>
+                  <span class="font-display text-ink flex-1 min-w-0 truncate">{ep.title}</span>
                   <span
                     :if={ep.runtime_minutes}
                     class="font-sans text-muted text-xs tabular-nums shrink-0"
@@ -823,7 +832,7 @@ defmodule AviaryWeb.ShowsDetailLive do
                   <span class="font-sans text-muted text-sm tabular-nums w-8 shrink-0">
                     {pad_episode(ep.episode)}
                   </span>
-                  <span class="font-display text-ink flex-1 truncate">{ep.title}</span>
+                  <span class="font-display text-ink flex-1 min-w-0 truncate">{ep.title}</span>
                   <span
                     :if={ep.air_date}
                     class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0"
