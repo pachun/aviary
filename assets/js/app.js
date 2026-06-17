@@ -175,11 +175,37 @@ const HlsPlayer = {
   },
 }
 
+// Per-row marquee scroll restore. The window-level handler below
+// captures scrollLeft on page-loading-start and writes it to
+// sessionStorage; restoring it is done from this hook so it works
+// even when the row is rendered async (Discover, Search) and isn't
+// in the DOM at page-loading-stop time. mounted() fires whenever
+// the <ul> first enters the DOM — which for async rows happens
+// after the LV's first patch completes.
+const MarqueeScrollRestore = {
+  mounted() {
+    this.restore()
+  },
+  restore() {
+    const key = this.el.dataset.marqueeKey
+    if (!key) return
+    const path = window.location.pathname
+    let saved
+    try {
+      saved = JSON.parse(sessionStorage.getItem(SCROLL_STORE_KEY) || "{}")[path]
+    } catch {
+      return
+    }
+    const x = saved && saved.rows && saved.rows[key]
+    if (typeof x === "number") this.el.scrollLeft = x
+  },
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, HlsPlayer},
+  hooks: {...colocatedHooks, HlsPlayer, MarqueeScrollRestore},
 })
 
 // Show progress bar on live navigation and form submits
@@ -233,16 +259,13 @@ window.addEventListener("phx:page-loading-stop", () => {
   const path = window.location.pathname
   const saved = readScrollStore()[path]
   if (!saved) return
-  // Defer to next frame so the LV has actually rendered the marquee
-  // rows before we try to set their scrollLeft.
+  // Defer to next frame so the LV has actually rendered the page
+  // before we try to scroll it. Marquee row scrollLeft is handled
+  // by the MarqueeScrollRestore hook directly on each <ul>, so it
+  // works even when rows arrive after this handler (async-loaded
+  // discover + search rows).
   requestAnimationFrame(() => {
     if (typeof saved.y === "number") window.scrollTo(0, saved.y)
-    if (saved.rows) {
-      document.querySelectorAll("[data-marquee-key]").forEach((el) => {
-        const x = saved.rows[el.dataset.marqueeKey]
-        if (typeof x === "number") el.scrollLeft = x
-      })
-    }
   })
 })
 

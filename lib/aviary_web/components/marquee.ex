@@ -39,7 +39,9 @@ defmodule AviaryWeb.Components.Marquee do
         snap-x for clean card-by-card scrolling.
       --%>
       <ul
+        id={"marquee-" <> (@key || "anon-" <> Integer.to_string(:erlang.phash2(@items)))}
         data-marquee-key={@key}
+        phx-hook="MarqueeScrollRestore"
         class="flex gap-3 sm:gap-4 overflow-x-auto overscroll-x-contain snap-x snap-mandatory p-1 pb-4 scroll-p-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
       >
         <li :for={item <- @items} class="snap-start shrink-0">
