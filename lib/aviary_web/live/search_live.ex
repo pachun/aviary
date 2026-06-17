@@ -19,7 +19,12 @@ defmodule AviaryWeb.SearchLive do
       |> assign(
         page_title: "Search · Aviary",
         query: initial_q,
-        items: [],
+        # Result groups: `[]` when no results, otherwise `[{label, items}, …]`
+        # with at most two entries (Shows + Movies). Ordering: the group
+        # whose top result is the highest-relevance overall wins the top
+        # slot, so the row+card you're most likely looking for sits at
+        # top-left. See group_results/1.
+        groups: [],
         # `loading?` toggles while a request is in flight so the marquee
         # area can render a skeleton instead of "no results."
         loading?: false,
@@ -59,7 +64,7 @@ defmodule AviaryWeb.SearchLive do
         {:noreply,
          socket
          |> assign(:query, "")
-         |> assign(:items, [])
+         |> assign(:groups, [])
          |> assign(:loading?, false)
          |> assign(:in_flight_for, nil)}
 
@@ -74,7 +79,7 @@ defmodule AviaryWeb.SearchLive do
     {:noreply,
      socket
      |> assign(:query, "")
-     |> assign(:items, [])
+     |> assign(:groups, [])
      |> assign(:loading?, false)
      |> assign(:in_flight_for, nil)}
   end
@@ -106,11 +111,31 @@ defmodule AviaryWeb.SearchLive do
     if q == socket.assigns.in_flight_for do
       {:noreply,
        socket
-       |> assign(:items, results)
+       |> assign(:groups, group_results(results))
        |> assign(:loading?, false)
        |> assign(:in_flight_for, nil)}
     else
       {:noreply, socket}
+    end
+  end
+
+  # Splits the flat relevance-ordered result list into per-kind groups
+  # for rendering as two stacked rows (one for Shows, one for Movies).
+  # The group whose top result is overall-best (i.e., the first item
+  # in `results`) gets the top slot, so the cell the user is most
+  # likely looking for is top-left. With only one kind present, returns
+  # a single group; empty input → empty list (template skips render).
+  defp group_results([]), do: []
+
+  defp group_results([first | _] = results) do
+    shows = Enum.filter(results, &(&1.kind == :show))
+    movies = Enum.filter(results, &(&1.kind == :movie))
+
+    cond do
+      shows == [] -> [{"Movies", movies}]
+      movies == [] -> [{"Shows", shows}]
+      first.kind == :show -> [{"Shows", shows}, {"Movies", movies}]
+      true -> [{"Movies", movies}, {"Shows", shows}]
     end
   end
 
@@ -175,7 +200,7 @@ defmodule AviaryWeb.SearchLive do
                 </li>
               </ul>
             </div>
-          <% @items == [] -> %>
+          <% @groups == [] -> %>
             <p
               class="font-display italic text-muted/80 text-base"
               style="font-variation-settings: 'opsz' 14;"
@@ -183,9 +208,27 @@ defmodule AviaryWeb.SearchLive do
               Nothing matched "{@query}".
             </p>
           <% true -> %>
-            <Marquee.row items={@items} from="search" key={"search:" <> @query}>
-              <:empty>No results.</:empty>
-            </Marquee.row>
+            <%!--
+              One section per result kind (Shows + Movies). Section
+              labels match Discover's typographic register (small caps
+              tracked Instrument Sans), so the search results page
+              feels like a sibling of Discover rather than its own
+              vocabulary. The top section's first card is the highest-
+              relevance match overall — i.e., the most likely answer
+              sits top-left.
+            --%>
+            <section :for={{label, items} <- @groups} class="space-y-4">
+              <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted">
+                {label}
+              </h2>
+              <Marquee.row
+                items={items}
+                from="search"
+                key={"search:" <> @query <> ":" <> label}
+              >
+                <:empty>No results.</:empty>
+              </Marquee.row>
+            </section>
         <% end %>
       </div>
     </Layouts.app>
