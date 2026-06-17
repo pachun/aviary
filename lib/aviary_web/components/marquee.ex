@@ -11,7 +11,10 @@ defmodule AviaryWeb.Components.Marquee do
   use AviaryWeb, :html
 
   attr :items, :list, required: true
-  attr :from, :string, required: true, doc: "kicker source — \"home\", \"discover\", \"shows\", \"movies\""
+
+  attr :from, :string,
+    required: true,
+    doc: "kicker source — \"home\", \"discover\", \"shows\", \"movies\""
 
   attr :key, :string,
     default: nil,
@@ -163,18 +166,18 @@ defmodule AviaryWeb.Components.Marquee do
     --%>
     <div class="group relative w-[200px] sm:w-[240px] md:w-[260px]">
       <.link navigate={detail_href(@item, @from)} class="block focus:outline-none">
-      <div class={[
-        "aspect-video w-full overflow-hidden rounded-sm bg-rule relative",
-        "ring-2 ring-transparent transition-all duration-200",
-        "group-hover:ring-oxblood group-focus-visible:ring-oxblood"
-      ]}>
-        <img
-          src={thumbnail_src(@item)}
-          alt={@item.title}
-          loading="lazy"
-          class="w-full h-full object-cover"
-        />
-        <%!--
+        <div class={[
+          "aspect-video w-full overflow-hidden rounded-sm bg-rule relative",
+          "ring-2 ring-transparent transition-all duration-200",
+          "group-hover:ring-oxblood group-focus-visible:ring-oxblood"
+        ]}>
+          <img
+            src={thumbnail_src(@item)}
+            alt={@item.title}
+            loading="lazy"
+            class="w-full h-full object-cover"
+          />
+          <%!--
           RT corner badge — only renders when item has :rating with
           at least one score. Continue Watching items don't get
           enriched so they stay clean; Discover items do. Critic icon
@@ -182,48 +185,56 @@ defmodule AviaryWeb.Components.Marquee do
           compactness. Critic absent when RT has no data for the
           show but TMDB audience fallback is present.
         --%>
-        <div
-          :if={has_score?(@item)}
-          class="absolute top-1.5 right-1.5 flex items-center gap-1.5 bg-paper/95 rounded-sm px-1.5 py-0.5 shadow-sm"
-        >
-          <span :if={@item.rating.critic} class="flex items-center gap-1">
-            <img
-              src={if @item.rating.critic >= 60, do: "/images/rt_fresh.svg", else: "/images/rt_rotten.svg"}
-              alt=""
-              class="size-3"
-            />
-            <span class="font-sans tabular-nums text-[0.65rem] text-ink font-medium leading-none">
-              {@item.rating.critic}
+          <div
+            :if={has_score?(@item)}
+            class="absolute top-1.5 right-1.5 flex items-center gap-1.5 bg-paper/95 rounded-sm px-1.5 py-0.5 shadow-sm"
+          >
+            <span :if={@item.rating.critic} class="flex items-center gap-1">
+              <img
+                src={
+                  if @item.rating.critic >= 60,
+                    do: "/images/rt_fresh.svg",
+                    else: "/images/rt_rotten.svg"
+                }
+                alt=""
+                class="size-3"
+              />
+              <span class="font-sans tabular-nums text-[0.65rem] text-ink font-medium leading-none">
+                {@item.rating.critic}
+              </span>
             </span>
-          </span>
-          <span :if={@item.rating.audience} class="flex items-center gap-1">
-            <img
-              src={if @item.rating.audience >= 60, do: "/images/rt_aud_fresh.svg", else: "/images/rt_aud_rotten.svg"}
-              alt=""
-              class="size-3"
-            />
-            <span class="font-sans tabular-nums text-[0.65rem] text-ink font-medium leading-none">
-              {@item.rating.audience}
+            <span :if={@item.rating.audience} class="flex items-center gap-1">
+              <img
+                src={
+                  if @item.rating.audience >= 60,
+                    do: "/images/rt_aud_fresh.svg",
+                    else: "/images/rt_aud_rotten.svg"
+                }
+                alt=""
+                class="size-3"
+              />
+              <span class="font-sans tabular-nums text-[0.65rem] text-ink font-medium leading-none">
+                {@item.rating.audience}
+              </span>
             </span>
-          </span>
-        </div>
+          </div>
 
-        <%!--
+          <%!--
           Bottom-anchored title overlay. Gradient ensures legibility
           regardless of artwork brightness.
         --%>
-        <div class="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 via-black/50 to-transparent">
-          <h3 class="font-display text-white text-base leading-tight line-clamp-1">
-            {@item.title}
-          </h3>
-          <p
-            :if={@item.subtitle}
-            class="font-sans text-white/75 text-[0.7rem] tracking-[0.04em] line-clamp-1 mt-0.5"
-          >
-            {@item.subtitle}
-          </p>
+          <div class="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 via-black/50 to-transparent">
+            <h3 class="font-display text-white text-base leading-tight line-clamp-1">
+              {@item.title}
+            </h3>
+            <p
+              :if={@item.subtitle}
+              class="font-sans text-white/75 text-[0.7rem] tracking-[0.04em] line-clamp-1 mt-0.5"
+            >
+              {@item.subtitle}
+            </p>
+          </div>
         </div>
-      </div>
       </.link>
 
       <%!--
@@ -242,7 +253,7 @@ defmodule AviaryWeb.Components.Marquee do
         phx-click="dismiss"
         phx-value-id={dismiss_id(@item)}
         phx-value-kind={to_string(@item.kind)}
-        data-confirm="Remove this? Your watch history for it will be cleared on all devices — can't be undone."
+        data-confirm="Removing this show from 'Continue Watching' will delete your watch history for it but keep it in your library. Continue?"
         aria-label="Remove from Continue Watching"
         class="absolute top-2 right-2 z-10 size-6 rounded-full bg-black/60 backdrop-blur-sm text-white text-xs leading-none flex items-center justify-center cursor-pointer transition-opacity duration-200 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
@@ -277,7 +288,9 @@ defmodule AviaryWeb.Components.Marquee do
 
   defp kicker_q(_), do: ""
 
-  defp has_score?(%{rating: %{critic: c, audience: a}}) when not (is_nil(c) and is_nil(a)), do: true
+  defp has_score?(%{rating: %{critic: c, audience: a}}) when not (is_nil(c) and is_nil(a)),
+    do: true
+
   defp has_score?(_), do: false
 
   defp dismiss_id(%{detail_id: id}), do: id
