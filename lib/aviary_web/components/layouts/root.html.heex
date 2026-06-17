@@ -60,7 +60,11 @@
     <%!--
       Theme bootstrap: read the persisted choice from localStorage and
       set data-theme on <html> before paint to avoid a flash of the
-      wrong palette. Default is "day". Also listens for storage events
+      wrong palette. Default is "night" — aviary is a couch-evening
+      media app, not a daylight productivity tool, and the editorial-
+      minimalist palette reads stronger on the deep-ink background.
+      Existing users with a saved preference keep it; only first
+      visitors get the dark default. Also listens for storage events
       (so a theme change in one tab propagates to others) and for
       phx:set-theme (dispatched by the toggle button).
     --%>
@@ -70,11 +74,11 @@
           localStorage.setItem("aviary:theme", theme);
           document.documentElement.setAttribute("data-theme", theme);
         };
-        setTheme(localStorage.getItem("aviary:theme") || "day");
-        window.addEventListener("storage", (e) => e.key === "aviary:theme" && setTheme(e.newValue || "day"));
+        setTheme(localStorage.getItem("aviary:theme") || "night");
+        window.addEventListener("storage", (e) => e.key === "aviary:theme" && setTheme(e.newValue || "night"));
         window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.theme));
         window.addEventListener("phx:toggle-theme", () => {
-          const current = document.documentElement.getAttribute("data-theme") || "day";
+          const current = document.documentElement.getAttribute("data-theme") || "night";
           setTheme(current === "day" ? "night" : "day");
         });
       })();
