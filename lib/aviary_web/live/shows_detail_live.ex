@@ -689,12 +689,25 @@ defmodule AviaryWeb.ShowsDetailLive do
               so the user can see at a glance which seasons sit before
               their watch point.
             --%>
+            <%!--
+              Marginalia ribbon (border-l-2 + offset) only renders when
+              the show is in THIS user's library — it visualizes how
+              far they've watched, and watch state is per-user-library
+              (removing the show from a user's library nukes their
+              watch state). Note this gates on @in_library, NOT on
+              @show.source: a show can sit on the Jellyfin server
+              (source: :library) without any given user having added
+              it, and in that case there's no per-user watch state to
+              show even though the show metadata is available.
+            --%>
             <div class={[
-              "flex items-baseline justify-between mb-3 border-l-2 pl-2 -ml-2 transition-colors duration-200",
-              if(MapSet.member?(@collapsed_seasons, season),
-                do: season_marginalia_border(episodes, @mark),
-                else: "border-l-transparent"
-              )
+              "flex items-baseline justify-between mb-3 transition-colors duration-200",
+              @in_library && "border-l-2 pl-2 -ml-2",
+              @in_library &&
+                if(MapSet.member?(@collapsed_seasons, season),
+                  do: season_marginalia_border(episodes, @mark),
+                  else: "border-l-transparent"
+                )
             ]}>
               <button
                 type="button"
@@ -720,24 +733,40 @@ defmodule AviaryWeb.ShowsDetailLive do
             </div>
             <ul :if={!MapSet.member?(@collapsed_seasons, season)} class="border-t border-rule">
               <%!--
-                Each row has two click targets and a marginalia bar:
+                When the show is in THIS user's library, each row has
+                two click targets and a marginalia bar:
                   * Marker column (32px, leftmost) fires set_watch_point
-                  * Play row (rest) fires play_episode (unchanged)
-                The left border on each row is the marginalia bar —
-                oxblood/40 for rows before AND at the mark (forms a
-                continuous ribbon), full oxblood on the at-mark row
-                (slightly stronger), transparent for rows after the
-                mark. Editorial-bookmark vocabulary.
+                  * Play row (rest) fires play_episode
+                The left border is the marginalia bar — oxblood/40 for
+                rows before AND at the mark (forms a continuous ribbon),
+                full oxblood on the at-mark row, transparent for rows
+                after the mark. Editorial-bookmark vocabulary.
+
+                Out-of-library shows skip both: nothing to set a watch
+                point against (no library record means no per-user
+                watch state — and we nuke watch state on library
+                removal, so it's intrinsically tied to membership),
+                and no ribbon to draw progress against. The row
+                collapses to just the play button at full width —
+                cleaner and saves the 32px gutter on mobile.
+
+                Critical: this gates on @in_library (per-user library
+                membership), NOT @show.source. A show with
+                source: :library can still be out of this user's
+                personal library if they haven't added it — that's
+                what's been confused before.
               --%>
               <li
                 :for={ep <- episodes}
                 class={[
-                  "grid grid-cols-[32px_1fr] border-b border-rule border-l-2 transition-colors duration-200",
-                  case row_position(ep, @mark) do
-                    :at -> "border-l-oxblood"
-                    :before -> "border-l-oxblood/40"
-                    :after -> "border-l-transparent"
-                  end,
+                  "border-b border-rule transition-colors duration-200",
+                  @in_library && "grid grid-cols-[32px_1fr] border-l-2",
+                  @in_library &&
+                    case row_position(ep, @mark) do
+                      :at -> "border-l-oxblood"
+                      :before -> "border-l-oxblood/40"
+                      :after -> "border-l-transparent"
+                    end,
                   !ep.aired && "opacity-50"
                 ]}
               >
@@ -749,6 +778,7 @@ defmodule AviaryWeb.ShowsDetailLive do
                   what hasn't dropped).
                 --%>
                 <button
+                  :if={@in_library}
                   type="button"
                   phx-click="set_watch_point"
                   phx-value-id={ep.id}
