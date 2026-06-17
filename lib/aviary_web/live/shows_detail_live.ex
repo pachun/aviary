@@ -15,6 +15,15 @@ defmodule AviaryWeb.ShowsDetailLive do
   def mount(%{"id" => id} = params, _session, socket) do
     case Aviary.Catalog.get_show(id, socket.assigns.current_user) do
       {:ok, show} ->
+        # If we landed here from /search, record the query as a
+        # committed search — that click-through is the signal that
+        # turns "you've got mai" debounce noise into "you've got
+        # mail." See Aviary.RecentSearches for the why.
+        Aviary.RecentSearches.record_if_from_search(
+          socket.assigns.current_user.id,
+          params
+        )
+
         socket =
           socket
           |> assign(

@@ -26,7 +26,11 @@ defmodule AviaryWeb.SearchLive do
         # The query token currently in-flight, used to discard stale
         # async results when the user keeps typing past an earlier
         # debounce fire.
-        in_flight_for: nil
+        in_flight_for: nil,
+        # The user's recent committed searches, surfaced in the empty
+        # state as clickable shortcuts. Click-tracked, capped, ordered
+        # newest first — see Aviary.RecentSearches.
+        recent: Aviary.RecentSearches.for_user(socket.assigns.current_user.id)
       )
       |> maybe_kick_initial(initial_q)
 
@@ -73,6 +77,14 @@ defmodule AviaryWeb.SearchLive do
      |> assign(:items, [])
      |> assign(:loading?, false)
      |> assign(:in_flight_for, nil)}
+  end
+
+  # Click on a recent-search chip in the empty state — re-run the
+  # search exactly as if the user had typed it. The input's value
+  # is bound to @query so updating the assign re-paints it; do_search
+  # handles the rest (sets loading?, kicks the async task).
+  def handle_event("rerun", %{"q" => q}, socket) do
+    {:noreply, do_search(socket, q)}
   end
 
   defp do_search(socket, q) do
@@ -137,7 +149,32 @@ defmodule AviaryWeb.SearchLive do
           <% @loading? -> %>
             <Marquee.skeleton />
           <% @query == "" -> %>
-            <%!-- Empty input → empty screen. No helper copy. --%>
+            <%!--
+              Empty input → recent searches if there are any, else
+              truly blank (matches the previous behavior for first-
+              time users / new boxes). Each row re-runs that search
+              via the "rerun" event. The chevron is a typographic
+              continuation mark, matching the marquee edge buttons.
+            --%>
+            <div :if={@recent != []} class="space-y-3">
+              <p class="font-sans uppercase tracking-[0.18em] text-[0.7rem] text-muted">
+                Recent
+              </p>
+              <ul class="flex flex-col">
+                <li :for={q <- @recent} class="border-b border-rule last:border-b-0">
+                  <button
+                    type="button"
+                    phx-click="rerun"
+                    phx-value-q={q}
+                    class="group w-full block py-3 px-1 cursor-pointer text-left transition-colors hover:bg-rule/30 focus:outline-none focus-visible:bg-rule/30"
+                  >
+                    <span class="font-display text-ink text-lg block truncate group-hover:text-oxblood transition-colors">
+                      {q}
+                    </span>
+                  </button>
+                </li>
+              </ul>
+            </div>
           <% @items == [] -> %>
             <p
               class="font-display italic text-muted/80 text-base"
