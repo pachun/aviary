@@ -5,8 +5,8 @@ defmodule Aviary.Sonarr do
   Thin wrapper over Sonarr's v3 API. Three things drive everything
   aviary asks of it:
 
-    * **Add intent** — `watch_show/1`, `watch_season/2`,
-      `watch_episode/3` translate the three button tiers into Sonarr
+    * **Add intent** — `watch_show/1` and `watch_episode/3` translate
+      the two button tiers into Sonarr
       operations. Each is "ensure series exists in Sonarr, set
       monitoring at this scope, kick off a search at this scope."
       Idempotent: re-running widens monitoring; it never narrows
@@ -65,25 +65,6 @@ defmodule Aviary.Sonarr do
       # right away) while the wait-then-fire happens off the request
       # path.
       Task.start(fn -> search_each_missing(series["id"]) end)
-      {:ok, series}
-    end
-  end
-
-  @doc """
-  "Watch a specific season" — ensures the series exists (added with
-  monitor=none so we don't auto-search the whole library), sets the
-  target season + future seasons to monitored, then fires a per-
-  episode EpisodeSearch for every aired, monitored, fileless episode
-  in that season. Future seasons get picked up automatically as they
-  air. See `watch_show/1` for why we don't use Sonarr's `SeasonSearch`
-  command.
-  """
-  def watch_season(tmdb_id, season_number) when is_integer(season_number) do
-    with {:ok, series} <- ensure_series(tmdb_id, monitor: "none"),
-         :ok <- monitor_seasons_from(series["id"], season_number) do
-      # See watch_show/1 — same race with Sonarr's async episode
-      # refresh on fresh adds, same fix.
-      Task.start(fn -> search_each_missing(series["id"], season_number) end)
       {:ok, series}
     end
   end
@@ -294,7 +275,7 @@ defmodule Aviary.Sonarr do
   # response is dominated by popular episodes; quieter older episodes
   # get nothing. Per-episode searches guarantee each gets its own
   # indexer-query result depth.
-  defp search_each_missing(sonarr_series_id, season_filter \\ nil) do
+  defp search_each_missing(sonarr_series_id) do
     today = Aviary.LocalTime.today()
 
     sonarr_series_id
@@ -302,8 +283,7 @@ defmodule Aviary.Sonarr do
     |> Enum.filter(fn ep ->
       ep["monitored"] == true and
         ep["hasFile"] != true and
-        aired?(ep, today) and
-        (season_filter == nil or ep["seasonNumber"] == season_filter)
+        aired?(ep, today)
     end)
     |> Enum.sort_by(fn ep -> {ep["seasonNumber"], ep["episodeNumber"]} end)
     |> Enum.each(fn ep ->
@@ -355,28 +335,6 @@ defmodule Aviary.Sonarr do
         end
 
       :error ->
-        :error
-    end
-  end
-
-  defp monitor_seasons_from(sonarr_series_id, from_season) do
-    case get("/series/#{sonarr_series_id}", []) do
-      {:ok, series} ->
-        updated_seasons =
-          Enum.map(series["seasons"] || [], fn s ->
-            if s["seasonNumber"] >= from_season,
-              do: Map.put(s, "monitored", true),
-              else: s
-          end)
-
-        updated = Map.put(series, "seasons", updated_seasons) |> Map.put("monitored", true)
-
-        case put("/series/#{sonarr_series_id}", updated) do
-          {:ok, _} -> :ok
-          _ -> :error
-        end
-
-      _ ->
         :error
     end
   end

@@ -257,20 +257,6 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
-  def handle_event("watch_season", %{"season" => season_str}, socket) do
-    season = String.to_integer(season_str)
-
-    if in_progress?(season_state(socket.assigns.show, season, socket.assigns.sonarr_status)) do
-      {:noreply, socket}
-    else
-      case first_episode_of_season(socket.assigns.show, season) do
-        nil -> {:noreply, put_flash(socket, :error, "No episodes in this season.")}
-        %{id: "tmdb-" <> _} -> trigger_sonarr(socket, :season, season, nil)
-        ep -> {:noreply, start_playing(socket, ep)}
-      end
-    end
-  end
-
   # Moves the show's watch mark to the clicked episode. The mark is a
   # SINGLE POINT on the timeline: everything before (and the click) is
   # Played, everything after is unplayed. We fan out mark_played for
@@ -731,15 +717,6 @@ defmodule AviaryWeb.ShowsDetailLive do
                   · {length(episodes)} {if length(episodes) == 1, do: "episode", else: "episodes"}
                 </span>
               </button>
-              <button
-                :if={!MapSet.member?(@collapsed_seasons, season)}
-                type="button"
-                phx-click="watch_season"
-                phx-value-season={season}
-                class="cursor-pointer"
-              >
-                <.action_chip state={season_state(@show, season, @sonarr_status)} label="▶ Play Season" />
-              </button>
             </div>
             <ul :if={!MapSet.member?(@collapsed_seasons, season)} class="border-t border-rule">
               <%!--
@@ -1126,10 +1103,6 @@ defmodule AviaryWeb.ShowsDetailLive do
         :show ->
           {Aviary.Sonarr.watch_show(show.tmdb_id), "Adding #{show.title} to your library…"}
 
-        :season ->
-          {Aviary.Sonarr.watch_season(show.tmdb_id, season),
-           "Grabbing Season #{season} of #{show.title}…"}
-
         :episode ->
           {Aviary.Sonarr.watch_episode(show.tmdb_id, season, episode),
            "Grabbing S#{season} E#{episode} of #{show.title}…"}
@@ -1270,13 +1243,6 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
-  defp first_episode_of_season(show, season) do
-    case Enum.find(show.episodes_by_season, fn {s, _} -> s == season end) do
-      {_, [first | _]} -> first
-      _ -> nil
-    end
-  end
-
   ## Sonarr-derived state for each button tier
 
   # Resolves a single episode to one of:
@@ -1367,17 +1333,6 @@ defmodule AviaryWeb.ShowsDetailLive do
 
       _ ->
         :ready
-    end
-  end
-
-  # Season-level state mirrors that season's first episode — clicking
-  # "Play Season 2" means "start playing S2 E1 (downloading it first
-  # if needed)" so the button's appearance reflects S2 E1's exact
-  # state.
-  def season_state(show, season_number, status) do
-    case first_episode_of_season(show, season_number) do
-      nil -> :ready
-      ep -> episode_state(show, ep, status)
     end
   end
 
