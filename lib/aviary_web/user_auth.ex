@@ -22,10 +22,15 @@ defmodule AviaryWeb.UserAuth do
 
   @doc """
   Stores the user in the session and redirects to the post-login
-  destination (path stored under :return_to, or /home by default).
+  destination: the path stored under :return_to if they were sent to
+  login from a protected route, otherwise the first nav section that's
+  actually visible to them (home, else library, else discover) so a
+  new user with no content doesn't land on an empty /home.
   """
   def log_in_user(conn, user) do
-    return_to = get_session(conn, :user_return_to) || ~p"/home"
+    return_to =
+      get_session(conn, :user_return_to) ||
+        Aviary.Nav.landing_path(Aviary.Nav.visibility(user))
 
     conn
     |> renew_session()
@@ -94,12 +99,15 @@ defmodule AviaryWeb.UserAuth do
   end
 
   @doc """
-  Redirects to /home if a user is already logged in. Used on the
-  /login route so authenticated users don't hit the form again.
+  Redirects an already-logged-in user away from the /login form to
+  their first visible nav section (home, else library, else discover),
+  so they don't land on an empty /home.
   """
   def redirect_if_user_is_authenticated(conn, _opts) do
-    if conn.assigns[:current_user] do
-      conn |> redirect(to: ~p"/home") |> halt()
+    if user = conn.assigns[:current_user] do
+      conn
+      |> redirect(to: Aviary.Nav.landing_path(Aviary.Nav.visibility(user)))
+      |> halt()
     else
       conn
     end
