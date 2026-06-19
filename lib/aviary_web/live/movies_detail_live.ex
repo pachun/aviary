@@ -178,6 +178,11 @@ defmodule AviaryWeb.MoviesDetailLive do
     movie = socket.assigns.movie
     user = socket.assigns.current_user
 
+    # Play is a commitment signal — add the movie to this user's
+    # library so it shows up on /library?type=movies. Mirrors the
+    # play / watch / sonarr-trigger paths in shows_detail_live.
+    if movie.tmdb_id, do: Aviary.Library.add(user.id, movie.tmdb_id)
+
     # Resolve the audio track up front so Jellyfin doesn't pick an
     # audio-description stream as the default. See
     # Jellyfin.default_audio_index/1 for the heuristic.
@@ -194,12 +199,18 @@ defmodule AviaryWeb.MoviesDetailLive do
 
   def handle_event("watch", _, socket) do
     movie = socket.assigns.movie
+    user = socket.assigns.current_user
 
     if in_progress?(movie_state(movie, socket.assigns.radarr_status, socket.assigns.download_seen)) do
       {:noreply, socket}
     else
       case Aviary.Radarr.watch_movie(movie.tmdb_id) do
         {:ok, _} ->
+          # Sonarr-trigger equivalent: clicking Watch is the user's
+          # commitment to this movie. Persist it before the optimistic
+          # UI flash so the library page reflects it immediately.
+          if movie.tmdb_id, do: Aviary.Library.add(user.id, movie.tmdb_id)
+
           {:noreply,
            socket
            |> fetch_radarr_status()

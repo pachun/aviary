@@ -25,8 +25,18 @@ defmodule Aviary.Catalog do
   end
 
   def list_movies(auth) do
+    library_tmdb_ids =
+      MapSet.new(Aviary.Library.list_tmdb_ids(auth.id))
+
     Aviary.Jellyfin.list_movies(auth)
     |> Enum.map(&to_movie/1)
+    |> Enum.filter(fn m ->
+      # Same library_entries gate as list_shows. The Library page
+      # shows each household member's curated set, not the
+      # server-wide Jellyfin catalog. A movie needs a TMDB id AND a
+      # library entry from this user to pass.
+      m.tmdb_id && MapSet.member?(library_tmdb_ids, to_string(m.tmdb_id))
+    end)
     |> Enum.sort_by(&sort_key/1)
   end
 
@@ -450,7 +460,8 @@ defmodule Aviary.Catalog do
       type: :movie,
       id: item["Id"],
       title: item["Name"],
-      year: item["ProductionYear"]
+      year: item["ProductionYear"],
+      tmdb_id: get_in(item, ["ProviderIds", "Tmdb"])
     }
   end
 

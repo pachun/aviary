@@ -31,16 +31,17 @@ defmodule Aviary.Library.Backfill do
   end
 
   defp run(auth) do
-    # Two signals for "this user cares about this show":
-    #   1. Has played any episode of it (Filters=IsPlayed)
+    # Same two signals applied to both kinds of media:
+    #   1. Has played any episode of a show / any movie (Filters=IsPlayed)
     #   2. Has any saved playback position
-    # Union → unique SeriesIds → batch lookup their TMDB ids → insert
-    # library_entries.
+    # Episodes → parent SeriesId → batch-lookup TMDB ids → insert.
+    # Movies → ProviderIds.Tmdb is on the item itself → insert directly.
     played = Aviary.Jellyfin.recently_watched(auth)
     in_progress = Aviary.Jellyfin.resume_items(auth)
+    all = played ++ in_progress
 
     series_ids =
-      (played ++ in_progress)
+      all
       |> Enum.filter(&(&1["Type"] == "Episode"))
       |> Enum.map(& &1["SeriesId"])
       |> Enum.reject(&is_nil/1)
@@ -55,6 +56,13 @@ defmodule Aviary.Library.Backfill do
       _ ->
         :ok
     end)
+
+    all
+    |> Enum.filter(&(&1["Type"] == "Movie"))
+    |> Enum.map(&get_in(&1, ["ProviderIds", "Tmdb"]))
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.uniq()
+    |> Enum.each(&Library.add(auth.id, &1))
 
     Repo.insert!(%UserBackfill{
       jellyfin_user_id: auth.id,
