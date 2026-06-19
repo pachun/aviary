@@ -20,8 +20,7 @@ defmodule Aviary.Storage do
   (sum of all users) instead of `% of tank`.
   """
 
-  alias Aviary.{Jellyfin, Library, Repo}
-  import Ecto.Query
+  alias Aviary.{Jellyfin, Library}
 
   @doc """
   Returns a list of per-user breakdowns, sorted by descending total
@@ -64,18 +63,19 @@ defmodule Aviary.Storage do
         end
       end)
 
-    # All users who have ANY library entry (the "household").
-    user_ids = list_user_ids_with_entries()
-    user_name_by_id = Map.new(users, fn u -> {u["Id"], u["Name"]} end)
-
-    user_ids
-    |> Enum.map(fn user_id ->
+    # Every Jellyfin user — including those with zero library entries
+    # ("chris" right after they were added but before they've opted
+    # into anything). Their breakdown is all zeros and they show up
+    # at the bottom of the legend / contribute nothing to the bar.
+    users
+    |> Enum.map(fn user ->
+      user_id = user["Id"]
       tmdb_ids = Library.list_tmdb_ids(user_id)
       stats = roll_up_for_user(tmdb_ids, movie_sizes_by_tmdb, series_stats_by_tmdb)
 
       Map.merge(stats, %{
         user_id: user_id,
-        username: Map.get(user_name_by_id, user_id, "Unknown")
+        username: user["Name"]
       })
     end)
     |> Enum.sort_by(& &1.bytes, :desc)
@@ -176,14 +176,6 @@ defmodule Aviary.Storage do
   # versions of the same media), but we only care about the primary.
   defp item_size(%{"MediaSources" => [%{"Size" => size} | _]}) when is_integer(size), do: size
   defp item_size(_), do: nil
-
-  defp list_user_ids_with_entries do
-    from(e in Library.Entry,
-      distinct: true,
-      select: e.jellyfin_user_id
-    )
-    |> Repo.all()
-  end
 
   defp roll_up_for_user(tmdb_ids, movie_sizes_by_tmdb, series_stats_by_tmdb) do
     Enum.reduce(
