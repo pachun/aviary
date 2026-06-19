@@ -112,23 +112,18 @@ defmodule AviaryWeb.SettingsLive do
           column is already narrower and the table needs the full width.
         --%>
         <div>
-          <.section_block label="Storage" stacked>
-            <%!-- Sub-block: this user's slice of the library. Same
-                 small-uppercase-tracked treatment as the section
-                 label one step smaller, in text-muted so the rhythm
-                 reads as "section / sub-section." --%>
-            <.sub_label>Your usage</.sub_label>
+          <%!-- Two parallel sections, no outer "Storage" wrapper —
+               the labels themselves carry enough context. --%>
+          <.section_block label="Your usage" stacked>
             <.your_usage_table stats={@your_stats} />
+          </.section_block>
 
-            <div class="border-t border-rule my-8"></div>
-
-            <%!-- Sub-block: household-wide tank context. Header line
-                 with three dot-separated values, then the stacked bar,
-                 then the per-user legend with proportional %. --%>
-            <.sub_label>Total storage</.sub_label>
+          <.section_block label="Total storage" stacked>
             <.tank_summary totals={@totals} tank_bytes={@tank_bytes} />
-            <.storage_bar breakdown={@breakdown} totals={@totals} tank_bytes={@tank_bytes} />
-            <.storage_legend breakdown={@breakdown} totals={@totals} />
+            <div class="my-6">
+              <.storage_bar breakdown={@breakdown} totals={@totals} tank_bytes={@tank_bytes} />
+            </div>
+            <.storage_legend breakdown={@breakdown} tank_bytes={@tank_bytes} />
           </.section_block>
         </div>
       </div>
@@ -158,19 +153,6 @@ defmodule AviaryWeb.SettingsLive do
         <div>{render_slot(@inner_block)}</div>
       </section>
     <% end %>
-    """
-  end
-
-  # ============================================================
-  # Sub-section label — one step smaller than the section label.
-  # ============================================================
-  slot :inner_block, required: true
-
-  defp sub_label(assigns) do
-    ~H"""
-    <p class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted mb-4">
-      {render_slot(@inner_block)}
-    </p>
     """
   end
 
@@ -302,45 +284,48 @@ defmodule AviaryWeb.SettingsLive do
   end
 
   # ============================================================
-  # Legend — colored swatch + username + their size + their % of
-  # household usage. % is intentionally NOT % of tank — that'd be
-  # near-zero for everyone until the tank fills. % of household used
-  # gives a meaningful comparison even early.
+  # Legend — colored swatch + username on the left, size + % on the
+  # right. Layout uses flexbox with justify-between so dot/name hug
+  # the left edge and size/% hug the right; no grid columns to fight.
+  # % is "of tank" (so we see each user's actual physical footprint),
+  # rounded to whole percent.
   # ============================================================
   attr :breakdown, :list, required: true
-  attr :totals, :map, required: true
+  attr :tank_bytes, :any, required: true
 
   defp storage_legend(assigns) do
     ~H"""
-    <ul class="mt-6 flex flex-col gap-2 font-sans text-[0.85rem] tabular-nums">
+    <ul class="mt-2 flex flex-col gap-2 font-sans text-[0.85rem]">
       <%= for entry <- @breakdown do %>
-        <li class="grid grid-cols-[auto_1fr_auto_auto] items-baseline gap-x-3">
-          <%!-- 8px swatch — small enough to read as data ink, not chrome --%>
-          <span
-            class="size-2 rounded-full self-center"
-            style={"background: var(--user-#{color_slot(entry.user_id)});"}
-            aria-hidden="true"
-          ></span>
-          <span class="text-ink">{entry.username}</span>
-          <span class="text-right text-muted">{Aviary.Storage.humanize_bytes(entry.bytes)}</span>
-          <span class="text-right text-muted pl-3">
-            {household_share_percent(entry.bytes, @totals.bytes)}%
-          </span>
+        <li class="flex items-center justify-between gap-4">
+          <div class="flex items-center gap-3 min-w-0">
+            <span
+              class="size-2 rounded-full shrink-0"
+              style={"background: var(--user-#{color_slot(entry.user_id)});"}
+              aria-hidden="true"
+            ></span>
+            <span class="text-ink truncate">{entry.username}</span>
+          </div>
+          <div class="flex items-baseline gap-3 tabular-nums shrink-0">
+            <span class="text-muted">{Aviary.Storage.humanize_bytes(entry.bytes)}</span>
+            <span class="text-muted text-right w-12">
+              {tank_share_percent(entry.bytes, @tank_bytes)}%
+            </span>
+          </div>
         </li>
       <% end %>
     </ul>
     """
   end
 
-  defp household_share_percent(_user_bytes, 0), do: "0"
+  # % of total tank capacity, rounded to nearest integer. Returns "0"
+  # when tank_bytes is unset OR the user's bytes round to less than
+  # 0.5% — the bar shows the relative magnitude either way.
+  defp tank_share_percent(_user_bytes, nil), do: "0"
+  defp tank_share_percent(_user_bytes, 0), do: "0"
 
-  defp household_share_percent(user_bytes, total_bytes) do
-    pct = user_bytes / total_bytes * 100
-    cond do
-      pct >= 10 -> "#{round(pct)}"
-      pct == 0 -> "0"
-      true -> :erlang.float_to_binary(pct * 1.0, decimals: 1)
-    end
+  defp tank_share_percent(user_bytes, tank_bytes) do
+    "#{round(user_bytes / tank_bytes * 100)}"
   end
 
   # ============================================================
