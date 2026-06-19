@@ -18,21 +18,33 @@ defmodule AviaryWeb.LibraryLive do
   end
 
   def handle_params(params, _uri, socket) do
-    type = parse_type(params["type"])
-    items = fetch(type, socket.assigns.current_user)
+    user = socket.assigns.current_user
+    shows = Aviary.Catalog.list_shows(user)
+    movies = Aviary.Catalog.list_movies(user)
+
+    type = effective_type(parse_type(params["type"]), shows, movies)
+    items = if type == :shows, do: shows, else: movies
 
     {:noreply,
      assign(socket,
        type: type,
-       items: items
+       items: items,
+       has_both_libraries: shows != [] and movies != []
      )}
   end
 
   defp parse_type("movies"), do: :movies
   defp parse_type(_), do: :shows
 
-  defp fetch(:shows, user), do: Aviary.Catalog.list_shows(user)
-  defp fetch(:movies, user), do: Aviary.Catalog.list_movies(user)
+  # When the user only has one kind of catalog, force that kind regardless
+  # of the requested tab so the body always shows what they actually have.
+  defp effective_type(requested, shows, movies) do
+    cond do
+      shows == [] and movies != [] -> :movies
+      movies == [] and shows != [] -> :shows
+      true -> requested
+    end
+  end
 
   def render(assigns) do
     ~H"""
@@ -55,7 +67,10 @@ defmodule AviaryWeb.LibraryLive do
         the masthead (z-20) so they don't overlap. bg-paper +
         vertical padding so content scrolls cleanly behind.
       --%>
-      <nav class="sticky top-[92px] sm:top-[108px] z-10 bg-paper flex items-baseline gap-6 py-3 mb-8 font-sans text-[0.7rem] tracking-[0.18em] uppercase">
+      <nav
+        :if={@has_both_libraries}
+        class="sticky top-[92px] sm:top-[108px] z-10 bg-paper flex items-baseline gap-6 py-3 mb-8 font-sans text-[0.7rem] tracking-[0.18em] uppercase"
+      >
         <.tab patch={~p"/library?type=shows"} active={@type == :shows}>Shows</.tab>
         <.tab patch={~p"/library?type=movies"} active={@type == :movies}>Movies</.tab>
       </nav>
