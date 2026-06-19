@@ -20,14 +20,31 @@ defmodule AviaryWeb.SettingsLive do
   @palette_size 6
 
   def mount(_params, _session, socket) do
-    %{per_user: breakdown, aggregate: totals, tank_bytes: tank_bytes} =
-      Storage.stats(socket.assigns.current_user)
+    current = socket.assigns.current_user
+    %{per_user: breakdown, aggregate: totals, tank_bytes: tank_bytes} = Storage.stats(current)
+
+    # The current user's slice — pulled out so the "Your usage" table
+    # doesn't have to scan the list at render time. Falls back to a
+    # zero struct if for any reason the current user isn't in the
+    # breakdown (shouldn't happen — Jellyfin's user list is the
+    # source — but defensive).
+    your_stats =
+      Enum.find(breakdown, &(&1.user_id == current.id)) ||
+        %{
+          movie_count: 0,
+          show_count: 0,
+          episode_count: 0,
+          bytes: 0,
+          bytes_movies: 0,
+          bytes_shows: 0
+        }
 
     {:ok,
      assign(socket,
        page_title: "Settings · Aviary",
        breakdown: breakdown,
        totals: totals,
+       your_stats: your_stats,
        tank_bytes: tank_bytes
      )}
   end
@@ -96,15 +113,22 @@ defmodule AviaryWeb.SettingsLive do
         --%>
         <div>
           <.section_block label="Storage" stacked>
-            <.storage_table totals={@totals} />
+            <%!-- Sub-block: this user's slice of the library. Same
+                 small-uppercase-tracked treatment as the section
+                 label one step smaller, in text-muted so the rhythm
+                 reads as "section / sub-section." --%>
+            <.sub_label>Your usage</.sub_label>
+            <.your_usage_table stats={@your_stats} />
 
-            <%!-- Hairline between the table and the bar — same rule
-                 token used between sections, restating the rhythm. --%>
-            <div class="border-t border-rule my-6"></div>
+            <div class="border-t border-rule my-8"></div>
 
+            <%!-- Sub-block: household-wide tank context. Header line
+                 with three dot-separated values, then the stacked bar,
+                 then the per-user legend with proportional %. --%>
+            <.sub_label>Total storage</.sub_label>
+            <.tank_summary totals={@totals} tank_bytes={@tank_bytes} />
             <.storage_bar breakdown={@breakdown} totals={@totals} tank_bytes={@tank_bytes} />
-
-            <.storage_legend breakdown={@breakdown} />
+            <.storage_legend breakdown={@breakdown} totals={@totals} />
           </.section_block>
         </div>
       </div>
@@ -138,33 +162,37 @@ defmodule AviaryWeb.SettingsLive do
   end
 
   # ============================================================
-  # Storage table — Movies / Shows / Episodes / Total
+  # Sub-section label — one step smaller than the section label.
   # ============================================================
-  attr :totals, :map, required: true
+  slot :inner_block, required: true
 
-  defp storage_table(assigns) do
+  defp sub_label(assigns) do
+    ~H"""
+    <p class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted mb-4">
+      {render_slot(@inner_block)}
+    </p>
+    """
+  end
+
+  # ============================================================
+  # "Your usage" table — current user's slice. Three rows, no Total.
+  # ============================================================
+  attr :stats, :map, required: true
+
+  defp your_usage_table(assigns) do
     ~H"""
     <%!--
       Three columns: title (left-aligned), count + size (right-aligned).
-      tabular-nums keeps the numbers vertically aligned without manual
-      width-setting. py-2 per row gives the typographic breathing room
-      the rest of the page uses.
-
-      Total row sits above a hairline rule, with a slight font-weight
-      bump. Oxblood is reserved for the stacked bar — Total stays in
-      text-ink so the page's accent budget concentrates lower.
+      tabular-nums keeps the numbers vertically aligned. No Total row —
+      the legend below shows the user's row directly. bytes_movies +
+      bytes_shows are the per-type byte attributions (already divided
+      by subscriber count in Storage); Episodes shows the count only
+      because episode bytes roll up into Shows.
     --%>
     <dl class="grid grid-cols-[1fr_auto_auto] gap-x-8 font-sans text-[0.85rem] tabular-nums">
-      <.stat_row label="Movies"   count={@totals.movie_count}   size={@totals.bytes_movies} />
-      <.stat_row label="Shows"    count={@totals.show_count}    size={@totals.bytes_shows} />
-      <.stat_row label="Episodes" count={@totals.episode_count} size={nil} />
-      <div class="col-span-3 border-t border-rule mt-2 pt-2"></div>
-      <.stat_row
-        label="Total"
-        count={nil}
-        size={@totals.bytes}
-        weight="font-medium"
-      />
+      <.stat_row label="Movies" count={@stats.movie_count} size={@stats.bytes_movies} />
+      <.stat_row label="Shows" count={@stats.show_count} size={@stats.bytes_shows} />
+      <.stat_row label="Episodes" count={@stats.episode_count} size={nil} />
     </dl>
     """
   end
@@ -172,15 +200,14 @@ defmodule AviaryWeb.SettingsLive do
   attr :label, :string, required: true
   attr :count, :any, required: true
   attr :size, :any, required: true
-  attr :weight, :string, default: ""
 
   defp stat_row(assigns) do
     ~H"""
-    <p class={["text-ink py-2", @weight]}>{@label}</p>
-    <p class={["text-right text-ink py-2", @weight]}>
+    <p class="text-ink py-2">{@label}</p>
+    <p class="text-right text-ink py-2">
       {if is_nil(@count), do: "", else: format_count(@count)}
     </p>
-    <p class={["text-right text-muted py-2 tabular-nums", @weight]}>
+    <p class="text-right text-muted py-2 tabular-nums">
       {Aviary.Storage.humanize_bytes(@size)}
     </p>
     """
@@ -195,6 +222,42 @@ defmodule AviaryWeb.SettingsLive do
   end
 
   defp format_count(n), do: Integer.to_string(n)
+
+  # ============================================================
+  # Tank capacity summary — single line, dot-separated values.
+  # ============================================================
+  attr :totals, :map, required: true
+  attr :tank_bytes, :any, required: true
+
+  defp tank_summary(assigns) do
+    ~H"""
+    <%!--
+      One-line header: tank total · used · free. tabular-nums so the
+      digits sit clean; muted color because this is informational
+      context for the bar/legend below, not the visual hook. When
+      tank_bytes is nil (TANK_BYTES env unset), drop the total + free
+      pieces and just show what's used — quieter degraded mode.
+    --%>
+    <p class="font-sans text-[0.8rem] text-muted tabular-nums mb-4">
+      <%= if @tank_bytes do %>
+        {Aviary.Storage.humanize_bytes(@tank_bytes)} total
+        <span class="px-2 text-rule">·</span>
+        {Aviary.Storage.humanize_bytes(@totals.bytes)} used
+        <span class="px-2 text-rule">·</span>
+        {free_percent(@totals.bytes, @tank_bytes)}% free
+      <% else %>
+        {Aviary.Storage.humanize_bytes(@totals.bytes)} used
+      <% end %>
+    </p>
+    """
+  end
+
+  defp free_percent(used, tank) when tank > 0 do
+    pct = (tank - used) / tank * 100
+    :erlang.float_to_binary(pct * 1.0, decimals: 2)
+  end
+
+  defp free_percent(_, _), do: "0.00"
 
   # ============================================================
   # Stacked bar — household-share at the moment; would shift to
@@ -239,15 +302,19 @@ defmodule AviaryWeb.SettingsLive do
   end
 
   # ============================================================
-  # Legend — colored swatch + username + their size
+  # Legend — colored swatch + username + their size + their % of
+  # household usage. % is intentionally NOT % of tank — that'd be
+  # near-zero for everyone until the tank fills. % of household used
+  # gives a meaningful comparison even early.
   # ============================================================
   attr :breakdown, :list, required: true
+  attr :totals, :map, required: true
 
   defp storage_legend(assigns) do
     ~H"""
     <ul class="mt-6 flex flex-col gap-2 font-sans text-[0.85rem] tabular-nums">
       <%= for entry <- @breakdown do %>
-        <li class="grid grid-cols-[auto_1fr_auto] items-baseline gap-3">
+        <li class="grid grid-cols-[auto_1fr_auto_auto] items-baseline gap-x-3">
           <%!-- 8px swatch — small enough to read as data ink, not chrome --%>
           <span
             class="size-2 rounded-full self-center"
@@ -256,10 +323,24 @@ defmodule AviaryWeb.SettingsLive do
           ></span>
           <span class="text-ink">{entry.username}</span>
           <span class="text-right text-muted">{Aviary.Storage.humanize_bytes(entry.bytes)}</span>
+          <span class="text-right text-muted pl-3">
+            {household_share_percent(entry.bytes, @totals.bytes)}%
+          </span>
         </li>
       <% end %>
     </ul>
     """
+  end
+
+  defp household_share_percent(_user_bytes, 0), do: "0"
+
+  defp household_share_percent(user_bytes, total_bytes) do
+    pct = user_bytes / total_bytes * 100
+    cond do
+      pct >= 10 -> "#{round(pct)}"
+      pct == 0 -> "0"
+      true -> :erlang.float_to_binary(pct * 1.0, decimals: 1)
+    end
   end
 
   # ============================================================
