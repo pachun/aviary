@@ -20,9 +20,8 @@ defmodule AviaryWeb.SettingsLive do
   @palette_size 6
 
   def mount(_params, _session, socket) do
-    breakdown = Storage.breakdown_per_user(socket.assigns.current_user)
-    totals = Storage.totals(breakdown)
-    tank_bytes = Storage.tank_bytes()
+    %{per_user: breakdown, aggregate: totals, tank_bytes: tank_bytes} =
+      Storage.stats(socket.assigns.current_user)
 
     {:ok,
      assign(socket,

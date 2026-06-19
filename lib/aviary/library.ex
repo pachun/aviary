@@ -97,4 +97,29 @@ defmodule Aviary.Library do
   end
 
   def subscribers(tmdb_id) when is_integer(tmdb_id), do: subscribers(to_string(tmdb_id))
+
+  @doc """
+  Returns %{tmdb_id => subscriber_count} for every item any
+  household member has in their library. Used by the Storage stats
+  panel to attribute shared items (e.g., a show in three users'
+  libraries gets 1/3 of its size charged to each of them).
+  """
+  def subscriber_counts do
+    from(e in Entry,
+      group_by: e.tmdb_id,
+      select: {e.tmdb_id, count(e.jellyfin_user_id)}
+    )
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  @doc """
+  Distinct TMDB ids across the household — every item at least one
+  user has in their library. Used by the Storage stats panel to sum
+  aggregate sizes / counts without double-counting shared items.
+  """
+  def distinct_tmdb_ids do
+    from(e in Entry, distinct: true, select: e.tmdb_id)
+    |> Repo.all()
+  end
 end
