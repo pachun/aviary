@@ -15,7 +15,7 @@ defmodule Aviary.Nav do
   per series the user has touched).
   """
 
-  alias Aviary.{Home, Jellyfin, Upcoming}
+  alias Aviary.{Catalog, Home, Upcoming}
 
   @doc """
   Returns `%{home: bool, library: bool, discover: true, search: true}`
@@ -28,13 +28,12 @@ defmodule Aviary.Nav do
         [
           Task.async(fn -> Home.continue_watching(user) end),
           Task.async(fn -> Upcoming.releases(user) end),
-          # Catalog.list_shows is filtered by library_entries (per-user),
-          # so the Library tab only shows up when this user actually
-          # has shows in their library — same gate the Library page
-          # applies. Movies aren't user-curated yet, so list_movies
-          # stays on Jellyfin direct.
-          Task.async(fn -> Aviary.Catalog.list_shows(user) end),
-          Task.async(fn -> Jellyfin.list_movies(user) end)
+          # Both list_shows and list_movies are filtered by
+          # library_entries (per-user), so the Library tab only shows
+          # when THIS user has at least one show or movie in their
+          # library — same gate the Library page applies.
+          Task.async(fn -> Catalog.list_shows(user) end),
+          Task.async(fn -> Catalog.list_movies(user) end)
         ],
         15_000
       )
