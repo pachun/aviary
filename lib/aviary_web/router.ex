@@ -61,6 +61,7 @@ defmodule AviaryWeb.Router do
       live "/discover", DiscoverLive, :index
       live "/search", SearchLive, :index
       live "/library", LibraryLive, :index
+      live "/settings", SettingsLive, :index
       live "/shows/:id", ShowsDetailLive, :show
       live "/movies/:id", MoviesDetailLive, :show
     end

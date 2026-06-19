@@ -1,8 +1,9 @@
 defmodule AviaryWeb.Layouts do
   @moduledoc """
-  App-wide layouts: the masthead (with section nav + theme toggle) that
-  wraps every LiveView's content slot, plus flash group + theme toggle
-  components.
+  App-wide layouts: the masthead (section nav on the left, settings
+  gear on the right) that wraps every LiveView's content slot, plus
+  the flash group and the theme toggle component (rendered on the
+  /settings page now, not in the masthead).
 
   Visual language: editorial cabinet — Fraunces display serif, Instrument
   Sans for UI, day/night themes via [data-theme] on <html>, single
@@ -40,15 +41,12 @@ defmodule AviaryWeb.Layouts do
       --%>
       <header class="sticky top-0 z-20 bg-paper px-4 sm:px-8 lg:px-12 pt-8 pb-6 sm:pt-10 sm:pb-8">
         <%!--
-          items-center on the outer flex so the bird logo's middle
-          lines up with the nav text's middle. items-baseline (the
-          prior value) was correct for the nav-link group on its own,
-          but with the bird being a 36px <img>, baseline-aligning it
-          to a 12px text run pushed the bird's center way too high.
-          The inner nav keeps items-baseline to align nav links to
-          each other.
+          items-baseline on the outer flex so the gear's bottom edge
+          rests on the same baseline as the nav text — same typographic
+          rhythm an editorial layout would set for a small glyph in
+          running copy.
         --%>
-        <div class="mx-auto max-w-[1100px] flex items-center justify-between gap-8">
+        <div class="mx-auto max-w-[1100px] flex items-baseline justify-between gap-8">
           <nav class="flex items-baseline gap-8 text-[0.78rem] font-sans tracking-[0.15em] uppercase">
             <.section_link
               :if={@nav_visibility.home}
@@ -72,7 +70,19 @@ defmodule AviaryWeb.Layouts do
             </.section_link>
           </nav>
 
-          <.bird_menu current_user={@current_user} />
+          <%!--
+            Settings entry-point — small gear, muted by default, oxblood
+            on hover/focus to match the nav-link rhythm. Only shown to
+            signed-in users; on the sign-in screen there's nothing here.
+          --%>
+          <a
+            :if={@current_user}
+            href={~p"/settings"}
+            aria-label="Settings"
+            class="text-muted hover:text-oxblood transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-sm"
+          >
+            <.icon name="hero-cog-6-tooth" class="size-5" />
+          </a>
         </div>
       </header>
 
@@ -83,74 +93,6 @@ defmodule AviaryWeb.Layouts do
       </main>
 
       <.flash_group flash={@flash} />
-    </div>
-    """
-  end
-
-  @doc """
-  Bird-logo dropdown — appears in the top-right on every screen
-  (logged in or not). Hovering / tapping it opens a small menu:
-  the day/night theme toggle always, plus a Sign out row when a
-  user is signed in.
-
-  Pure CSS open/close via :hover (desktop) and :focus-within
-  (touch — tapping the trigger focuses it, tapping outside blurs
-  it). No JS required.
-  """
-  attr :current_user, :any, default: nil
-
-  def bird_menu(assigns) do
-    ~H"""
-    <div class="group relative">
-      <button
-        type="button"
-        aria-haspopup="true"
-        aria-label="Menu"
-        class="block cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-sm"
-      >
-        <img
-          src={~p"/images/apple-touch-icon.png"}
-          alt="Aviary"
-          class="size-9 rounded-sm"
-        />
-      </button>
-
-      <%!--
-        Popup positioned at `top-full` with `pt-3` padding — the
-        visual gap to the trigger is *inside* the popup's box, so
-        the cursor stays within the hover region while crossing it.
-        Margin-based gaps (mt-3) broke this — the area outside the
-        popup wasn't a descendant of `.group` so :hover ended mid-flight.
-      --%>
-      <div class={[
-        "absolute right-0 top-full pt-3 z-20",
-        "invisible opacity-0 pointer-events-none transition-opacity duration-150",
-        "group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto",
-        "group-focus-within:visible group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
-      ]}>
-        <div class="min-w-[170px] bg-surface border border-rule rounded-sm shadow-lg overflow-hidden">
-          <div class="px-4 py-3 flex items-center justify-center border-b border-rule">
-            <.theme_toggle />
-          </div>
-
-          <.form
-            :if={@current_user}
-            for={%{}}
-            action={~p"/logout"}
-            method="post"
-            class="contents"
-          >
-            <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
-            <input type="hidden" name="_method" value="delete" />
-            <button
-              type="submit"
-              class="w-full text-center px-4 py-3 font-sans text-[0.72rem] tracking-[0.18em] uppercase text-ink hover:text-oxblood cursor-pointer transition-colors"
-            >
-              Sign out
-            </button>
-          </.form>
-        </div>
-      </div>
     </div>
     """
   end

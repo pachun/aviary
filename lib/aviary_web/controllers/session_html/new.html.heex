@@ -1,18 +1,11 @@
 <%!--
-  Layout mirrors the authenticated masthead so the bird-logo lands at
-  the exact same x/y across the login → signed-in transition (no
-  visible jump). flex flex-col min-h-dvh + flex-1 main means the form
-  centers within whatever vertical space is actually visible — when
-  the mobile keyboard opens, dvh shrinks and the form re-centers above
-  it automatically instead of staying fixed behind it.
+  Pre-auth screen: nothing in the upper-right corner. flex flex-col
+  min-h-dvh + flex-1 main means the form centers within whatever
+  vertical space is actually visible — when the mobile keyboard
+  opens, dvh shrinks and the form re-centers above it automatically
+  instead of staying fixed behind it.
 --%>
 <div class="bg-paper text-ink antialiased flex flex-col min-h-dvh">
-  <header class="px-4 sm:px-8 lg:px-12 pt-8 pb-6 sm:pt-10 sm:pb-8">
-    <div class="mx-auto max-w-[1100px] flex items-center justify-end">
-      <AviaryWeb.Layouts.bird_menu current_user={nil} />
-    </div>
-  </header>
-
   <main class="flex-1 flex items-center justify-center px-6">
     <div class="w-full max-w-sm">
       <.form for={%{}} as={:login} action={~p"/login"} method="post" class="flex flex-col gap-3">
