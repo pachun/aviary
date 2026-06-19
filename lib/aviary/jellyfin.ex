@@ -62,6 +62,64 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
+  Like list_movies/1 but also returns MediaSources so callers can sum
+  file sizes (Storage stats panel). MediaSources adds ~1KB per movie
+  to the response so we don't fold it into the everyday list_movies
+  read — it's only worth the bytes when sizes are actually consumed.
+  """
+  def list_movies_with_sizes(auth) do
+    Aviary.Cache.swr(
+      {:jellyfin_list_movies_sized, auth.id},
+      @catalog_fresh_ms,
+      @catalog_stale_ms,
+      fn ->
+        get!(@api_path, auth,
+          IncludeItemTypes: "Movie",
+          Recursive: true,
+          Fields: "ProviderIds,MediaSources"
+        )
+        |> Map.fetch!("Items")
+      end
+    )
+  end
+
+  @doc """
+  All episodes across all series with their parent SeriesId + file
+  sizes. Single recursive read — much cheaper than walking
+  list_episodes/2 per series. Used by Storage stats to roll up
+  per-show file size from episode files.
+  """
+  def list_all_episodes_with_sizes(auth) do
+    Aviary.Cache.swr(
+      {:jellyfin_list_episodes_sized, auth.id},
+      @catalog_fresh_ms,
+      @catalog_stale_ms,
+      fn ->
+        get!(@api_path, auth,
+          IncludeItemTypes: "Episode",
+          Recursive: true,
+          Fields: "SeriesId,MediaSources"
+        )
+        |> Map.fetch!("Items")
+      end
+    )
+  end
+
+  @doc """
+  All Jellyfin users — Id + Name. Used by the Storage stats panel to
+  resolve `library_entries.jellyfin_user_id` to the human username for
+  the per-user color legend. /Users is readable by any authenticated
+  Jellyfin user (it's what the login screen uses), so this works
+  regardless of admin status.
+  """
+  def list_users(auth) do
+    Req.get!(base_url() <> "/Users",
+      headers: [{"x-emby-token", auth.token}],
+      receive_timeout: 15_000
+    ).body
+  end
+
+  @doc """
   Fetch a single item by id with the fuller field set the detail page
   needs — overview, MPAA rating, runtime, remote trailers, plus
   UserData (resume position, played state).

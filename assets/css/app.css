@@ -28,6 +28,17 @@
   --muted:    oklch(0.50 0.015 60);
   --rule:     oklch(0.86 0.012 75);
   --oxblood:  oklch(0.30 0.190 25);
+
+  /* Per-user accent palette (Storage stats stacked bar + legend).
+     All sit at roughly the same lightness so no household member
+     reads as "louder" than another — distinction is purely by hue
+     rotation. Earth-toned, museum-cabinet — not Material primaries. */
+  --user-1: oklch(0.48 0.140 25);   /* terracotta */
+  --user-2: oklch(0.52 0.120 80);   /* aged ochre */
+  --user-3: oklch(0.50 0.110 140);  /* dusty olive */
+  --user-4: oklch(0.50 0.090 220);  /* faded slate */
+  --user-5: oklch(0.48 0.120 330);  /* dusty plum */
+  --user-6: oklch(0.50 0.110 60);   /* clay tan */
 }
 
 [data-theme="night"] {
@@ -37,6 +48,14 @@
   --muted:    oklch(0.55 0.015 80);
   --rule:     oklch(0.25 0.012 270);
   --oxblood:  oklch(0.62 0.180 25);
+
+  /* Same per-user palette, raised in lightness for paper-on-ink contrast. */
+  --user-1: oklch(0.70 0.150 25);
+  --user-2: oklch(0.72 0.130 80);
+  --user-3: oklch(0.70 0.120 140);
+  --user-4: oklch(0.70 0.100 220);
+  --user-5: oklch(0.70 0.130 330);
+  --user-6: oklch(0.70 0.120 60);
 }
 
 /* Expose tokens as Tailwind utility classes (bg-paper, text-ink,
@@ -48,6 +67,15 @@
   --color-muted:   var(--muted);
   --color-rule:    var(--rule);
   --color-oxblood: var(--oxblood);
+
+  /* User color slots — usable as bg-user-1, text-user-1, etc.
+     Assigned deterministically by hashing user_id in the LiveView. */
+  --color-user-1: var(--user-1);
+  --color-user-2: var(--user-2);
+  --color-user-3: var(--user-3);
+  --color-user-4: var(--user-4);
+  --color-user-5: var(--user-5);
+  --color-user-6: var(--user-6);
 
   --font-display: "Fraunces", Georgia, "Times New Roman", serif;
   --font-sans:    "Instrument Sans", system-ui, -apple-system, sans-serif;
