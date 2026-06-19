@@ -57,28 +57,51 @@ defmodule AviaryWeb.CoreComponents do
     assigns = assign_new(assigns, :id, fn -> "flash-#{assigns.kind}" end)
 
     ~H"""
+    <%!--
+      Individual flash card. Does NOT position itself — positioning is
+      the flash_group wrapper's responsibility (it stacks these vertically
+      with gap). Editorial-minimalist styling: solid bg-surface (not
+      semi-transparent — daisyUI's `alert-info/error` defaults were
+      what let the gear show through), single hairline border, small
+      shadow. Errors get an oxblood left-edge accent strip so they
+      read as serious without going Material-red.
+    --%>
     <div
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
       role="alert"
-      class="toast toast-top toast-end z-50"
+      class={[
+        "w-80 sm:w-96 bg-surface border border-rule shadow-md rounded-sm cursor-pointer",
+        "font-sans text-[0.85rem] text-ink",
+        @kind == :error && "border-l-2 border-l-oxblood"
+      ]}
       {@rest}
     >
-      <div class={[
-        "alert w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap",
-        @kind == :info && "alert-info",
-        @kind == :error && "alert-error"
-      ]}>
-        <.icon :if={@kind == :info} name="hero-information-circle" class="size-5 shrink-0" />
-        <.icon :if={@kind == :error} name="hero-exclamation-circle" class="size-5 shrink-0" />
-        <div>
-          <p :if={@title} class="font-semibold">{@title}</p>
-          <p>{msg}</p>
+      <div class="flex items-start gap-3 px-4 py-3">
+        <.icon
+          :if={@kind == :info}
+          name="hero-information-circle-mini"
+          class="size-4 text-muted shrink-0 mt-0.5"
+        />
+        <.icon
+          :if={@kind == :error}
+          name="hero-exclamation-circle-mini"
+          class="size-4 text-oxblood shrink-0 mt-0.5"
+        />
+        <div class="flex-1 min-w-0">
+          <p :if={@title} class="font-medium mb-1">{@title}</p>
+          <p class="text-muted">{msg}</p>
         </div>
-        <div class="flex-1" />
-        <button type="button" class="group self-start cursor-pointer" aria-label="close">
-          <.icon name="hero-x-mark" class="size-5 opacity-40 group-hover:opacity-70" />
+        <button
+          type="button"
+          aria-label="close"
+          class="shrink-0 -mr-1 -mt-1 p-1 rounded-sm cursor-pointer"
+        >
+          <.icon
+            name="hero-x-mark-mini"
+            class="size-4 text-muted hover:text-ink transition-colors"
+          />
         </button>
       </div>
     </div>

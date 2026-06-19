@@ -157,7 +157,19 @@ defmodule AviaryWeb.Layouts do
 
   def flash_group(assigns) do
     ~H"""
-    <div id={@id} aria-live="polite">
+    <%!--
+      Single positioning container — fixed to the viewport's top-right
+      corner, flex-col gap-3 so multiple simultaneous flashes stack
+      vertically with breathing room instead of piling at the same
+      coordinate. z-50 keeps the group above the sticky masthead's
+      z-20. pointer-events-none on the wrapper + auto on each child
+      so the area between cards isn't a transparent click trap.
+    --%>
+    <div
+      id={@id}
+      aria-live="polite"
+      class="fixed top-6 right-4 sm:right-6 z-50 flex flex-col gap-3 pointer-events-none [&>*]:pointer-events-auto"
+    >
       <.flash kind={:info} flash={@flash} />
       <.flash kind={:error} flash={@flash} />
 
@@ -170,19 +182,19 @@ defmodule AviaryWeb.Layouts do
         hidden
       >
         Attempting to reconnect
-        <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
+        <.icon name="hero-arrow-path-mini" class="ml-1 size-3 motion-safe:animate-spin" />
       </.flash>
 
       <.flash
         id="server-error"
         kind={:error}
-        title="Something went wrong!"
+        title="Something went wrong"
         phx-disconnected={show(".phx-server-error #server-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#server-error") |> JS.set_attribute({"hidden", ""})}
         hidden
       >
         Attempting to reconnect
-        <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
+        <.icon name="hero-arrow-path-mini" class="ml-1 size-3 motion-safe:animate-spin" />
       </.flash>
     </div>
     """
