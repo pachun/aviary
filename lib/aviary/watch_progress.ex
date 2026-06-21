@@ -1,17 +1,20 @@
 defmodule Aviary.WatchProgress do
   @moduledoc """
-  Builds the "until in your library" line shown beneath the action
-  button on show / movie detail pages. The label tracks the state
-  machine:
+  Builds the "until watchable" line shown beneath the action button on
+  show / movie detail pages. The label tracks the state machine:
 
     :ready (pre-download)    → static estimate from runtime
-                               ("Roughly 4 minutes until in your library")
+                               ("Roughly 4 minutes until watchable")
     :searching               → "Searching for a release"
     {:downloading, _}        → live duration from queue.timeleft + import
                                buffer, refreshed each Sonarr/Radarr poll
-                               ("Roughly 3 minutes until in your library")
-    :imported                → "Almost in your library"
+                               ("Roughly 3 minutes until watchable")
+    :imported                → "Almost watchable"
     other / no signal        → nil (caller hides the line)
+
+  The framing is intentionally watcher-side ("until watchable"), not
+  system-side ("until in your library") — the user's goal is watching,
+  not curating.
 
   Sonarr/Radarr's `timeleft` field is parsed from its
   ".NET TimeSpan" string ("HH:MM:SS" or "DD.HH:MM:SS") into total
@@ -41,7 +44,7 @@ defmodule Aviary.WatchProgress do
   def label(:ready, runtime_minutes, _timeleft) do
     case WatchTimeEstimate.for_runtime(runtime_minutes) do
       nil -> nil
-      n -> "Roughly #{n} minutes until in your library"
+      n -> "Roughly #{n} minutes until watchable"
     end
   end
 
@@ -49,8 +52,7 @@ defmodule Aviary.WatchProgress do
 
   def label({:downloading, _pct}, _runtime, timeleft_sec)
       when is_integer(timeleft_sec) and timeleft_sec > 0 do
-    duration_phrase(timeleft_sec + @import_buffer_seconds) <>
-      " until in your library"
+    duration_phrase(timeleft_sec + @import_buffer_seconds) <> " until watchable"
   end
 
   # No timeleft signal yet — Sonarr/Radarr hasn't published one (e.g.,
@@ -58,7 +60,7 @@ defmodule Aviary.WatchProgress do
   # rather than show a misleading "Less than a minute".
   def label({:downloading, _pct}, _runtime, _timeleft), do: nil
 
-  def label(:imported, _runtime, _timeleft), do: "Almost in your library"
+  def label(:imported, _runtime, _timeleft), do: "Almost watchable"
 
   def label(_, _, _), do: nil
 
