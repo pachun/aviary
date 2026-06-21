@@ -24,12 +24,12 @@ defmodule Aviary.Discover do
   # 1:1 via its discover endpoint.
   @services [
     {"Apple TV+", 2552},
-    {"Netflix", 213},
     {"HBO", 49},
-    {"Hulu", 453},
+    {"Paramount+", 4330},
     {"Disney+", 2739},
-    {"Prime Video", 1024},
-    {"Paramount+", 4330}
+    {"Netflix", 213},
+    {"Hulu", 453},
+    {"Prime Video", 1024}
   ]
 
   @doc """
