@@ -37,7 +37,8 @@ defmodule AviaryWeb.UserAuth do
     |> put_session(@session_key, %{
       id: user.id,
       username: user.username,
-      token: user.token
+      token: user.token,
+      primary_image_tag: user.primary_image_tag
     })
     |> redirect(to: return_to)
   end

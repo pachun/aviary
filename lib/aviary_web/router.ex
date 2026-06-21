@@ -67,6 +67,7 @@ defmodule AviaryWeb.Router do
     end
 
     get "/image/tmdb/:size/*path", ImageController, :tmdb
+    get "/user-image/:user_id", ImageController, :user
     get "/image/:item_id", ImageController, :show
   end
 

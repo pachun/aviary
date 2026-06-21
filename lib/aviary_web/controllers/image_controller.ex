@@ -34,6 +34,23 @@ defmodule AviaryWeb.ImageController do
     end
   end
 
+  def user(conn, %{"user_id" => user_id}) do
+    case Aviary.Jellyfin.fetch_user_image(user_id) do
+      {:ok, body, content_type} ->
+        conn
+        |> put_resp_header("content-type", content_type)
+        # Aggressive cache: the URL includes ?tag=<PrimaryImageTag>
+        # as a cache-buster, so when the user uploads a new image in
+        # Jellyfin the tag changes and the browser fetches the new
+        # bytes. Same `immutable` strategy as TMDB images.
+        |> put_resp_header("cache-control", "public, max-age=2592000, immutable")
+        |> send_resp(200, body)
+
+      :error ->
+        send_resp(conn, 404, "")
+    end
+  end
+
   def tmdb(conn, %{"size" => size, "path" => path_segments}) do
     # Phoenix splits the catch-all into a list of segments. TMDB
     # filenames are flat, but joining keeps us safe if a future

@@ -35,7 +35,17 @@ defmodule Aviary.Auth do
            receive_timeout: 10_000
          ) do
       {:ok, %Req.Response{status: 200, body: %{"User" => user, "AccessToken" => token}}} ->
-        {:ok, %{id: user["Id"], username: user["Name"], token: token}}
+        # PrimaryImageTag is Jellyfin's per-user cache key for the
+        # avatar image — changes when the user uploads a new photo.
+        # Persisted in the session so the avatar URL includes it as
+        # a cache-buster; logging out + back in picks up new tags.
+        {:ok,
+         %{
+           id: user["Id"],
+           username: user["Name"],
+           token: token,
+           primary_image_tag: user["PrimaryImageTag"]
+         }}
 
       {:ok, %Req.Response{status: 401}} ->
         {:error, :invalid_credentials}

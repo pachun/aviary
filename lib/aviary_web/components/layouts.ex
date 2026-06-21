@@ -200,17 +200,17 @@ defmodule AviaryWeb.Layouts do
           </nav>
 
           <%!--
-            Settings entry-point — small gear, muted by default, oxblood
-            on hover/focus to match the nav-link rhythm. Only shown to
-            signed-in users; on the sign-in screen there's nothing here.
+            Settings entry-point — user's Jellyfin avatar, circular,
+            with the gear-icon fallback to initials when there's no
+            avatar set. Links to /settings.
           --%>
           <a
             :if={@current_user}
             href={~p"/settings"}
             aria-label="Settings"
-            class="text-muted hover:text-oxblood transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-sm"
+            class="focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-full"
           >
-            <.icon name="hero-cog-6-tooth" class="size-5" />
+            <.user_avatar user={@current_user} size_class="size-6" />
           </a>
         </div>
       </header>
@@ -293,6 +293,7 @@ defmodule AviaryWeb.Layouts do
             label="Settings"
             icon_outline="hero-cog-6-tooth"
             icon_solid="hero-cog-6-tooth-solid"
+            avatar_user={@current_user}
           />
         </div>
       </nav>
@@ -333,17 +334,23 @@ defmodule AviaryWeb.Layouts do
   attr :icon_outline, :string, required: true, doc: "heroicon name for the inactive state"
   attr :icon_solid, :string, required: true, doc: "heroicon name for the active state"
 
+  attr :avatar_user, :map,
+    default: nil,
+    doc:
+      "When set, the tab renders the user's avatar (circular img with initials fallback) INSTEAD of the icon. Used for the Settings tab so the family member's face replaces the gear glyph."
+
   defp tab_bar_link(assigns) do
     ~H"""
     <%!--
-      Single tab in the mobile bottom bar. iOS HIG shape: icon stacked
-      above a small text label, full-width touch target. Outline icon
-      flips to solid when active; color shifts from muted to oxblood.
+      Single tab in the mobile bottom bar. iOS HIG shape: icon (or
+      user avatar) stacked above a small text label, full-width touch
+      target. Outline icon flips to solid when active; color shifts
+      from muted to oxblood. When `avatar_user` is set, the icon is
+      replaced by a circular avatar (which still gets an oxblood ring
+      on active to mirror the icon's color treatment).
 
       flex-1 spreads tabs evenly across the bar regardless of how
-      many render (3, 4, or 5 depending on nav_visibility). The
-      whole anchor is the tap area — labels at 10px would be
-      fingertip-hostile if only the label itself were clickable.
+      many render (3, 4, or 5 depending on nav_visibility).
     --%>
     <a
       href={@href}
@@ -357,9 +364,55 @@ defmodule AviaryWeb.Layouts do
         !@active && "text-muted hover:text-ink"
       ]}
     >
-      <.icon name={if @active, do: @icon_solid, else: @icon_outline} class="size-6" />
+      <%= if @avatar_user do %>
+        <.user_avatar user={@avatar_user} size_class="size-6" active={@active} />
+      <% else %>
+        <.icon name={if @active, do: @icon_solid, else: @icon_outline} class="size-6" />
+      <% end %>
       <span class="font-sans text-[0.65rem] leading-none">{@label}</span>
     </a>
+    """
+  end
+
+  attr :user, :map, required: true
+  attr :size_class, :string, default: "size-6", doc: "Tailwind size class for the circle"
+  attr :active, :boolean, default: false, doc: "Adds an oxblood ring when true"
+
+  @doc """
+  Circular avatar for a Jellyfin user. Renders an `<img>` proxied via
+  /user-image when the user has a PrimaryImageTag set in Jellyfin;
+  falls back to a circle with their first initial in display serif
+  when they don't. Cache-busted by the image tag in the URL.
+  """
+  def user_avatar(assigns) do
+    assigns =
+      assigns
+      |> assign(:has_image, !is_nil(Map.get(assigns.user, :primary_image_tag)))
+      |> assign(:initial, assigns.user.username |> String.first() |> String.upcase())
+
+    ~H"""
+    <%= if @has_image do %>
+      <img
+        src={~p"/user-image/#{@user.id}?tag=#{@user.primary_image_tag}"}
+        alt={@user.username}
+        class={[
+          @size_class,
+          "rounded-full object-cover bg-rule",
+          @active && "ring-2 ring-oxblood ring-offset-2 ring-offset-paper"
+        ]}
+      />
+    <% else %>
+      <span
+        aria-hidden="true"
+        class={[
+          @size_class,
+          "rounded-full bg-rule text-ink flex items-center justify-center font-display text-xs leading-none",
+          @active && "ring-2 ring-oxblood ring-offset-2 ring-offset-paper"
+        ]}
+      >
+        {@initial}
+      </span>
+    <% end %>
     """
   end
 

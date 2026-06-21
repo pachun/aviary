@@ -719,6 +719,24 @@ defmodule Aviary.Jellyfin do
     end
   end
 
+  @doc """
+  Fetches a Jellyfin user's avatar (PrimaryImage) as bytes +
+  content-type. Source endpoint is `/Users/{userId}/Images/Primary`
+  and doesn't require auth — Jellyfin treats user avatars as
+  semi-public (they show on Jellyfin's own login screen).
+  """
+  def fetch_user_image(user_id) do
+    url = "#{base_url()}/Users/#{user_id}/Images/Primary?maxWidth=200"
+
+    case Req.get(url, receive_timeout: 10_000) do
+      {:ok, %Req.Response{status: 200, body: body, headers: headers}} ->
+        {:ok, body, content_type(headers)}
+
+      _ ->
+        :error
+    end
+  end
+
   ## Video stream
 
   @doc """
