@@ -92,7 +92,16 @@ defmodule AviaryWeb.SettingsLive do
           <.section_block label="You">
             <div class="flex flex-col gap-8">
               <div>
-                <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted mb-1">
+                <%!--
+                  Inner "Signed in as" label hidden on mobile —
+                  on mobile the section header "YOU" stacks ABOVE
+                  it (one-column layout) and the two same-style
+                  tracked-uppercase labels read as duplicates.
+                  Desktop keeps it because the section header sits
+                  to the LEFT, and the inner label provides a
+                  useful sub-heading next to the username.
+                --%>
+                <p class="hidden sm:block font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted mb-1">
                   Signed in as
                 </p>
                 <p class="font-display text-2xl text-ink">{@current_user.username}</p>
@@ -113,7 +122,10 @@ defmodule AviaryWeb.SettingsLive do
 
           <.section_block label="Display">
             <div class="flex flex-col gap-3">
-              <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted">Theme</p>
+              <%!-- Same fix as "Signed in as" — hide redundant inner label on mobile. --%>
+              <p class="hidden sm:block font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted">
+                Theme
+              </p>
               <Layouts.theme_toggle />
             </div>
           </.section_block>
