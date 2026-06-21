@@ -17,7 +17,11 @@ config :aviary, AviaryWeb.Endpoint,
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
     formats: [html: AviaryWeb.ErrorHTML, json: AviaryWeb.ErrorJSON],
-    layout: false
+    # Wrap error pages in root.html.heex so they pick up the same
+    # CSS (Tailwind tokens, fonts, theme bootstrap) as the rest of
+    # the app. Root layout is dependency-light — no current_user,
+    # no nav — safe to render even during a 500.
+    layout: {AviaryWeb.Layouts, :root}
   ],
   pubsub_server: Aviary.PubSub,
   live_view: [signing_salt: "I8koaHre"]
