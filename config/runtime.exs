@@ -101,6 +101,20 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "example.com"
 
+  # CHECK_ORIGINS is a comma-separated list of hostnames that
+  # LiveView's WebSocket upgrade should accept as a valid origin.
+  # Used when aviary is reachable at more than one URL — e.g. the
+  # custom Cloudflare-Tunnel'd domain AND the tailscale URL. Without
+  # this, requests hitting the second URL would have their origin
+  # rejected and LiveView would never connect. Falls back to
+  # `true` (Phoenix default = derive from `url[:host]`) when unset.
+  check_origins =
+    System.get_env("CHECK_ORIGINS", "")
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.map(&"//#{&1}")
+
   config :aviary, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :aviary, AviaryWeb.Endpoint,
@@ -112,6 +126,7 @@ if config_env() == :prod do
       # for details about using IPv6 vs IPv4 and loopback vs public addresses.
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
     ],
+    check_origin: if(check_origins == [], do: true, else: check_origins),
     secret_key_base: secret_key_base
 
   # ## SSL Support
