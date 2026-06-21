@@ -257,6 +257,13 @@ defmodule Aviary.Catalog do
         synopsis: body["overview"],
         trailer_url: tmdb_trailer_url(body),
         episodes_by_season: episodes_by_season,
+        # First entry of TMDB's episodeRunTime array (an int-list of
+        # average per-episode runtimes). Library shows get runtime_minutes
+        # from Jellyfin; this is the discover-side equivalent. Required
+        # so detail-page templates accessing show.runtime_minutes don't
+        # crash with KeyError (was: missing entirely, see WatchProgress
+        # estimate).
+        runtime_minutes: tmdb_show_runtime(body),
         next_up: nil,
         season_count: length(seasons),
         rating: Aviary.RottenTomatoes.fetch(body["name"], :tv),
@@ -435,6 +442,12 @@ defmodule Aviary.Catalog do
 
   defp tmdb_first_genre(%{"genres" => [%{"name" => name} | _]}) when is_binary(name), do: name
   defp tmdb_first_genre(_), do: nil
+
+  # TMDB / Jellyseerr's `episodeRunTime` is an int list of typical
+  # per-episode runtimes (in minutes). First entry is plenty for our
+  # "until in your library" estimate; nil if the source omitted it.
+  defp tmdb_show_runtime(%{"episodeRunTime" => [n | _]}) when is_integer(n) and n > 0, do: n
+  defp tmdb_show_runtime(_), do: nil
 
   defp tmdb_poster_url(nil), do: nil
   defp tmdb_poster_url(""), do: nil
