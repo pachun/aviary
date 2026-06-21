@@ -442,11 +442,21 @@ defmodule AviaryWeb.ShowsDetailLive do
   attr :state, :any, required: true
   attr :label, :string, required: true
 
+  # Every chip variant uses these shared dimensions so the right
+  # edge of every episode row aligns vertically through every state
+  # transition (▶ Play → ↓ → Searching… → 42% → Importing… → ▶ Play
+  # all stay the same pixel width). w-28 is wide enough for
+  # "Importing…" / "Searching…" at 0.7rem tracked uppercase without
+  # wrapping. text-center centers the shorter labels (Play, ↓, 42%).
+  @chip_base "inline-block w-28 text-center font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm shrink-0"
+
   defp action_chip(assigns) do
+    assigns = assign(assigns, :chip_base, @chip_base)
+
     ~H"""
     <%= case @state do %>
       <% {:downloading, pct} -> %>
-        <span class="relative inline-block overflow-hidden font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium text-white px-3 py-1.5 rounded-sm shrink-0 bg-oxblood/20 tabular-nums">
+        <span class={[@chip_base, "relative overflow-hidden text-white bg-oxblood/20 tabular-nums"]}>
           <span
             class="absolute inset-y-0 left-0 bg-oxblood transition-all duration-700 ease-out"
             style={"width: #{pct}%"}
@@ -455,17 +465,11 @@ defmodule AviaryWeb.ShowsDetailLive do
           <span class="relative">{pct}%</span>
         </span>
       <% :searching -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
-          Searching…
-        </span>
+        <span class={[@chip_base, "bg-oxblood/40 text-white/80"]}>Searching…</span>
       <% :queued -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
-          Queued
-        </span>
+        <span class={[@chip_base, "bg-oxblood/40 text-white/80"]}>Queued</span>
       <% :imported -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood/40 text-white/80 px-3 py-1.5 rounded-sm shrink-0">
-          Importing…
-        </span>
+        <span class={[@chip_base, "bg-oxblood/40 text-white/80"]}>Importing…</span>
       <% :stuck -> %>
         <%!--
           Visually neutral (no oxblood) so it reads as "halted, waiting
@@ -474,28 +478,24 @@ defmodule AviaryWeb.ShowsDetailLive do
           resolve — typically "Not an upgrade for existing episode
           file(s)" or similar. Aviary can't unstick it on its own.
         --%>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-rule text-muted px-3 py-1.5 rounded-sm shrink-0">
-          Blocked
-        </span>
+        <span class={[@chip_base, "bg-rule text-muted"]}>Blocked</span>
       <% :ready -> %>
         <%!--
           Not in the tank yet. The label here is a typographic down
           arrow (↓, U+2193) rather than the "▶ Play" wording of the
           :playable case — the action this triggers is "start a
-          download," not "press play." Same chip geometry as the
-          other states so the row's right edge stays aligned. Same
-          oxblood-on-paper primary affordance: clicking it is the
-          first deliberate move the user makes on an unwatched
-          episode.
+          download," not "press play." [letter-spacing:0] kills the
+          chip_base tracking — the arrow glyph shouldn't carry the
+          uppercase-tracked rhythm; it'd look distended.
         --%>
         <span
           aria-label="Download"
-          class="font-sans text-[0.85rem] leading-none font-medium bg-oxblood text-white px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100"
+          class={[@chip_base, "bg-oxblood text-white transition-opacity opacity-90 group-hover:opacity-100 [letter-spacing:0]"]}
         >
           ↓
         </span>
       <% _ -> %>
-        <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-white px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
+        <span class={[@chip_base, "bg-oxblood text-white transition-opacity opacity-90 group-hover:opacity-100"]}>
           {@label}
         </span>
     <% end %>
