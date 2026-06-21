@@ -56,13 +56,20 @@ defmodule AviaryWeb.SettingsLive do
       current_section="settings"
       current_user={@current_user}
       nav_visibility={@nav_visibility}
+      mobile_title="Settings"
     >
       <%!--
         Page header: eyebrow + serif display title. Same rhythm the
         other section pages use (Discover, Library) so this lands as
         "an aviary page" before it lands as "the settings page."
       --%>
-      <header class="pt-4 sm:pt-6 pb-12 sm:pb-16">
+      <%!--
+        Hidden on mobile because the sticky top-bar already shows
+        "Settings" — the body title would be redundant + waste
+        precious viewport. Visible on desktop where there's no
+        sticky bar.
+      --%>
+      <header class="hidden sm:block sm:pt-6 sm:pb-16">
         <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted mb-3">
           Account &amp; preferences
         </p>

@@ -587,7 +587,13 @@ defmodule AviaryWeb.ShowsDetailLive do
     assigns = assign(assigns, :mark, watch_mark(assigns.show))
 
     ~H"""
-    <Layouts.app flash={@flash} current_user={@current_user} nav_visibility={@nav_visibility}>
+    <Layouts.app
+      flash={@flash}
+      current_user={@current_user}
+      nav_visibility={@nav_visibility}
+      mobile_title={@show.title}
+      mobile_back_to={@kicker.path}
+    >
       <article>
         <div class={[
           "grid grid-cols-1 md:grid-cols-[260px_1fr] gap-8 pt-4"

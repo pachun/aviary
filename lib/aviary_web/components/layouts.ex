@@ -28,6 +28,15 @@ defmodule AviaryWeb.Layouts do
     doc:
       "Which top-level nav links to render — Discover and Search are always true; Home and Library hide when the user has no content for them, so a brand-new user sees only Discover and Search."
 
+  attr :mobile_title, :string,
+    default: nil,
+    doc:
+      "Title for the mobile sticky top-bar. When set, the bar renders on mobile only, clears the iOS safe-area inset, and stays anchored to the viewport top. Desktop ignores this."
+
+  attr :mobile_back_to, :string,
+    default: nil,
+    doc: "Optional back-link href for the mobile top-bar (renders a chevron-left to the left of the title). Omit on root pages like Settings."
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -49,10 +58,47 @@ defmodule AviaryWeb.Layouts do
     --%>
     <div class="min-h-dvh bg-paper text-ink antialiased">
       <%!--
-        Mobile: no top chrome at all. Page content runs to the top
-        of the viewport; primary nav (including settings) lives in
-        the fixed bottom tab bar at the end of this template.
+        ====================================================
+        Mobile top bar — sticky context for show/movie detail
+        and settings.
+        ====================================================
+        Only renders when the page passed `mobile_title`. Sticky
+        so the title/back stays visible as the user scrolls. The
+        `pt-[env(safe-area-inset-top)]` shoves content below the
+        iOS status bar / notch so the title doesn't fight the
+        time/cell/wifi/battery indicators. min-h-[44px] on the
+        inner row matches iOS HIG nav-bar height after safe-area
+        math.
+
+        Left-aligned title (not iOS-standard centered): long movie
+        titles fight a centered layout with a left-side back button,
+        and aviary's editorial vocabulary already prefers left-flush
+        labels over centered.
+
+        On root-level pages (Settings), `mobile_back_to` is nil and
+        no chevron renders — just the title.
       --%>
+      <header
+        :if={@mobile_title}
+        class="sm:hidden sticky top-0 z-30 bg-paper border-b border-rule pt-[env(safe-area-inset-top)]"
+      >
+        <div class="flex items-center min-h-[44px] px-2 gap-1">
+          <a
+            :if={@mobile_back_to}
+            href={@mobile_back_to}
+            aria-label="Back"
+            class="text-muted hover:text-oxblood transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 rounded-sm p-2 -mx-1"
+          >
+            <.icon name="hero-chevron-left" class="size-5" />
+          </a>
+          <h1 class={[
+            "font-heading text-base text-ink leading-none truncate min-w-0 flex-1",
+            !@mobile_back_to && "pl-2"
+          ]}>
+            {@mobile_title}
+          </h1>
+        </div>
+      </header>
 
       <%!--
         ====================================================
