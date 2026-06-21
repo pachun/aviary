@@ -360,30 +360,33 @@ const Marquee = {
   },
 }
 
-// AutoFocus hook — calls .focus() on the element when it's mounted.
-// The HTML `autofocus` attribute alone isn't enough here: it only
-// applies on a real page load, so LiveView's SPA navigation into
-// /search wouldn't honor it; and mobile browsers (notably iOS Safari)
-// suppress the soft keyboard for `autofocus` even when they do focus
-// the field. Programmatic .focus() from a hook works across both —
-// LiveView fires `mounted` whenever the element enters the DOM, which
-// covers both fresh page loads AND soft-navigations. requestAnimationFrame
-// defers to after the browser's first layout pass so iOS Safari treats
-// the focus call as "in response to navigation" and pops the keyboard.
+// AutoFocus hook — focuses the element and parks the cursor at the
+// end of any pre-filled value. Works alongside the HTML `autofocus`
+// attribute on the same element:
+//
+//   - On REAL page navigation (mobile bottom tab → /search), the
+//     browser honors `autofocus` itself, which is critical on iOS
+//     Safari: iOS only pops the soft keyboard when focus happens
+//     synchronously in response to a user gesture. A JS .focus()
+//     call from the hook's mounted() runs LATER, after iOS has
+//     already decided the gesture is over — so the cursor lands
+//     in the field but the keyboard stays down. autofocus runs
+//     during the browser's initial parse and qualifies.
+//
+//   - On LV soft navigation, `autofocus` doesn't fire (the page
+//     wasn't reloaded), but the JS hook does — covering that path.
+//
+// requestAnimationFrame removed: the deferral was kicking the
+// focus() call off the user-gesture stack and that was breaking
+// mobile keyboard popup on the soft-nav path. Synchronous focus
+// keeps the gesture context intact where possible.
 const AutoFocus = {
   mounted() {
-    requestAnimationFrame(() => {
-      this.el.focus()
-      // Move cursor to the end of any pre-filled value. When the
-      // user navigates back to /search after clicking a result, the
-      // input remounts with their previous query pre-filled — the
-      // browser's default `.focus()` puts the caret at position 0,
-      // forcing them to End-key or click to the end before they can
-      // edit. Cursor-at-end matches desktop omnibox refocus behavior
-      // and lets the user keep typing where they left off.
-      const len = this.el.value.length
-      this.el.setSelectionRange(len, len)
-    })
+    this.el.focus()
+    // Cursor at end of any pre-filled value (e.g. back from a
+    // search result with the query preserved).
+    const len = this.el.value.length
+    this.el.setSelectionRange(len, len)
   },
 }
 

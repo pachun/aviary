@@ -163,6 +163,7 @@ defmodule AviaryWeb.SearchLive do
             phx-keyup="search"
             phx-debounce="300"
             phx-hook="AutoFocus"
+            autofocus
             placeholder="Search shows and movies…"
             autocomplete="off"
             class="w-full bg-transparent border-0 outline-none font-display text-ink text-2xl md:text-3xl placeholder:text-muted/60 placeholder:italic"
