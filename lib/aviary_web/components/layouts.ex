@@ -37,6 +37,10 @@ defmodule AviaryWeb.Layouts do
     default: nil,
     doc: "Optional back-link href for the mobile top-bar (renders a chevron-left to the left of the title). Omit on root pages like Settings."
 
+  attr :mobile_back_label, :string,
+    default: nil,
+    doc: "The DESTINATION name shown next to the chevron (e.g., \"Library\", \"Discover\"). Different from `mobile_title` (current page name) so the back button can't be mistaken for a self-link. iOS pattern: ‹ Library    Dutton Ranch."
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -59,52 +63,63 @@ defmodule AviaryWeb.Layouts do
     <div class="min-h-dvh bg-paper text-ink antialiased">
       <%!--
         ====================================================
-        Mobile sticky top bar — editorial running header.
+        Mobile sticky top bar — iOS large-title pattern.
         ====================================================
-        Reads as a chapter heading from a hardback book, not as
-        UINavigationBar with the brand color repainted.
+        Hidden by default (opacity-0, inert) and fades in via the
+        MobileTopBar JS hook when the page's body title scrolls
+        out of view. The body title carries `data-mobile-top-bar-
+        trigger` and the IntersectionObserver watches it.
 
-        Signature element: the oxblood ‹ (U+2039 SINGLE LEFT-
-        POINTING ANGLE QUOTATION MARK) set in Newsreader italic
-        at display size, NOT a heroicons chevron. The guillemet
-        is part of the publication's typography — same family as
-        the title, larger size, full oxblood. Setting the back
-        gesture as a glyph in the running typeface (rather than a
-        bolted-on icon from a separate kit) is what makes this
-        bar Aviary instead of generic mobile chrome.
+        Layout: back-with-destination on the LEFT, title CENTERED.
+        The destination-name on the back button (e.g. "Library")
+        prevents "‹ Dutton Ranch" from reading as a back-to-self
+        link; the back-button's destination and the title now
+        unambiguously label different things.
 
-        Title in Newsreader italic — editorial convention sets the
-        name of the current work or department in italic in the
-        publication's display face.
+        Chevron: hand-rolled inline SVG with iOS proportions
+        (tall narrow shape, 2.5 stroke, rounded line caps). The
+        heroicons chevron-left at this size reads as chunky;
+        this one reads as native.
 
-        Baseline alignment so the larger guillemet visually rises
-        past the title's x-height, like an opening quote mark to
-        running text.
-
-        Hairline rule at /60 opacity, not the default border-rule,
-        because the bar's bg-paper matches the content bg-paper —
-        SOMETHING has to define the edge as content scrolls past,
-        but a full-strength rule reads as chrome. The lighter rule
-        reads as typographic.
-
-        pt-3 pb-3 for editorial breathing — taller than iOS HIG's
-        44px convention. The bar is a header on a page, not a
-        chrome strip on a phone.
+        Title centered via absolute-position + translate-x-1/2 so
+        it stays dead-center regardless of back-label width. The
+        max-w-[60%] safety keeps long titles from colliding with
+        the back link on narrow viewports.
       --%>
       <header
+        id="mobile-top-bar"
         :if={@mobile_title}
-        class="sm:hidden sticky top-0 z-30 bg-paper pt-[env(safe-area-inset-top)]"
+        phx-hook="MobileTopBar"
+        class={[
+          "sm:hidden sticky top-0 z-30 bg-paper pt-[env(safe-area-inset-top)]",
+          "opacity-0 pointer-events-none transition-opacity duration-200",
+          "data-[show]:opacity-100 data-[show]:pointer-events-auto"
+        ]}
       >
-        <div class="flex items-baseline gap-4 px-4 pt-3 pb-3 border-b border-rule/60">
+        <div class="relative flex items-center min-h-[44px] px-4 border-b border-rule/60">
           <a
             :if={@mobile_back_to}
             href={@mobile_back_to}
-            aria-label="Back"
-            class="font-heading italic text-3xl leading-none text-oxblood -my-2 px-2 py-2 -ml-2 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40"
+            aria-label={"Back to #{@mobile_back_label || "previous"}"}
+            class="flex items-center gap-1 text-oxblood -ml-2 px-2 py-2 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40"
           >
-            ‹
+            <svg
+              viewBox="0 0 12 20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="w-3 h-5 shrink-0"
+              aria-hidden="true"
+            >
+              <path d="M10 2 L2 10 L10 18" />
+            </svg>
+            <span :if={@mobile_back_label} class="font-sans text-base leading-none">
+              {@mobile_back_label}
+            </span>
           </a>
-          <h1 class="font-heading italic text-xl text-ink leading-none truncate min-w-0 flex-1">
+          <h1 class="absolute left-1/2 -translate-x-1/2 max-w-[60%] font-display text-base text-ink leading-none truncate text-center">
             {@mobile_title}
           </h1>
         </div>

@@ -327,6 +327,7 @@ defmodule AviaryWeb.MoviesDetailLive do
       nav_visibility={@nav_visibility}
       mobile_title={@movie.title}
       mobile_back_to={@kicker.path}
+      mobile_back_label={@kicker.label}
     >
       <article>
         <div class="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-8 pt-4">
@@ -389,6 +390,7 @@ defmodule AviaryWeb.MoviesDetailLive do
                   more museum-object-label than magazine-front-page.
                 --%>
                 <h1
+                  data-mobile-top-bar-trigger
                   class="font-heading text-ink tracking-tight leading-[1.1]"
                   style="font-size: clamp(1.5rem, 2.5vw + 0.25rem, 2.5rem); font-variation-settings: 'opsz' 36;"
                 >

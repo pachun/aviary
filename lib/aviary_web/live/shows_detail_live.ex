@@ -593,6 +593,7 @@ defmodule AviaryWeb.ShowsDetailLive do
       nav_visibility={@nav_visibility}
       mobile_title={@show.title}
       mobile_back_to={@kicker.path}
+      mobile_back_label={@kicker.label}
     >
       <article>
         <div class={[
@@ -626,6 +627,7 @@ defmodule AviaryWeb.ShowsDetailLive do
                 </.link>
 
                 <h1
+                  data-mobile-top-bar-trigger
                   class="font-heading text-ink tracking-tight leading-[1.1]"
                   style="font-size: clamp(1.5rem, 2.5vw + 0.25rem, 2.5rem); font-variation-settings: 'opsz' 36;"
                 >

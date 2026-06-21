@@ -387,11 +387,58 @@ const AutoFocus = {
   },
 }
 
+// MobileTopBar — controls the iOS-style fade-in of the sticky mobile
+// top bar. The bar starts at opacity-0 (hidden, inert). On mount we
+// look for an element marked `data-mobile-top-bar-trigger` in the
+// page (typically the body title), then watch it with
+// IntersectionObserver. When the trigger element scrolls OUT of the
+// visible area (above the top 50px of viewport, accounting for the
+// bar's own visual height), we toggle `data-show` on the bar — the
+// Tailwind variant `data-[show]:opacity-100` then fades it in.
+//
+// `inert` is toggled alongside so the hidden bar can't trap focus.
+//
+// Falls back to "always visible" if no trigger exists on the page —
+// better than an invisible bar the user can't get to.
+const MobileTopBar = {
+  mounted() {
+    const trigger = document.querySelector("[data-mobile-top-bar-trigger]")
+    if (!trigger) {
+      // No trigger on this page; just show the bar always.
+      this.el.dataset.show = "true"
+      this.el.inert = false
+      return
+    }
+    this.el.inert = true
+    this._observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          delete this.el.dataset.show
+          this.el.inert = true
+        } else {
+          this.el.dataset.show = "true"
+          this.el.inert = false
+        }
+      },
+      // The negative top rootMargin treats the top ~50px of viewport
+      // as "outside" — so the trigger is considered intersecting only
+      // when it's at least 50px below the top, i.e., not yet covered
+      // by the bar. The bar fades in exactly as the trigger title
+      // would visually disappear behind it.
+      {rootMargin: "-50px 0px 0px 0px", threshold: 0}
+    )
+    this._observer.observe(trigger)
+  },
+  destroyed() {
+    if (this._observer) this._observer.disconnect()
+  },
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, HlsPlayer, Marquee, AutoFocus},
+  hooks: {...colocatedHooks, HlsPlayer, Marquee, AutoFocus, MobileTopBar},
 })
 
 // Show progress bar on live navigation and form submits

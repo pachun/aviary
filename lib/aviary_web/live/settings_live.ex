@@ -64,16 +64,21 @@ defmodule AviaryWeb.SettingsLive do
         "an aviary page" before it lands as "the settings page."
       --%>
       <%!--
-        Hidden on mobile because the sticky top-bar already shows
-        "Settings" — the body title would be redundant + waste
-        precious viewport. Visible on desktop where there's no
-        sticky bar.
+        Visible on every viewport — the body title is the page's
+        primary anchor. Mobile keeps it smaller. The sticky top
+        bar in Layouts.app fades in only after this h1 scrolls out
+        of view (via the `data-mobile-top-bar-trigger` IntersectionObserver).
       --%>
-      <header class="hidden sm:block sm:pt-6 sm:pb-16">
+      <header class="pt-4 sm:pt-6 pb-8 sm:pb-16">
         <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted mb-3">
           Account &amp; preferences
         </p>
-        <h1 class="font-display text-5xl sm:text-6xl text-ink">Settings</h1>
+        <h1
+          data-mobile-top-bar-trigger
+          class="font-display text-4xl sm:text-6xl text-ink"
+        >
+          Settings
+        </h1>
       </header>
 
       <%!--
