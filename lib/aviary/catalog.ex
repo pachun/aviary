@@ -445,9 +445,13 @@ defmodule Aviary.Catalog do
 
   # TMDB / Jellyseerr's `episodeRunTime` is an int list of typical
   # per-episode runtimes (in minutes). First entry is plenty for our
-  # "until in your library" estimate; nil if the source omitted it.
+  # "until in your library" estimate. Falls back to 45 min (a sane
+  # middle-ground between 22-min sitcoms and 60-min dramas) when the
+  # array is empty / missing — TMDB's episodeRunTime is user-submitted
+  # and often blank for newer or less-popular shows; hiding the
+  # estimate entirely felt buggier than showing a close-enough one.
   defp tmdb_show_runtime(%{"episodeRunTime" => [n | _]}) when is_integer(n) and n > 0, do: n
-  defp tmdb_show_runtime(_), do: nil
+  defp tmdb_show_runtime(_), do: 45
 
   defp tmdb_poster_url(nil), do: nil
   defp tmdb_poster_url(""), do: nil
@@ -538,7 +542,13 @@ defmodule Aviary.Catalog do
       official_rating: item["OfficialRating"],
       genre: first_genre(item["Genres"]),
       synopsis: item["Overview"],
-      trailer_url: first_trailer_url(item["RemoteTrailers"])
+      trailer_url: first_trailer_url(item["RemoteTrailers"]),
+      # Jellyfin's series-level RunTimeTicks isn't always populated
+      # (it's a per-episode field at heart) — nil is acceptable, the
+      # WatchProgress label just omits gracefully. Required as a
+      # KEY so detail templates accessing show.runtime_minutes don't
+      # crash with KeyError (same fix as get_discover_show).
+      runtime_minutes: runtime_minutes(item["RunTimeTicks"])
     }
   end
 
