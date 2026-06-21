@@ -98,12 +98,21 @@ defmodule AviaryWeb.Components.Marquee do
           The hook (assets/js/app.js → Marquee) binds the click
           handler — direction comes from data-marquee-scroll.
         --%>
+        <%!--
+          Edge scroll buttons are desktop-only. On mobile, swipe is
+          the universal carousel gesture and the partial thumbnail
+          visible at each edge already signals "more to scroll" —
+          arrow chrome over two visible thumbnails was costing more
+          than it was earning. `hidden sm:flex` brings them back at
+          the sm: breakpoint (640px+) where mouse-only users live
+          and there's room to spare for the circles.
+        --%>
         <button
           type="button"
           data-marquee-scroll="left"
           aria-label="Scroll back"
           class={[
-            "absolute left-3 top-1/2 -translate-y-1/2 size-12 flex items-center justify-center cursor-pointer rounded-full",
+            "absolute left-3 top-1/2 -translate-y-1/2 size-12 hidden sm:flex items-center justify-center cursor-pointer rounded-full",
             "bg-paper/75 backdrop-blur-sm text-ink",
             "opacity-0 pointer-events-none transition-all duration-300",
             "group-data-[can-scroll-left=true]/marquee:opacity-100",
@@ -119,7 +128,7 @@ defmodule AviaryWeb.Components.Marquee do
           data-marquee-scroll="right"
           aria-label="Scroll ahead"
           class={[
-            "absolute right-3 top-1/2 -translate-y-1/2 size-12 flex items-center justify-center cursor-pointer rounded-full",
+            "absolute right-3 top-1/2 -translate-y-1/2 size-12 hidden sm:flex items-center justify-center cursor-pointer rounded-full",
             "bg-paper/75 backdrop-blur-sm text-ink",
             "opacity-0 pointer-events-none transition-all duration-300",
             "group-data-[can-scroll-right=true]/marquee:opacity-100",
