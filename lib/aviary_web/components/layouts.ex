@@ -62,6 +62,26 @@ defmodule AviaryWeb.Layouts do
     --%>
     <div class="min-h-dvh bg-paper text-ink antialiased">
       <%!--
+        Mobile safe-area mask. When there's NO sticky top bar
+        (Home, Discover, Library, Search), nothing visually covers
+        the status-bar / notch zone — scrolling content would
+        otherwise rise UP into that area and the status bar's time
+        / wifi / battery glyphs would sit on top of marquee
+        thumbnails or grid posters. This fixed-position strip pins
+        a bg-paper background under the status bar so content
+        scrolls behind it cleanly.
+
+        Hidden when `mobile_title` is set, because in that case the
+        sticky top bar (its own pt-[env(safe-area-inset-top)] +
+        bg-paper) is already doing this job.
+      --%>
+      <div
+        :if={is_nil(@mobile_title)}
+        class="sm:hidden fixed top-0 inset-x-0 h-[env(safe-area-inset-top)] bg-paper z-30 pointer-events-none"
+      >
+      </div>
+
+      <%!--
         ====================================================
         Mobile sticky top bar — iOS large-title pattern.
         ====================================================
