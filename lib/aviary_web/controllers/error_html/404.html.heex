@@ -1,31 +1,30 @@
 <%!--
-  404 — page not found. Standalone (no Layouts.app), so it renders
-  even when the user isn't signed in or layout dependencies have
-  failed. Editorial-museum vocabulary: small tracked-uppercase
-  eyebrow ("404 · Not found"), large display serif headline
-  ("Nothing here."), italic Fraunces explanation, primary oxblood
-  button to get unstuck.
+  404 — Page Not Found. No nav, no chrome, no recovery button.
+  Title, italic caption, embedded clip. The clip + caption pairing
+  comes from AviaryWeb.ErrorHTML.pairing/0 (random; Mondays gets
+  locked to the Office Space "case of the Mondays" clip).
 --%>
+<% p = AviaryWeb.ErrorHTML.pairing() %>
 <div class="bg-paper text-ink antialiased min-h-dvh flex flex-col">
-  <main class="flex-1 flex justify-center items-start px-6 pt-20 sm:pt-32">
-    <div class="w-full max-w-md text-center">
-      <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted mb-4">
-        404 · Not found
-      </p>
-      <h1 class="font-display text-5xl sm:text-6xl text-ink leading-[1.05] mb-6">
-        Nothing here.
+  <main class="flex-1 flex justify-center items-start px-6 pt-16 sm:pt-24">
+    <div class="w-full max-w-2xl text-center">
+      <h1 class="font-display text-4xl sm:text-6xl text-ink leading-[1.05] mb-6">
+        Page Not Found
       </h1>
-      <p class="font-display italic text-muted text-lg leading-relaxed mb-10">
-        The page you were looking for isn't on this shelf.
-        Either the URL's wrong, or whatever used to live here
-        has moved.
+      <p class="font-display italic text-muted text-lg sm:text-xl leading-relaxed mb-10">
+        {p.caption}
       </p>
-      <a
-        href="/"
-        class="inline-block bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-      >
-        Home
-      </a>
+      <div class="aspect-video w-full bg-rule rounded-sm overflow-hidden">
+        <iframe
+          src={p.embed}
+          class="w-full h-full"
+          allow="encrypted-media; picture-in-picture; fullscreen"
+          allowfullscreen
+          loading="lazy"
+          title="Aviary error caption clip"
+        >
+        </iframe>
+      </div>
     </div>
   </main>
 </div>
