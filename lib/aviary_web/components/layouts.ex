@@ -33,13 +33,18 @@ defmodule AviaryWeb.Layouts do
   def app(assigns) do
     ~H"""
     <%!--
-      overflow-x-clip catches any rogue child wider than the viewport
-      so it can't trigger horizontal scroll on mobile. `clip` (not
-      `hidden`) is intentional — `hidden` establishes a new scrolling
-      container which would break the sticky masthead inside it; `clip`
-      just snips the overflow without creating that scroll context.
+      Plain min-h-screen wrapper — no overflow handling here. We used
+      to apply `overflow-x-clip` defensively against the old mobile
+      masthead being too wide, but iOS Safari has a known WebKit bug
+      where ancestor `overflow-x: clip` quietly breaks `position:
+      sticky` descendants (they scroll with content instead of pinning
+      to viewport). With the bottom-tab-bar mobile nav now eliminating
+      the original overflow risk, removing this lets the library page's
+      sub-toggle stick correctly. If a real horizontal-overflow issue
+      shows up later, fix it at the offending component rather than
+      papering over it here.
     --%>
-    <div class="min-h-screen bg-paper text-ink antialiased overflow-x-clip">
+    <div class="min-h-screen bg-paper text-ink antialiased">
       <%!--
         Mobile: no top chrome at all. Page content runs to the top
         of the viewport; primary nav (including settings) lives in
