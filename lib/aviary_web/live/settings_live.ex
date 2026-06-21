@@ -53,6 +53,7 @@ defmodule AviaryWeb.SettingsLive do
     ~H"""
     <Layouts.app
       flash={@flash}
+      current_section="settings"
       current_user={@current_user}
       nav_visibility={@nav_visibility}
     >

@@ -41,33 +41,10 @@ defmodule AviaryWeb.Layouts do
     --%>
     <div class="min-h-screen bg-paper text-ink antialiased overflow-x-clip">
       <%!--
-        ====================================================
-        Mobile top strip — brand + settings only.
-        ====================================================
-        Quiet Newsreader "Aviary" wordmark on the left,
-        settings gear on the right. Primary nav lives on the
-        bottom rail (below); top strip is just identity + the
-        rare settings entry-point. Sticky so the gear stays
-        reachable during scroll.
+        Mobile: no top chrome at all. Page content runs to the top
+        of the viewport; primary nav (including settings) lives in
+        the fixed bottom tab bar at the end of this template.
       --%>
-      <header class="sm:hidden sticky top-0 z-20 bg-paper px-4 pt-5 pb-3">
-        <div class="flex items-center justify-between">
-          <a
-            href={~p"/"}
-            class="font-heading text-lg text-ink leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-sm"
-          >
-            Aviary
-          </a>
-          <a
-            :if={@current_user}
-            href={~p"/settings"}
-            aria-label="Settings"
-            class="text-muted hover:text-oxblood transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-sm"
-          >
-            <.icon name="hero-cog-6-tooth" class="size-5" />
-          </a>
-        </div>
-      </header>
 
       <%!--
         ====================================================
@@ -125,13 +102,10 @@ defmodule AviaryWeb.Layouts do
       </header>
 
       <%!--
-        pb-24 sm:pb-24 — both viewports need bottom space, but for
-        different reasons. Desktop: editorial breathing room below
-        the last content. Mobile: clear the fixed bottom rail (~52px
-        + breathing). Numbers happen to coincide; kept separate so
-        either can be tuned without affecting the other.
+        Bottom padding clears the fixed mobile tab bar (~64px + iOS
+        safe-area inset). Desktop keeps its editorial breathing room.
       --%>
-      <main class="px-4 sm:px-8 lg:px-12 pb-24 sm:pb-24">
+      <main class="px-4 sm:px-8 lg:px-12 pb-28 sm:pb-24">
         <div class="mx-auto max-w-[1100px]">
           {render_slot(@inner_block)}
         </div>
@@ -139,53 +113,66 @@ defmodule AviaryWeb.Layouts do
 
       <%!--
         ====================================================
-        Mobile bottom rail — primary nav.
+        Mobile bottom tab bar — primary nav + settings.
         ====================================================
-        Pure typographic state machine: inactive sections set
-        in Instrument Sans uppercase tracked small-caps;
-        active section set in Newsreader display serif italic,
-        lowercase, larger. The typeface SHIFT is the active
-        indicator (no oxblood underline, no pill background).
-        Because the active label is larger, it visually rises
-        above the others on the shared baseline — "you are
-        here" without any additional decoration.
+        Five tabs max: Home / Discover / Search / Library /
+        Settings. Home and Library hide when the user has no
+        content for them, so a brand-new user sees 3 tabs.
 
-        Pulled directly from aviary's design system: every face
-        used here (Instrument Sans tracked, Newsreader italic)
-        is already established in the brand vocabulary. The
-        navigation primitive is just expressing the brand
-        voice as state.
+        Each tab: heroicon (outline when inactive, solid when
+        active) above a small Instrument Sans label. Active
+        tab shifts to oxblood; inactive sits in muted. No pill
+        backgrounds, no underlines, no scale animations —
+        color + icon-weight is the entire state signal.
 
-        Hairline border-top separates rail from scrolling
-        content above. fixed bottom-0 + inset-x-0 pins to the
-        viewport's bottom edge regardless of scroll position;
-        z-20 sits above marquee cards.
+        pb adds env(safe-area-inset-bottom) so the bar clears
+        the iOS home indicator instead of fighting it for
+        touch attention. min-h-[64px] on the inner row keeps
+        each tap target generously above the 44pt iOS HIG
+        minimum even after the safe area pushes content up.
       --%>
       <nav
         :if={@current_user}
-        class="sm:hidden fixed bottom-0 inset-x-0 z-20 bg-paper border-t border-rule"
+        class="sm:hidden fixed bottom-0 inset-x-0 z-20 bg-paper border-t border-rule pb-[env(safe-area-inset-bottom)]"
       >
-        <div class="flex items-baseline justify-evenly px-4 pt-3 pb-4">
-          <.mobile_section_link
+        <div class="flex items-stretch justify-around min-h-[64px]">
+          <.tab_bar_link
             :if={@nav_visibility.home}
             href={~p"/home"}
             active={@current_section == "home"}
-          >
-            Home
-          </.mobile_section_link>
-          <.mobile_section_link href={~p"/discover"} active={@current_section == "discover"}>
-            Discover
-          </.mobile_section_link>
-          <.mobile_section_link href={~p"/search"} active={@current_section == "search"}>
-            Search
-          </.mobile_section_link>
-          <.mobile_section_link
+            label="Home"
+            icon_outline="hero-home"
+            icon_solid="hero-home-solid"
+          />
+          <.tab_bar_link
+            href={~p"/discover"}
+            active={@current_section == "discover"}
+            label="Discover"
+            icon_outline="hero-sparkles"
+            icon_solid="hero-sparkles-solid"
+          />
+          <.tab_bar_link
+            href={~p"/search"}
+            active={@current_section == "search"}
+            label="Search"
+            icon_outline="hero-magnifying-glass"
+            icon_solid="hero-magnifying-glass-solid"
+          />
+          <.tab_bar_link
             :if={@nav_visibility.library}
             href={~p"/library"}
             active={@current_section == "library"}
-          >
-            Library
-          </.mobile_section_link>
+            label="Library"
+            icon_outline="hero-rectangle-stack"
+            icon_solid="hero-rectangle-stack-solid"
+          />
+          <.tab_bar_link
+            href={~p"/settings"}
+            active={@current_section == "settings"}
+            label="Settings"
+            icon_outline="hero-cog-6-tooth"
+            icon_solid="hero-cog-6-tooth-solid"
+          />
         </div>
       </nav>
 
@@ -221,42 +208,36 @@ defmodule AviaryWeb.Layouts do
 
   attr :href, :string, required: true
   attr :active, :boolean, default: false
-  slot :inner_block, required: true
+  attr :label, :string, required: true
+  attr :icon_outline, :string, required: true, doc: "heroicon name for the inactive state"
+  attr :icon_solid, :string, required: true, doc: "heroicon name for the active state"
 
-  defp mobile_section_link(assigns) do
+  defp tab_bar_link(assigns) do
     ~H"""
     <%!--
-      Mobile bottom-rail nav link. Two states, two typefaces:
+      Single tab in the mobile bottom bar. iOS HIG shape: icon stacked
+      above a small text label, full-width touch target. Outline icon
+      flips to solid when active; color shifts from muted to oxblood.
 
-        :active   → Newsreader display serif italic, lowercase,
-                    1.05rem text, oxblood. The brand's display rhythm
-                    pulled into the navigation primitive.
-
-        :inactive → Instrument Sans uppercase tracked, 0.7rem,
-                    muted. Catalog-text small-caps.
-
-      Items share `items-baseline` on the parent so both sizes align
-      at the baseline; the active label extends UPWARD past the
-      others, giving "you are here" by elevation rather than by
-      decoration. lowercase / uppercase transforms convert the same
-      slot text ("Discover") to the right form per state, so the
-      caller's source text stays Title Case.
-
-      tap target: py-2 negative-margin trick keeps the visual
-      typography tight while expanding the touchable rectangle to
-      ~44×44px — well within iOS HIG / Material guidelines without
-      adding visible padding to the chip.
+      flex-1 spreads tabs evenly across the bar regardless of how
+      many render (3, 4, or 5 depending on nav_visibility). The
+      whole anchor is the tap area — labels at 10px would be
+      fingertip-hostile if only the label itself were clickable.
     --%>
     <a
       href={@href}
+      aria-label={@label}
+      aria-current={@active && "page"}
       class={[
-        "transition-colors duration-200 -my-2 py-2 px-1",
-        @active && "font-heading italic text-[1.05rem] lowercase text-oxblood leading-none",
-        !@active &&
-          "font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted hover:text-ink leading-none"
+        "flex-1 flex flex-col items-center justify-center gap-1 py-2",
+        "transition-colors duration-200",
+        "focus:outline-none focus-visible:bg-rule/40",
+        @active && "text-oxblood",
+        !@active && "text-muted hover:text-ink"
       ]}
     >
-      {render_slot(@inner_block)}
+      <.icon name={if @active, do: @icon_solid, else: @icon_outline} class="size-6" />
+      <span class="font-sans text-[0.65rem] leading-none">{@label}</span>
     </a>
     """
   end
