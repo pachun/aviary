@@ -207,11 +207,65 @@ defmodule Aviary.Radarr do
     end
   end
 
+  @doc """
+  True when every successful download for this movie came via Usenet
+  (SAB). False (skip auto-delete) on any torrent-client import OR on
+  Radarr unreachability — failing-open here would risk deleting files
+  we shouldn't.
+  """
+  def all_imports_were_usenet?(radarr_movie_id) do
+    case get("/history",
+           movieId: radarr_movie_id,
+           eventType: "downloadFolderImported",
+           pageSize: 100
+         ) do
+      {:ok, %{"records" => records}} when is_list(records) ->
+        Enum.all?(records, fn r ->
+          client = get_in(r, ["data", "downloadClient"]) || ""
+          not torrent_client?(client)
+        end)
+
+      _ ->
+        false
+    end
+  end
+
+  @doc """
+  Removes the movie from Radarr and deletes the on-disk file.
+  `addImportExclusion: false` so a future re-add doesn't require
+  manual override.
+  """
+  def delete_movie(radarr_movie_id) do
+    case delete("/movie/#{radarr_movie_id}",
+           deleteFiles: true,
+           addImportExclusion: false
+         ) do
+      {:ok, _} ->
+        Aviary.Cache.invalidate(:radarr_movie_list)
+        :ok
+
+      _ ->
+        :error
+    end
+  end
+
+  defp torrent_client?(name) when is_binary(name) do
+    lower = String.downcase(name)
+
+    String.contains?(lower, "qbit") or
+      String.contains?(lower, "transmission") or
+      String.contains?(lower, "deluge") or
+      String.contains?(lower, "rtorrent")
+  end
+
+  defp torrent_client?(_), do: false
+
   ## HTTP helpers — same shape as Aviary.Sonarr; not worth a shared
   ## module yet.
 
   defp get(path, params), do: request(:get, path, params, nil)
   defp post(path, body), do: request(:post, path, [], body)
+  defp delete(path, params), do: request(:delete, path, params, nil)
 
   defp request(method, path, params, body) do
     with key when not is_nil(key) <- api_key(),

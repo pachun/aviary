@@ -15,6 +15,11 @@ defmodule Aviary.Application do
       Aviary.Cache,
       Aviary.RottenTomatoes,
       Aviary.TokenCache,
+      # Sweeps `pending_deletions` rows hourly and asks the arrs to
+      # delete on-disk media that nobody's library tracks anymore.
+      # See Aviary.Deletions for the lifecycle, Aviary.Deletions.Scheduler
+      # for the cadence.
+      Aviary.Deletions.Scheduler,
       # Start to serve requests, typically the last entry
       AviaryWeb.Endpoint
     ]

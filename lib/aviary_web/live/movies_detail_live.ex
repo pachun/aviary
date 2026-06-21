@@ -33,6 +33,7 @@ defmodule AviaryWeb.MoviesDetailLive do
             kicker: kicker(params["from"], params["q"]),
             radarr_status: nil,
             imported_stuck_since: nil,
+            in_library: in_library?(movie, socket.assigns.current_user),
             # Latches true the first time we observe the movie actively
             # downloading. Once latched, a transient queue-gone +
             # has_file=false state is read as :imported instead of
@@ -163,6 +164,15 @@ defmodule AviaryWeb.MoviesDetailLive do
     socket.assigns.movie.source == :discover
   end
 
+  # Only library-resolved movies can be removed (a discover-source
+  # movie isn't in the library to begin with). Mirrors the shows
+  # implementation.
+  defp in_library?(%{source: :library, tmdb_id: tmdb_id}, user) when is_binary(tmdb_id) do
+    Aviary.Library.member?(user.id, tmdb_id)
+  end
+
+  defp in_library?(_, _), do: false
+
   # Resolve the kicker (back link above the title) from the `from`
   # query param. Default lands on the Movies tab of /library since
   # there's no movie-other natural landing place. Search preserves
@@ -225,6 +235,49 @@ defmodule AviaryWeb.MoviesDetailLive do
            put_flash(socket, :error, "Couldn't reach Radarr. Try again in a moment.")}
       end
     end
+  end
+
+  # Per-user library curation. Mirrors shows_detail — see that file's
+  # remove_from_library handler for the design rationale + redirect
+  # priority.
+  def handle_event("remove_from_library", _, socket) do
+    user = socket.assigns.current_user
+    movie = socket.assigns.movie
+
+    if movie.tmdb_id do
+      Aviary.Library.remove(user.id, movie.tmdb_id, "movie")
+    end
+
+    # Landing destination after a remove:
+    #   - movies still in library      → /library?type=movies
+    #   - no movies, shows in library  → /library?type=shows
+    #   - neither                      → /discover
+    destination =
+      cond do
+        Aviary.Catalog.list_movies(user) != [] -> ~p"/library?type=movies"
+        Aviary.Catalog.list_shows(user) != [] -> ~p"/library?type=shows"
+        true -> ~p"/discover"
+      end
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "#{movie.title} removed from your library.")
+     |> push_navigate(to: destination)}
+  end
+
+  def handle_event("add_to_library", _, socket) do
+    user = socket.assigns.current_user
+    movie = socket.assigns.movie
+
+    if movie.tmdb_id do
+      Aviary.Library.add(user.id, movie.tmdb_id)
+    end
+
+    {:noreply,
+     socket
+     |> assign(:in_library, true)
+     |> Aviary.Nav.refresh_visibility()
+     |> put_flash(:info, "#{movie.title} added to your library.")}
   end
 
   def handle_event("close_player", _, socket) do
@@ -358,6 +411,32 @@ defmodule AviaryWeb.MoviesDetailLive do
                     movie={@movie}
                     state={movie_state(@movie, @radarr_status, @download_seen)}
                   />
+                </div>
+
+                <%!--
+                  Library curation: Remove (when in library) or Add
+                  (when not). Mirrors the shows side — same chip
+                  treatment + same hover semantics (Add → oxblood
+                  invitation, Remove → neutral ink).
+                --%>
+                <div :if={@movie.source == :library and @movie.tmdb_id} class="mt-1">
+                  <button
+                    :if={@in_library}
+                    type="button"
+                    phx-click="remove_from_library"
+                    data-confirm={"Remove #{@movie.title} from your library?"}
+                    class="w-fit font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-ink hover:text-ink hover:bg-ink/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                  >
+                    Remove from library
+                  </button>
+                  <button
+                    :if={not @in_library}
+                    type="button"
+                    phx-click="add_to_library"
+                    class="w-fit font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                  >
+                    Add to library
+                  </button>
                 </div>
               </div>
 

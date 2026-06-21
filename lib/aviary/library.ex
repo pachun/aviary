@@ -22,8 +22,10 @@ defmodule Aviary.Library do
   alias Aviary.Repo
 
   @doc """
-  Adds a show to a user's library. Idempotent — no error if it already
-  exists. Returns `:ok` either way.
+  Adds a show or movie to a user's library. Idempotent — no error if
+  it already exists. Side effect: cancels any pending auto-deletion
+  for this tmdb_id (re-adding holds onto the files).
+  Returns `:ok` either way.
   """
   def add(user_id, tmdb_id) when is_binary(user_id) and is_binary(tmdb_id) do
     %Entry{}
@@ -33,25 +35,39 @@ defmodule Aviary.Library do
       conflict_target: [:jellyfin_user_id, :tmdb_id]
     )
 
+    Aviary.Deletions.cancel(tmdb_id)
+
     :ok
   end
 
   def add(user_id, tmdb_id) when is_integer(tmdb_id), do: add(user_id, to_string(tmdb_id))
 
   @doc """
-  Removes a show from a user's library. Idempotent — no error if the
-  entry never existed.
+  Removes a show/movie from a user's library. Idempotent — no error
+  if the entry never existed. Side effect: if THIS user was the last
+  subscriber, schedules an auto-deletion of the on-disk files 24h
+  from now (only if the content came from Usenet — torrent files are
+  left alone to preserve seeding). See `Aviary.Deletions`.
+
+  `kind` is "show" or "movie" — the arr that owns the title needs to
+  know which one to talk to. Required because Library doesn't itself
+  track media kind (just tmdb_id).
   """
-  def remove(user_id, tmdb_id) when is_binary(user_id) and is_binary(tmdb_id) do
+  def remove(user_id, tmdb_id, kind) when kind in ["show", "movie"] do
+    user_id_s = to_string(user_id)
+    tmdb_id_s = to_string(tmdb_id)
+
     from(e in Entry,
-      where: e.jellyfin_user_id == ^user_id and e.tmdb_id == ^tmdb_id
+      where: e.jellyfin_user_id == ^user_id_s and e.tmdb_id == ^tmdb_id_s
     )
     |> Repo.delete_all()
 
+    # Deletions.schedule re-checks subscribers + usenet-only and
+    # short-circuits if not applicable.
+    Aviary.Deletions.schedule(tmdb_id_s, kind)
+
     :ok
   end
-
-  def remove(user_id, tmdb_id) when is_integer(tmdb_id), do: remove(user_id, to_string(tmdb_id))
 
   @doc """
   Lists a user's library as a list of TMDB ids ordered by when they

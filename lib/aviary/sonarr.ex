@@ -431,6 +431,67 @@ defmodule Aviary.Sonarr do
     end
   end
 
+  @doc """
+  Tells the caller whether every successful download for this series
+  came from a Usenet client (SAB) — i.e., deleting the on-disk files
+  won't break a torrent seed. If ANY history record shows an import
+  via a torrent client (qBittorrent, Transmission, Deluge,
+  rTorrent), returns false → don't auto-delete.
+
+  False on Sonarr unreachability too: failing open here would risk
+  deleting things we shouldn't, so the auto-delete scheduler defers
+  the work until the next cycle when Sonarr is back.
+  """
+  def all_imports_were_usenet?(sonarr_series_id) do
+    case get("/history",
+           seriesId: sonarr_series_id,
+           eventType: "downloadFolderImported",
+           pageSize: 1000
+         ) do
+      {:ok, %{"records" => records}} when is_list(records) ->
+        Enum.all?(records, fn r ->
+          client = get_in(r, ["data", "downloadClient"]) || ""
+          not torrent_client?(client)
+        end)
+
+      _ ->
+        false
+    end
+  end
+
+  @doc """
+  Removes the series from Sonarr and deletes the on-disk files.
+  `addImportListExclusion: false` so a future re-add doesn't require
+  manual override — re-adding via aviary should just work and trigger
+  fresh searches.
+  """
+  def delete_series(sonarr_series_id) do
+    case delete("/series/#{sonarr_series_id}",
+           deleteFiles: true,
+           addImportListExclusion: false
+         ) do
+      {:ok, _} ->
+        # Newly-deleted series is no longer in the cached /series list;
+        # next find_series_by_tmdb should miss + re-fetch.
+        Aviary.Cache.invalidate(:sonarr_series_list)
+        :ok
+
+      _ ->
+        :error
+    end
+  end
+
+  defp torrent_client?(name) when is_binary(name) do
+    lower = String.downcase(name)
+
+    String.contains?(lower, "qbit") or
+      String.contains?(lower, "transmission") or
+      String.contains?(lower, "deluge") or
+      String.contains?(lower, "rtorrent")
+  end
+
+  defp torrent_client?(_), do: false
+
   ## HTTP helpers
 
   defp get(path, params) do
@@ -443,6 +504,10 @@ defmodule Aviary.Sonarr do
 
   defp put(path, body) do
     request(:put, path, [], body)
+  end
+
+  defp delete(path, params) do
+    request(:delete, path, params, nil)
   end
 
   defp request(method, path, params, body) do

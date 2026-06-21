@@ -65,7 +65,15 @@ config :aviary,
   # the webhook in Sonarr with the same secret. Optional in dev; if
   # unset the controller accepts any POST (suitable for local
   # bring-up before the secret exists).
-  sonarr_webhook_secret: System.get_env("SONARR_WEBHOOK_SECRET")
+  sonarr_webhook_secret: System.get_env("SONARR_WEBHOOK_SECRET"),
+  # Grace period (in hours) between the last household subscriber
+  # removing a show/movie from their library and the auto-deletion
+  # of the on-disk files. Re-adding within the window cancels the
+  # delete; default 24h. Set to a larger value if your household
+  # wants more "wait, undo!" headroom; lower if disk pressure is
+  # tight. See Aviary.Deletions.
+  deletion_grace_period_hours:
+    String.to_integer(System.get_env("DELETION_GRACE_PERIOD_HOURS", "24"))
 
 # Database — prod lives on a mounted volume so it survives container
 # rebuilds. depot's aviary/configure.sh sets DATABASE_PATH; default is

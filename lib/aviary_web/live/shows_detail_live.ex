@@ -384,7 +384,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     show = socket.assigns.show
 
     if show.tmdb_id do
-      Aviary.Library.remove(user.id, show.tmdb_id)
+      Aviary.Library.remove(user.id, show.tmdb_id, "show")
     end
 
     # Landing destination after a remove. Staying on the now-orphaned
