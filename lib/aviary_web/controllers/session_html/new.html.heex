@@ -8,6 +8,19 @@
 <div class="bg-paper text-ink antialiased flex flex-col min-h-dvh">
   <main class="flex-1 flex items-center justify-center px-6">
     <div class="w-full max-w-sm">
+      <%!--
+        Custom-domain banner: when PHX_HOST is set to a real domain
+        (e.g. pachulski.tv) rather than the tailscale URL, show it in
+        bold tracked uppercase above the form. Gives family members
+        landing on the public URL an immediate "yes, this is OUR
+        thing" cue before they enter credentials.
+      --%>
+      <p
+        :if={@custom_domain}
+        class="font-sans font-bold tracking-[0.15em] uppercase text-center text-ink text-base mb-6"
+      >
+        {@custom_domain}
+      </p>
       <.form for={%{}} as={:login} action={~p"/login"} method="post" class="flex flex-col gap-3">
         <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
 
