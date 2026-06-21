@@ -93,6 +93,12 @@
    content-height never had the issue. */
 html {
   scrollbar-gutter: stable;
+  /* iOS Safari sometimes treats <html> rather than <body> as the
+     scroll container — applying overscroll-behavior here too ensures
+     the rubber-band suppression takes effect regardless of which
+     element WebKit picked. Without this, the sticky top headers
+     visibly detach during the bounce at scroll-end. */
+  overscroll-behavior-y: none;
 }
 
 /* Body styles. Setting these directly so every page inherits without

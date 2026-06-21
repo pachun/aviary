@@ -325,6 +325,7 @@ defmodule AviaryWeb.MoviesDetailLive do
       flash={@flash}
       current_user={@current_user}
       nav_visibility={@nav_visibility}
+      current_section={String.downcase(@kicker.label)}
       mobile_title={@movie.title}
       mobile_back_to={@kicker.path}
       mobile_back_label={@kicker.label}

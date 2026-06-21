@@ -140,26 +140,46 @@ defmodule AviaryWeb.Layouts do
           rhythm an editorial layout would set for a small glyph in
           running copy.
         --%>
+        <%!--
+          Desktop nav suppresses the active-section highlight on
+          detail pages (signaled by `mobile_back_to` being set —
+          detail pages have a back affordance, top-level pages
+          don't). Per prior feedback, having a desktop nav link
+          highlighted while you're on a show/movie detail page
+          reads as "you're still in the section" which is more
+          confusing than just not highlighting anything.
+
+          The mobile bottom tab bar uses the same current_section
+          but the OPPOSITE policy — it DOES highlight on detail
+          pages so the user gets a wayfinding cue for which
+          section they came from.
+        --%>
         <div class="mx-auto max-w-[1100px] flex items-baseline justify-between gap-8">
           <nav class="flex items-baseline gap-8 text-[0.78rem] font-sans tracking-[0.15em] uppercase">
             <.section_link
               :if={@nav_visibility.home}
               href={~p"/home"}
-              active={@current_section == "home"}
+              active={is_nil(@mobile_back_to) && @current_section == "home"}
             >
               Home
             </.section_link>
             <.section_link
               :if={@nav_visibility.library}
               href={~p"/library"}
-              active={@current_section == "library"}
+              active={is_nil(@mobile_back_to) && @current_section == "library"}
             >
               Library
             </.section_link>
-            <.section_link href={~p"/discover"} active={@current_section == "discover"}>
+            <.section_link
+              href={~p"/discover"}
+              active={is_nil(@mobile_back_to) && @current_section == "discover"}
+            >
               Discover
             </.section_link>
-            <.section_link href={~p"/search"} active={@current_section == "search"}>
+            <.section_link
+              href={~p"/search"}
+              active={is_nil(@mobile_back_to) && @current_section == "search"}
+            >
               Search
             </.section_link>
           </nav>
@@ -181,11 +201,18 @@ defmodule AviaryWeb.Layouts do
       </header>
 
       <%!--
-        Bottom padding clears the fixed mobile tab bar (~64px + iOS
-        safe-area inset). Desktop keeps its editorial breathing room.
+        Bottom padding lives on the INNER max-w div (not on main)
+        so any sticky elements inside the slot have their containing
+        block extended past the natural content end. With pb on main
+        only, a sticky element's containing block (the inner div)
+        ended before main did, and iOS rubber-band overscroll could
+        push that containing block's bottom up through the sticky's
+        pinned position — detaching the sticky. Putting pb on the
+        inner div fixes this by including the breathing room in the
+        sticky's bounds.
       --%>
-      <main class="px-4 sm:px-8 lg:px-12 pb-28 sm:pb-24">
-        <div class="mx-auto max-w-[1100px]">
+      <main class="px-4 sm:px-8 lg:px-12">
+        <div class="mx-auto max-w-[1100px] pb-28 sm:pb-24">
           {render_slot(@inner_block)}
         </div>
       </main>
