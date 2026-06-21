@@ -161,7 +161,16 @@ defmodule AviaryWeb.SettingsLive do
         {render_slot(@inner_block)}
       </section>
     <% else %>
-      <section class="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-y-3 gap-x-10 py-10 border-t border-rule">
+      <%!--
+        gap-y-6 (not 3) so on mobile, where the columns collapse to
+        one and the section label sits ABOVE the content, the section
+        label gets clear breathing room from any small label that's
+        the first thing inside the content (e.g. "Signed in as" /
+        "Theme") — otherwise they read as two same-style labels
+        stacked tight on each other. Desktop is unaffected because
+        the two cells sit side-by-side and gap-y is a no-op.
+      --%>
+      <section class="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-y-6 gap-x-10 py-10 border-t border-rule">
         <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted">{@label}</p>
         <div>{render_slot(@inner_block)}</div>
       </section>
