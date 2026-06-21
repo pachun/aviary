@@ -70,18 +70,18 @@ defmodule AviaryWeb.Layouts do
             >
               Home
             </.section_link>
-            <.section_link href={~p"/discover"} active={@current_section == "discover"}>
-              Discover
-            </.section_link>
-            <.section_link href={~p"/search"} active={@current_section == "search"}>
-              Search
-            </.section_link>
             <.section_link
               :if={@nav_visibility.library}
               href={~p"/library"}
               active={@current_section == "library"}
             >
               Library
+            </.section_link>
+            <.section_link href={~p"/discover"} active={@current_section == "discover"}>
+              Discover
+            </.section_link>
+            <.section_link href={~p"/search"} active={@current_section == "search"}>
+              Search
             </.section_link>
           </nav>
 
@@ -145,6 +145,14 @@ defmodule AviaryWeb.Layouts do
             icon_solid="hero-home-solid"
           />
           <.tab_bar_link
+            :if={@nav_visibility.library}
+            href={~p"/library"}
+            active={@current_section == "library"}
+            label="Library"
+            icon_outline="hero-rectangle-stack"
+            icon_solid="hero-rectangle-stack-solid"
+          />
+          <.tab_bar_link
             href={~p"/discover"}
             active={@current_section == "discover"}
             label="Discover"
@@ -157,14 +165,6 @@ defmodule AviaryWeb.Layouts do
             label="Search"
             icon_outline="hero-magnifying-glass"
             icon_solid="hero-magnifying-glass-solid"
-          />
-          <.tab_bar_link
-            :if={@nav_visibility.library}
-            href={~p"/library"}
-            active={@current_section == "library"}
-            label="Library"
-            icon_outline="hero-rectangle-stack"
-            icon_solid="hero-rectangle-stack-solid"
           />
           <.tab_bar_link
             href={~p"/settings"}
