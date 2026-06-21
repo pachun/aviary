@@ -320,11 +320,24 @@ const Marquee = {
     const behavior = prefersReducedMotion ? "auto" : "smooth"
     this._leftBtn = this.el.querySelector('[data-marquee-scroll="left"]')
     this._rightBtn = this.el.querySelector('[data-marquee-scroll="right"]')
+    // Clamp the scroll target explicitly in JS rather than relying on
+    // the browser to clamp scrollBy(...) against the row's bounds.
+    // Reason: `snap-x snap-mandatory` on the <ul> combined with
+    // smooth-scroll on iOS Safari renders an intermediate animation
+    // frame past the snap target before snap-correcting back. With
+    // 2 thumbnails on a 360px viewport that intermediate frame shows
+    // ~one-card-width of blank space on the left during the
+    // animation, even though scrollLeft ultimately settles at 0.
+    // scrollTo({left: clamped_target}) skips the overshoot entirely.
+    const step = () => Math.round(ul.clientWidth * 0.8)
     this._onLeftClick = () => {
-      ul.scrollBy({ left: -Math.round(ul.clientWidth * 0.8), behavior })
+      const target = Math.max(0, ul.scrollLeft - step())
+      ul.scrollTo({ left: target, behavior })
     }
     this._onRightClick = () => {
-      ul.scrollBy({ left: Math.round(ul.clientWidth * 0.8), behavior })
+      const maxLeft = ul.scrollWidth - ul.clientWidth
+      const target = Math.min(maxLeft, ul.scrollLeft + step())
+      ul.scrollTo({ left: target, behavior })
     }
     if (this._leftBtn) this._leftBtn.addEventListener("click", this._onLeftClick)
     if (this._rightBtn) this._rightBtn.addEventListener("click", this._onRightClick)
