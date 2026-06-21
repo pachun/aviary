@@ -155,6 +155,21 @@ defmodule AviaryWeb.SearchLive do
           autofill from competing with our own results below.
         --%>
         <div class="border-b border-rule pb-2">
+          <%!--
+            phx-update="ignore" so LiveView leaves the input alone
+            during patches. Without it, the WebSocket-mount
+            re-renders the input element, which (a) destroys the
+            autofocus context iOS established during initial HTML
+            parse, dismissing the soft keyboard, and (b) blurs the
+            field anyway. The login page autofocuses correctly
+            because it's not a LiveView; this mirrors that
+            non-interference for search.
+
+            The AutoFocus hook is still attached for cursor-at-end
+            placement when the field is pre-filled with a query
+            (return navigation from a result), but no longer needs
+            to fight LV for control of focus state.
+          --%>
           <input
             type="text"
             name="q"
@@ -163,6 +178,7 @@ defmodule AviaryWeb.SearchLive do
             phx-keyup="search"
             phx-debounce="300"
             phx-hook="AutoFocus"
+            phx-update="ignore"
             autofocus
             placeholder="Search shows and movies…"
             autocomplete="off"
