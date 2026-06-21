@@ -20,7 +20,17 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#F2F0E7" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1B1B26" media="(prefers-color-scheme: dark)" />
-    <.live_title default="Aviary" phx-no-format>{assigns[:page_title]}</.live_title>
+    <%!--
+      Tab title brand — defaults to "Aviary" but reads TAB_TITLE env
+      at runtime (set in depot's aviary.rb compose env). Per-LiveView
+      `page_title` only sets the page-specific part (e.g. "Settings");
+      the brand suffix is appended here.
+    --%>
+    <.live_title
+      default={AviaryWeb.Layouts.tab_title()}
+      suffix={" · " <> AviaryWeb.Layouts.tab_title()}
+      phx-no-format
+    >{assigns[:page_title]}</.live_title>
 
     <%!--
       Google Fonts — Fraunces (variable, with SOFT + WONK axes for

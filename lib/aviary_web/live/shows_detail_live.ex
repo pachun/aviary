@@ -27,7 +27,7 @@ defmodule AviaryWeb.ShowsDetailLive do
         socket =
           socket
           |> assign(
-            page_title: "#{show.title} · Aviary",
+            page_title: show.title,
             show: show,
             playing_item: nil,
             playing_segments: nil,

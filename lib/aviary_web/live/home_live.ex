@@ -8,7 +8,7 @@ defmodule AviaryWeb.HomeLive do
 
     {:ok,
      assign(socket,
-       page_title: "Home · Aviary",
+       page_title: "Home",
        items: Aviary.Home.continue_watching(user),
        upcoming: Aviary.Upcoming.releases(user)
      )}

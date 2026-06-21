@@ -25,7 +25,7 @@ defmodule AviaryWeb.DiscoverLive do
     socket =
       socket
       |> assign(
-        page_title: "Discover · Aviary",
+        page_title: "Discover",
         services: services,
         rows: %{},
         row_attempts: %{}

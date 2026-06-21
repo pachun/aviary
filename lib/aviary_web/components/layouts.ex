@@ -13,6 +13,18 @@ defmodule AviaryWeb.Layouts do
 
   embed_templates "layouts/*"
 
+  @doc """
+  The configurable brand string used for the browser tab title.
+  Read from runtime app config (`:aviary, :tab_title`), set by
+  depot via the `TAB_TITLE` env var. Defaults to "Aviary" if
+  unset. Each LiveView sets just the page-specific page_title
+  ("Settings", "Discover", show title); root.html.heex appends
+  this as the suffix.
+  """
+  def tab_title do
+    Application.get_env(:aviary, :tab_title, "Aviary")
+  end
+
   attr :flash, :map, required: true, doc: "the map of flash messages"
 
   attr :current_section, :string,

@@ -17,7 +17,7 @@ defmodule AviaryWeb.SearchLive do
     socket =
       socket
       |> assign(
-        page_title: "Search · Aviary",
+        page_title: "Search",
         query: initial_q,
         # Result groups: `[]` when no results, otherwise `[{label, items}, …]`
         # with at most two entries (Shows + Movies). Ordering: the group

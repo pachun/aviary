@@ -14,7 +14,7 @@ defmodule AviaryWeb.LibraryLive do
   alias AviaryWeb.Components.CatalogGrid
 
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, page_title: "Library · Aviary")}
+    {:ok, assign(socket, page_title: "Library")}
   end
 
   def handle_params(params, _uri, socket) do

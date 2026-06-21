@@ -29,6 +29,9 @@ config :aviary, AviaryWeb.Endpoint,
 # container's env. Either way, Aviary.Jellyfin reaches for them via
 # Application.fetch_env!/2.
 config :aviary,
+  # Browser tab title brand (e.g. "Pachulski TV" so tabs read as
+  # "Settings · Pachulski TV"). Defaults to "Aviary" if unset.
+  tab_title: System.get_env("TAB_TITLE", "Aviary"),
   jellyfin_url: System.get_env("JELLYFIN_URL"),
   jellyfin_api_key: System.get_env("JELLYFIN_API_KEY"),
   # Browser-facing Jellyfin URL — must be reachable from the

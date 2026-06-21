@@ -41,7 +41,7 @@ defmodule AviaryWeb.SettingsLive do
 
     {:ok,
      assign(socket,
-       page_title: "Settings · Aviary",
+       page_title: "Settings",
        breakdown: breakdown,
        totals: totals,
        your_stats: your_stats,
