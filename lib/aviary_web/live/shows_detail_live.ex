@@ -359,12 +359,18 @@ defmodule AviaryWeb.ShowsDetailLive do
   end
 
   def handle_event("close_player", _, socket) do
+    # Refresh nav_visibility because playing something for the first
+    # time added a library_entries row + flipped Jellyfin's Continue
+    # Watching state; without this the user closes the player and
+    # sees the same "no Library / no Home tab" nav they started with
+    # until they manually navigate to trigger a fresh mount.
     {:noreply,
      socket
      |> assign(:playing_item, nil)
      |> assign(:playing_segments, nil)
      |> assign(:playing_subtitles, [])
-     |> assign(:playing_audio_index, nil)}
+     |> assign(:playing_audio_index, nil)
+     |> Aviary.Nav.refresh_visibility()}
   end
 
   # Per-user library curation. "Remove" is reversible and doesn't
@@ -384,6 +390,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     {:noreply,
      socket
      |> assign(:in_library, false)
+     |> Aviary.Nav.refresh_visibility()
      |> put_flash(:info, "#{show.title} removed from your library.")}
   end
 
@@ -398,6 +405,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     {:noreply,
      socket
      |> assign(:in_library, true)
+     |> Aviary.Nav.refresh_visibility()
      |> put_flash(:info, "#{show.title} added to your library.")}
   end
 

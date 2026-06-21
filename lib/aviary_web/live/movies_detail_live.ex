@@ -228,12 +228,18 @@ defmodule AviaryWeb.MoviesDetailLive do
   end
 
   def handle_event("close_player", _, socket) do
+    # Refresh nav_visibility — playing this movie added a
+    # library_entries row + flipped Jellyfin's Continue Watching
+    # state. Without this the user closes the player and sees the
+    # same "no Library / no Home tab" nav they started with until
+    # they navigate to trigger a fresh mount.
     {:noreply,
      socket
      |> assign(:playing_item, nil)
      |> assign(:playing_segments, nil)
      |> assign(:playing_subtitles, [])
-     |> assign(:playing_audio_index, nil)}
+     |> assign(:playing_audio_index, nil)
+     |> Aviary.Nav.refresh_visibility()}
   end
 
   # Hook reports every 10s while playing plus on every pause. Convert

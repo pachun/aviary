@@ -53,4 +53,22 @@ defmodule Aviary.Nav do
   def landing_path(%{home: true}), do: "/home"
   def landing_path(%{library: true}), do: "/library?type=shows"
   def landing_path(_), do: "/discover"
+
+  @doc """
+  Recompute nav_visibility for the current_user and re-assign on the
+  socket. Use at moments where a library_entries mutation (add /
+  remove / play-implies-add) inside a LiveView session could have
+  flipped Library or Home tabs into/out of visibility, but the
+  initial visibility assigned by `AviaryWeb.UserAuth` on_mount is
+  now stale. Most common case: a user with empty library plays
+  something — library_entries gets a new row, but the nav assign
+  doesn't reflect it until navigation triggers a fresh mount.
+  """
+  def refresh_visibility(socket) do
+    Phoenix.Component.assign(
+      socket,
+      :nav_visibility,
+      visibility(socket.assigns.current_user)
+    )
+  end
 end
