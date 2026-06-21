@@ -62,14 +62,19 @@ defmodule AviaryWeb.LibraryLive do
         it.
 
         Sticky so it stays reachable when the catalog grid scrolls
-        past viewport. Top offset matches the masthead's rendered
-        height (pt-8/10 + 36px bird + pb-6/8), z-10 puts it below
-        the masthead (z-20) so they don't overlap. bg-paper +
-        vertical padding so content scrolls cleanly behind.
+        past viewport.
+          - Mobile: `top-0` — no top chrome (primary nav is the bottom
+            tab bar). Without this the sub-nav sat at 92px below the
+            viewport top, leaving an unmasked 92px band above it
+            where scrolling cards would show through.
+          - Desktop: `top-[108px]` — clears the sticky masthead
+            (~84px high + ~24px breathing).
+        z-10 puts it below the masthead (z-20) so they don't overlap.
+        bg-paper + vertical padding so content scrolls cleanly behind.
       --%>
       <nav
         :if={@has_both_libraries}
-        class="sticky top-[92px] sm:top-[108px] z-10 bg-paper flex items-baseline gap-6 py-3 mb-8 font-sans text-[0.7rem] tracking-[0.18em] uppercase"
+        class="sticky top-0 sm:top-[108px] z-10 bg-paper flex items-baseline gap-6 py-3 mb-8 font-sans text-[0.7rem] tracking-[0.18em] uppercase"
       >
         <.tab patch={~p"/library?type=shows"} active={@type == :shows}>Shows</.tab>
         <.tab patch={~p"/library?type=movies"} active={@type == :movies}>Movies</.tab>
