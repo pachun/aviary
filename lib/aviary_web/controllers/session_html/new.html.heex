@@ -1,12 +1,14 @@
 <%!--
-  Pre-auth screen: nothing in the upper-right corner. flex flex-col
-  min-h-dvh + flex-1 main means the form centers within whatever
-  vertical space is actually visible — when the mobile keyboard
-  opens, dvh shrinks and the form re-centers above it automatically
-  instead of staying fixed behind it.
+  Pre-auth screen: form anchored toward the TOP of the viewport
+  (items-start + pt-16/sm:pt-32). Vertical centering looked OK on
+  desktop but on mobile it pushed the form low enough that the
+  iOS soft keyboard came up over the Sign-In button. With the form
+  near the top, the keyboard just covers blank space below — the
+  fields and button stay visible. Generous top padding keeps it from
+  feeling glued to the very top edge.
 --%>
 <div class="bg-paper text-ink antialiased flex flex-col min-h-dvh">
-  <main class="flex-1 flex items-center justify-center px-6">
+  <main class="flex-1 flex justify-center items-start px-6 pt-16 sm:pt-32">
     <div class="w-full max-w-sm">
       <%!--
         Custom-domain banner: when PHX_HOST is set to a real domain
