@@ -91,7 +91,11 @@ defmodule AviaryWeb.MoviesDetailLive do
         assign(socket, :download_seen, true)
 
       state == :imported ->
-        throttle(:jellyfin_library_refresh, 15_000, fn ->
+        # 5s throttle matches our Radarr poll cadence — while the chip
+        # is in "Importing…" Jellyfin should be rescanning continuously,
+        # not stuck behind a 15s lull. Jellyfin dedupes concurrent
+        # refreshes so faster polling is cheap.
+        throttle(:jellyfin_library_refresh, 5_000, fn ->
           Aviary.Jellyfin.refresh_library(user)
         end)
 

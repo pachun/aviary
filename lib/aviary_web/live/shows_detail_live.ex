@@ -126,7 +126,10 @@ defmodule AviaryWeb.ShowsDetailLive do
       # Jellyfin: /media/shows), so a path-targeted scan needs
       # translation we don't currently do. The library-wide scan
       # works regardless and Jellyfin dedupes concurrent triggers.
-      throttle(:jellyfin_library_refresh, 15_000, fn ->
+      # 5s throttle matches our Sonarr poll cadence — while a chip is
+      # in "Importing…" we want Jellyfin re-scanning continuously,
+      # not stuck behind a 15s lull.
+      throttle(:jellyfin_library_refresh, 5_000, fn ->
         Aviary.Jellyfin.refresh_library(user)
       end)
 
@@ -473,6 +476,23 @@ defmodule AviaryWeb.ShowsDetailLive do
         --%>
         <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-rule text-muted px-3 py-1.5 rounded-sm shrink-0">
           Blocked
+        </span>
+      <% :ready -> %>
+        <%!--
+          Not in the tank yet. The label here is a typographic down
+          arrow (↓, U+2193) rather than the "▶ Play" wording of the
+          :playable case — the action this triggers is "start a
+          download," not "press play." Same chip geometry as the
+          other states so the row's right edge stays aligned. Same
+          oxblood-on-paper primary affordance: clicking it is the
+          first deliberate move the user makes on an unwatched
+          episode.
+        --%>
+        <span
+          aria-label="Download"
+          class="font-sans text-[0.85rem] leading-none font-medium bg-oxblood text-white px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100"
+        >
+          ↓
         </span>
       <% _ -> %>
         <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium bg-oxblood text-white px-3 py-1.5 rounded-sm shrink-0 transition-opacity opacity-90 group-hover:opacity-100">
@@ -1165,8 +1185,14 @@ defmodule AviaryWeb.ShowsDetailLive do
           {Aviary.Sonarr.watch_show(show.tmdb_id), "Adding #{show.title} to your library…"}
 
         :episode ->
-          {Aviary.Sonarr.watch_episode(show.tmdb_id, season, episode),
-           "Grabbing S#{season} E#{episode} of #{show.title}…"}
+          # Two-stage download: this single episode now, then once
+          # the file lands SeriesFollowup broadens to the rest of the
+          # series. Lets the targeted episode get the entire download
+          # pipe without making the user click again for the rest.
+          # See Aviary.SeriesFollowup for the polling/timeout shape.
+          result = Aviary.Sonarr.watch_episode(show.tmdb_id, season, episode)
+          Aviary.SeriesFollowup.after_episode_imports(show.tmdb_id, season, episode)
+          {result, "Grabbing S#{season} E#{episode} of #{show.title}…"}
       end
 
     case result do
