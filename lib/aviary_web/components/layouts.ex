@@ -59,42 +59,52 @@ defmodule AviaryWeb.Layouts do
     <div class="min-h-dvh bg-paper text-ink antialiased">
       <%!--
         ====================================================
-        Mobile top bar — sticky context for show/movie detail
-        and settings.
+        Mobile sticky top bar — editorial running header.
         ====================================================
-        Only renders when the page passed `mobile_title`. Sticky
-        so the title/back stays visible as the user scrolls. The
-        `pt-[env(safe-area-inset-top)]` shoves content below the
-        iOS status bar / notch so the title doesn't fight the
-        time/cell/wifi/battery indicators. min-h-[44px] on the
-        inner row matches iOS HIG nav-bar height after safe-area
-        math.
+        Reads as a chapter heading from a hardback book, not as
+        UINavigationBar with the brand color repainted.
 
-        Left-aligned title (not iOS-standard centered): long movie
-        titles fight a centered layout with a left-side back button,
-        and aviary's editorial vocabulary already prefers left-flush
-        labels over centered.
+        Signature element: the oxblood ‹ (U+2039 SINGLE LEFT-
+        POINTING ANGLE QUOTATION MARK) set in Newsreader italic
+        at display size, NOT a heroicons chevron. The guillemet
+        is part of the publication's typography — same family as
+        the title, larger size, full oxblood. Setting the back
+        gesture as a glyph in the running typeface (rather than a
+        bolted-on icon from a separate kit) is what makes this
+        bar Aviary instead of generic mobile chrome.
 
-        On root-level pages (Settings), `mobile_back_to` is nil and
-        no chevron renders — just the title.
+        Title in Newsreader italic — editorial convention sets the
+        name of the current work or department in italic in the
+        publication's display face.
+
+        Baseline alignment so the larger guillemet visually rises
+        past the title's x-height, like an opening quote mark to
+        running text.
+
+        Hairline rule at /60 opacity, not the default border-rule,
+        because the bar's bg-paper matches the content bg-paper —
+        SOMETHING has to define the edge as content scrolls past,
+        but a full-strength rule reads as chrome. The lighter rule
+        reads as typographic.
+
+        pt-3 pb-3 for editorial breathing — taller than iOS HIG's
+        44px convention. The bar is a header on a page, not a
+        chrome strip on a phone.
       --%>
       <header
         :if={@mobile_title}
-        class="sm:hidden sticky top-0 z-30 bg-paper border-b border-rule pt-[env(safe-area-inset-top)]"
+        class="sm:hidden sticky top-0 z-30 bg-paper pt-[env(safe-area-inset-top)]"
       >
-        <div class="flex items-center min-h-[44px] px-2 gap-1">
+        <div class="flex items-baseline gap-4 px-4 pt-3 pb-3 border-b border-rule/60">
           <a
             :if={@mobile_back_to}
             href={@mobile_back_to}
             aria-label="Back"
-            class="text-muted hover:text-oxblood transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 rounded-sm p-2 -mx-1"
+            class="font-heading italic text-3xl leading-none text-oxblood -my-2 px-2 py-2 -ml-2 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40"
           >
-            <.icon name="hero-chevron-left" class="size-5" />
+            ‹
           </a>
-          <h1 class={[
-            "font-heading text-base text-ink leading-none truncate min-w-0 flex-1",
-            !@mobile_back_to && "pl-2"
-          ]}>
+          <h1 class="font-heading italic text-xl text-ink leading-none truncate min-w-0 flex-1">
             {@mobile_title}
           </h1>
         </div>
