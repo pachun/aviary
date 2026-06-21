@@ -415,11 +415,28 @@ defmodule AviaryWeb.MoviesDetailLive do
                   across every state so the layout never shifts as
                   the state machine progresses.
                 --%>
-                <div>
+                <div class="space-y-2">
                   <.movie_action_button
                     movie={@movie}
                     state={movie_state(@movie, @radarr_status, @download_seen)}
                   />
+                  <%!--
+                    Time-to-watchable line, only on the pre-download
+                    (:ready) state. Surfaces the fact that Watch on a
+                    discover item kicks off a download → import flow,
+                    not an instant play. Italic Fraunces, muted —
+                    same editorial voice as poster metadata.
+                    See Aviary.WatchTimeEstimate for the formula.
+                  --%>
+                  <p
+                    :if={
+                      movie_state(@movie, @radarr_status, @download_seen) == :ready and
+                        Aviary.WatchTimeEstimate.for_runtime(@movie.runtime_minutes)
+                    }
+                    class="font-display italic text-muted text-xs"
+                  >
+                    Roughly {Aviary.WatchTimeEstimate.for_runtime(@movie.runtime_minutes)} minutes until watchable
+                  </p>
                 </div>
 
                 <%!--

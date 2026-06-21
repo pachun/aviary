@@ -645,13 +645,31 @@ defmodule AviaryWeb.ShowsDetailLive do
                   center={false}
                 />
 
-                <div>
+                <div class="space-y-2">
                   <.top_action_button
                     show={@show}
                     status={@sonarr_status}
                     label={action_label(@show)}
                     disabled={action_disabled?(@show)}
                   />
+                  <%!--
+                    Time-to-watchable line, only on the pre-download
+                    (:ready) state. The estimate uses the show's
+                    runtime_minutes (typically a single-episode
+                    average) because the user can start watching the
+                    first episode as soon as it lands — they don't
+                    wait for the whole series. Quiet italic Fraunces,
+                    same line as the movie page's counterpart.
+                  --%>
+                  <p
+                    :if={
+                      show_state(@show, @sonarr_status) == :ready and
+                        Aviary.WatchTimeEstimate.for_runtime(@show.runtime_minutes)
+                    }
+                    class="font-display italic text-muted text-xs"
+                  >
+                    Roughly {Aviary.WatchTimeEstimate.for_runtime(@show.runtime_minutes)} minutes until watchable
+                  </p>
                 </div>
 
                 <%!--
