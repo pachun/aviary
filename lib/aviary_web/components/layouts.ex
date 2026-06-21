@@ -33,18 +33,21 @@ defmodule AviaryWeb.Layouts do
   def app(assigns) do
     ~H"""
     <%!--
-      Plain min-h-screen wrapper — no overflow handling here. We used
-      to apply `overflow-x-clip` defensively against the old mobile
-      masthead being too wide, but iOS Safari has a known WebKit bug
-      where ancestor `overflow-x: clip` quietly breaks `position:
-      sticky` descendants (they scroll with content instead of pinning
-      to viewport). With the bottom-tab-bar mobile nav now eliminating
-      the original overflow risk, removing this lets the library page's
-      sub-toggle stick correctly. If a real horizontal-overflow issue
-      shows up later, fix it at the offending component rather than
-      papering over it here.
+      min-h-dvh (NOT min-h-screen) — on iOS Safari, `100vh` includes
+      the area BEHIND the URL bar, making min-h-screen elements
+      taller than the currently-visible viewport. That extra height
+      becomes a phantom scroll region (roughly URL-bar / tab-bar
+      sized) on pages whose actual content fits the viewport. The
+      `dvh` ("dynamic viewport height") unit always matches the
+      currently-visible area and avoids the bug.
+
+      No overflow-x handling — we removed that defensively because
+      iOS WebKit has a known bug where ancestor `overflow-x: clip`
+      quietly breaks `position: sticky` descendants. If real
+      horizontal-overflow appears later, fix it at the offending
+      component rather than papering over it here.
     --%>
-    <div class="min-h-screen bg-paper text-ink antialiased">
+    <div class="min-h-dvh bg-paper text-ink antialiased">
       <%!--
         Mobile: no top chrome at all. Page content runs to the top
         of the viewport; primary nav (including settings) lives in

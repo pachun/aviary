@@ -102,6 +102,12 @@ body {
   color: var(--ink);
   font-family: var(--font-sans);
   font-feature-settings: "ss01", "cv11";
+  /* Kill iOS Safari's rubber-band overscroll bounce. Without this,
+     short pages can still be "scrolled" by ~80px past the edges
+     before snapping back, which reads as a bug for users used to
+     native-app feel. `none` (not `contain`) because we also want to
+     suppress pull-to-refresh on PWA-like sessions. */
+  overscroll-behavior-y: none;
 }
 
 /* LiveView reload spinner variants — kept from the generator. */
