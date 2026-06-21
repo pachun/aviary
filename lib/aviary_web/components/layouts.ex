@@ -61,31 +61,6 @@ defmodule AviaryWeb.Layouts do
       component rather than papering over it here.
     --%>
     <div class="min-h-dvh bg-paper text-ink antialiased">
-      <%!--
-        Mobile safe-area mask — always rendered, always covering
-        the status-bar / notch zone with bg-paper. Without this:
-
-          - Pages without a sticky top bar (Home, Discover, Library,
-            Search) have content scrolling UP into the notch area,
-            with iOS's time/wifi/battery glyphs sitting over poster
-            art.
-          - Pages WITH a sticky top bar (Settings, detail pages)
-            ALSO show this bug whenever the bar is in its faded-out
-            state (initial render before the user scrolls past the
-            body title): the bar's `opacity-0` makes its bg-paper
-            transparent too, so the safe area is uncovered.
-
-        This mask is unconditional, sits above content (z-30) and
-        below interactive chrome. Inline `height` instead of a
-        Tailwind class because `h-[env(safe-area-inset-top)]`
-        wasn't compiling reliably; the env() function with a 0px
-        fallback is unambiguous in raw CSS.
-      --%>
-      <div
-        class="sm:hidden fixed top-0 inset-x-0 bg-paper z-30 pointer-events-none"
-        style="height: env(safe-area-inset-top, 0px);"
-      >
-      </div>
 
       <%!--
         ====================================================
@@ -250,19 +225,8 @@ defmodule AviaryWeb.Layouts do
         pinned position — detaching the sticky. Putting pb on the
         inner div fixes this by including the breathing room in the
         sticky's bounds.
-
-        Top padding adds env(safe-area-inset-top) ONLY when there's
-        no sticky mobile top bar to handle it. Editorial publications
-        never let content run under the masthead — and aviary's brand
-        is editorial-museum, so the status bar should always sit on
-        paper rather than have content scroll beneath it. The wrapper's
-        bg-paper covers the safe area visually. Reset to pt-0 at sm:
-        since desktop has its own masthead handling the top spacing.
       --%>
-      <main class={[
-        "px-4 sm:px-8 lg:px-12",
-        is_nil(@mobile_title) && "pt-[env(safe-area-inset-top)] sm:pt-0"
-      ]}>
+      <main class="px-4 sm:px-8 lg:px-12">
         <div class="mx-auto max-w-[1100px] pb-28 sm:pb-24">
           {render_slot(@inner_block)}
         </div>
