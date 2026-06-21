@@ -1,0 +1,30 @@
+<%!--
+  500 — internal server error. Standalone (no Layouts.app) for the
+  same reasons as 404: the page must render even when whatever broke
+  is in our normal layout stack. Voice acknowledges the issue
+  without apologizing theatrically — short, calm, points at the
+  recovery action.
+--%>
+<div class="bg-paper text-ink antialiased min-h-dvh flex flex-col">
+  <main class="flex-1 flex justify-center items-start px-6 pt-20 sm:pt-32">
+    <div class="w-full max-w-md text-center">
+      <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted mb-4">
+        500 · Internal error
+      </p>
+      <h1 class="font-display text-5xl sm:text-6xl text-ink leading-[1.05] mb-6">
+        Something broke.
+      </h1>
+      <p class="font-display italic text-muted text-lg leading-relaxed mb-10">
+        Aviary tripped over itself rendering that page. Try
+        again in a moment — if it keeps happening, the logs
+        on the tank will know more than this screen does.
+      </p>
+      <a
+        href="/"
+        class="inline-block bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+      >
+        Home
+      </a>
+    </div>
+  </main>
+</div>

@@ -1,23 +1,19 @@
 defmodule AviaryWeb.ErrorHTML do
   @moduledoc """
-  This module is invoked by your endpoint in case of errors on HTML requests.
-
-  See config/config.exs.
+  Renders error pages (404 / 500) when something goes wrong on an
+  HTML request. Templates live in `error_html/`. The pages are
+  standalone — no Layouts.app wrapper, no LiveView — so they render
+  safely even when the underlying error came from a layout dependency
+  (current_user fetch, nav visibility, etc.).
   """
   use AviaryWeb, :html
 
-  # If you want to customize your error pages,
-  # uncomment the embed_templates/1 call below
-  # and add pages to the error directory:
-  #
-  #   * lib/aviary_web/controllers/error_html/404.html.heex
-  #   * lib/aviary_web/controllers/error_html/500.html.heex
-  #
-  # embed_templates "error_html/*"
+  embed_templates "error_html/*"
 
-  # The default is to render a plain text page based on
-  # the template name. For example, "404.html" becomes
-  # "Not Found".
+  # Fallback for any status code we haven't templated (403, 502, etc.).
+  # Still returns plain-text from Phoenix's built-in mapping. If we
+  # ever care to design those individually, add a corresponding
+  # template.
   def render(template, _assigns) do
     Phoenix.Controller.status_message_from_template(template)
   end
