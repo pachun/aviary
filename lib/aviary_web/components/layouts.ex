@@ -41,31 +41,51 @@ defmodule AviaryWeb.Layouts do
     --%>
     <div class="min-h-screen bg-paper text-ink antialiased overflow-x-clip">
       <%!--
-        Sticky masthead so the nav stays reachable on long pages
-        (discover scrolls past a viewport now). bg-paper keeps content
-        from bleeding through; z-20 sits above marquee cards and
-        their hover rings.
+        ====================================================
+        Mobile top strip — brand + settings only.
+        ====================================================
+        Quiet Newsreader "Aviary" wordmark on the left,
+        settings gear on the right. Primary nav lives on the
+        bottom rail (below); top strip is just identity + the
+        rare settings entry-point. Sticky so the gear stays
+        reachable during scroll.
       --%>
-      <header class="sticky top-0 z-20 bg-paper px-4 sm:px-8 lg:px-12 pt-8 pb-6 sm:pt-10 sm:pb-8">
+      <header class="sm:hidden sticky top-0 z-20 bg-paper px-4 pt-5 pb-3">
+        <div class="flex items-center justify-between">
+          <a
+            href={~p"/"}
+            class="font-heading text-lg text-ink leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-sm"
+          >
+            Aviary
+          </a>
+          <a
+            :if={@current_user}
+            href={~p"/settings"}
+            aria-label="Settings"
+            class="text-muted hover:text-oxblood transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-sm"
+          >
+            <.icon name="hero-cog-6-tooth" class="size-5" />
+          </a>
+        </div>
+      </header>
+
+      <%!--
+        ====================================================
+        Desktop masthead — original combined nav + gear.
+        ====================================================
+        Unchanged from prior behavior; only the visibility
+        breakpoint shifted (now hidden below sm: so the
+        mobile top + bottom rails take over).
+      --%>
+      <header class="hidden sm:block sticky top-0 z-20 bg-paper sm:px-8 lg:px-12 sm:pt-10 sm:pb-8">
         <%!--
           items-baseline on the outer flex so the gear's bottom edge
           rests on the same baseline as the nav text — same typographic
           rhythm an editorial layout would set for a small glyph in
           running copy.
-
-          Mobile-tight spacing: gap-3 between nav and gear (was gap-8)
-          so a 360px viewport doesn't overflow once you account for
-          four tracked-uppercase nav links plus the gear. Restores to
-          gap-8 at sm.
         --%>
-        <div class="mx-auto max-w-[1100px] flex items-baseline justify-between gap-3 sm:gap-8">
-          <%!--
-            Mobile: smaller text + tighter tracking + tighter gap so
-            four nav links fit comfortably on a 360px-wide phone.
-            Restores to the editorial rhythm at sm: same 0.78rem
-            tracked-0.15em the rest of the design was built around.
-          --%>
-          <nav class="flex items-baseline gap-4 sm:gap-8 text-[0.65rem] sm:text-[0.78rem] font-sans tracking-[0.08em] sm:tracking-[0.15em] uppercase">
+        <div class="mx-auto max-w-[1100px] flex items-baseline justify-between gap-8">
+          <nav class="flex items-baseline gap-8 text-[0.78rem] font-sans tracking-[0.15em] uppercase">
             <.section_link
               :if={@nav_visibility.home}
               href={~p"/home"}
@@ -104,11 +124,70 @@ defmodule AviaryWeb.Layouts do
         </div>
       </header>
 
-      <main class="px-4 sm:px-8 lg:px-12 pb-24">
+      <%!--
+        pb-24 sm:pb-24 — both viewports need bottom space, but for
+        different reasons. Desktop: editorial breathing room below
+        the last content. Mobile: clear the fixed bottom rail (~52px
+        + breathing). Numbers happen to coincide; kept separate so
+        either can be tuned without affecting the other.
+      --%>
+      <main class="px-4 sm:px-8 lg:px-12 pb-24 sm:pb-24">
         <div class="mx-auto max-w-[1100px]">
           {render_slot(@inner_block)}
         </div>
       </main>
+
+      <%!--
+        ====================================================
+        Mobile bottom rail — primary nav.
+        ====================================================
+        Pure typographic state machine: inactive sections set
+        in Instrument Sans uppercase tracked small-caps;
+        active section set in Newsreader display serif italic,
+        lowercase, larger. The typeface SHIFT is the active
+        indicator (no oxblood underline, no pill background).
+        Because the active label is larger, it visually rises
+        above the others on the shared baseline — "you are
+        here" without any additional decoration.
+
+        Pulled directly from aviary's design system: every face
+        used here (Instrument Sans tracked, Newsreader italic)
+        is already established in the brand vocabulary. The
+        navigation primitive is just expressing the brand
+        voice as state.
+
+        Hairline border-top separates rail from scrolling
+        content above. fixed bottom-0 + inset-x-0 pins to the
+        viewport's bottom edge regardless of scroll position;
+        z-20 sits above marquee cards.
+      --%>
+      <nav
+        :if={@current_user}
+        class="sm:hidden fixed bottom-0 inset-x-0 z-20 bg-paper border-t border-rule"
+      >
+        <div class="flex items-baseline justify-evenly px-4 pt-3 pb-4">
+          <.mobile_section_link
+            :if={@nav_visibility.home}
+            href={~p"/home"}
+            active={@current_section == "home"}
+          >
+            Home
+          </.mobile_section_link>
+          <.mobile_section_link href={~p"/discover"} active={@current_section == "discover"}>
+            Discover
+          </.mobile_section_link>
+          <.mobile_section_link href={~p"/search"} active={@current_section == "search"}>
+            Search
+          </.mobile_section_link>
+          <.mobile_section_link
+            :if={@nav_visibility.library}
+            href={~p"/library"}
+            active={@current_section == "library"}
+          >
+            Library
+          </.mobile_section_link>
+        </div>
+      </nav>
 
       <.flash_group flash={@flash} />
     </div>
@@ -133,6 +212,48 @@ defmodule AviaryWeb.Layouts do
         "transition-colors duration-200 underline-offset-[6px] decoration-1",
         @active && "text-oxblood underline decoration-oxblood",
         !@active && "text-muted hover:text-ink hover:underline hover:decoration-ink"
+      ]}
+    >
+      {render_slot(@inner_block)}
+    </a>
+    """
+  end
+
+  attr :href, :string, required: true
+  attr :active, :boolean, default: false
+  slot :inner_block, required: true
+
+  defp mobile_section_link(assigns) do
+    ~H"""
+    <%!--
+      Mobile bottom-rail nav link. Two states, two typefaces:
+
+        :active   → Newsreader display serif italic, lowercase,
+                    1.05rem text, oxblood. The brand's display rhythm
+                    pulled into the navigation primitive.
+
+        :inactive → Instrument Sans uppercase tracked, 0.7rem,
+                    muted. Catalog-text small-caps.
+
+      Items share `items-baseline` on the parent so both sizes align
+      at the baseline; the active label extends UPWARD past the
+      others, giving "you are here" by elevation rather than by
+      decoration. lowercase / uppercase transforms convert the same
+      slot text ("Discover") to the right form per state, so the
+      caller's source text stays Title Case.
+
+      tap target: py-2 negative-margin trick keeps the visual
+      typography tight while expanding the touchable rectangle to
+      ~44×44px — well within iOS HIG / Material guidelines without
+      adding visible padding to the chip.
+    --%>
+    <a
+      href={@href}
+      class={[
+        "transition-colors duration-200 -my-2 py-2 px-1",
+        @active && "font-heading italic text-[1.05rem] lowercase text-oxblood leading-none",
+        !@active &&
+          "font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted hover:text-ink leading-none"
       ]}
     >
       {render_slot(@inner_block)}
