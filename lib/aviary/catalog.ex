@@ -371,6 +371,7 @@ defmodule Aviary.Catalog do
     %{
       id: "tmdb-#{ep["id"]}",
       title: ep["name"],
+      synopsis: ep["overview"],
       season: ep["seasonNumber"],
       episode: ep["episodeNumber"],
       runtime_minutes: nil,
@@ -532,6 +533,7 @@ defmodule Aviary.Catalog do
     %{
       id: item["Id"],
       title: item["Name"],
+      synopsis: item["Overview"],
       season: item["ParentIndexNumber"],
       episode: item["IndexNumber"],
       runtime_minutes: runtime_minutes(item["RunTimeTicks"]),

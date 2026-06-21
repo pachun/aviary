@@ -37,7 +37,11 @@ defmodule AviaryWeb.ShowsDetailLive do
             sonarr_status: nil,
             collapsed_seasons: initial_collapsed_seasons(show),
             imported_stuck_since: nil,
-            in_library: in_library?(show, socket.assigns.current_user)
+            in_library: in_library?(show, socket.assigns.current_user),
+            # Mobile-first: episode titles truncate in the row. Tapping
+            # the title area opens this episode's details (full title +
+            # synopsis) in a centered modal. nil = no modal showing.
+            open_episode: nil
           )
           |> fetch_sonarr_status()
           |> schedule_sonarr_poll()
@@ -356,6 +360,21 @@ defmodule AviaryWeb.ShowsDetailLive do
       ep ->
         {:noreply, start_playing(socket, ep)}
     end
+  end
+
+  # Show the episode-details modal. The title row in the episode list
+  # truncates on narrow viewports, so tapping the title opens this
+  # modal with the full title + synopsis. The chip on the right
+  # remains the play action.
+  def handle_event("open_episode_details", %{"id" => episode_id}, socket) do
+    case find_episode(socket.assigns.show, episode_id) do
+      nil -> {:noreply, socket}
+      ep -> {:noreply, assign(socket, :open_episode, ep)}
+    end
+  end
+
+  def handle_event("close_episode_details", _, socket) do
+    {:noreply, assign(socket, :open_episode, nil)}
   end
 
   def handle_event("close_player", _, socket) do
@@ -927,42 +946,72 @@ defmodule AviaryWeb.ShowsDetailLive do
                 </button>
 
                 <%!--
-                  Play row — clickable for aired episodes, info-only
-                  for unaired. Same geometry across both so the list
-                  stays as one continuous sequence.
+                  Play row — two tap targets side by side:
+                    1. Title area (ep#, title, runtime): opens a modal
+                       with the full title + synopsis. Mobile-first
+                       feature; on narrow viewports titles truncate
+                       with ellipses, and the modal is how the user
+                       reads the full thing.
+                    2. Chip on the right: the existing play / download
+                       action.
+                  The outer div carries `group` so action_chip's
+                  group-hover styling (oxblood at full opacity on
+                  hover) still works.
+                --%>
+                <div
+                  :if={ep.aired}
+                  class="group w-full flex items-center gap-4 py-3 px-1"
+                >
+                  <button
+                    type="button"
+                    phx-click="open_episode_details"
+                    phx-value-id={ep.id}
+                    aria-label={"Details for S#{ep.season} E#{ep.episode}: #{ep.title}"}
+                    class="flex items-center gap-4 flex-1 min-w-0 cursor-pointer text-left"
+                  >
+                    <span class="font-sans text-muted text-sm tabular-nums w-8 shrink-0">
+                      {pad_episode(ep.episode)}
+                    </span>
+                    <%!--
+                      min-w-0 is the standard flexbox truncate fix: flex
+                      items default to min-width:auto (won't shrink
+                      below intrinsic content width), which means a
+                      long title pushes the chip off the row instead of
+                      clipping. min-w-0 lets the title shrink to
+                      whatever space the siblings leave and the
+                      truncate utility then adds the ellipsis.
+                    --%>
+                    <span class="font-display text-ink flex-1 min-w-0 truncate">{ep.title}</span>
+                    <span
+                      :if={ep.runtime_minutes}
+                      class="font-sans text-muted text-xs tabular-nums shrink-0"
+                    >
+                      {ep.runtime_minutes}m
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="play_episode"
+                    phx-value-id={ep.id}
+                    aria-label={"Play S#{ep.season} E#{ep.episode}"}
+                    class="shrink-0 cursor-pointer focus:outline-none"
+                  >
+                    <.action_chip state={episode_state(@show, ep, @sonarr_status)} label="▶ Play" />
+                  </button>
+                </div>
+
+                <%!--
+                  Unaired row: still tappable to read the synopsis +
+                  full title. No play affordance because the file
+                  doesn't exist yet.
                 --%>
                 <button
-                  :if={ep.aired}
-                  type="button"
-                  phx-click="play_episode"
-                  phx-value-id={ep.id}
-                  class="group w-full flex items-center gap-4 py-3 px-1 cursor-pointer text-left"
-                >
-                  <span class="font-sans text-muted text-sm tabular-nums w-8 shrink-0">
-                    {pad_episode(ep.episode)}
-                  </span>
-                  <%!--
-                    min-w-0 is the standard flexbox truncate fix: flex
-                    items default to min-width:auto (won't shrink below
-                    intrinsic content width), which means a long title
-                    pushes the chip off the row instead of clipping.
-                    min-w-0 lets the title shrink to whatever space the
-                    siblings leave and the truncate utility then adds
-                    the ellipsis.
-                  --%>
-                  <span class="font-display text-ink flex-1 min-w-0 truncate">{ep.title}</span>
-                  <span
-                    :if={ep.runtime_minutes}
-                    class="font-sans text-muted text-xs tabular-nums shrink-0"
-                  >
-                    {ep.runtime_minutes}m
-                  </span>
-                  <.action_chip state={episode_state(@show, ep, @sonarr_status)} label="▶ Play" />
-                </button>
-
-                <div
                   :if={!ep.aired}
-                  class="w-full flex items-center gap-4 py-3 px-1"
+                  type="button"
+                  phx-click="open_episode_details"
+                  phx-value-id={ep.id}
+                  aria-label={"Details for S#{ep.season} E#{ep.episode}: #{ep.title}"}
+                  class="w-full flex items-center gap-4 py-3 px-1 cursor-pointer text-left"
                 >
                   <span class="font-sans text-muted text-sm tabular-nums w-8 shrink-0">
                     {pad_episode(ep.episode)}
@@ -974,12 +1023,62 @@ defmodule AviaryWeb.ShowsDetailLive do
                   >
                     {air_date_label(ep.air_date)}
                   </span>
-                </div>
+                </button>
               </li>
             </ul>
           </div>
         </section>
       </article>
+
+      <%!--
+        Episode details modal — opens when the user taps an episode's
+        title area in the list. Shows the full title (untruncated) and
+        the synopsis. Tap-backdrop or the explicit close button
+        dismisses. Centered modal at all viewport sizes; bg-paper card
+        on a semi-transparent ink backdrop. font-display for the
+        title, italic Fraunces for the synopsis — same editorial voice
+        as the rest of the detail page.
+      --%>
+      <div
+        :if={@open_episode}
+        phx-click="close_episode_details"
+        class="fixed inset-0 z-50 flex items-center justify-center px-4 bg-ink/60 backdrop-blur-sm"
+        aria-modal="true"
+        role="dialog"
+      >
+        <div
+          phx-click-away="close_episode_details"
+          class="relative max-w-md w-full bg-paper rounded-sm shadow-2xl p-6 sm:p-8 max-h-[80dvh] overflow-y-auto"
+          onclick="event.stopPropagation()"
+        >
+          <button
+            type="button"
+            phx-click="close_episode_details"
+            aria-label="Close"
+            class="absolute top-3 right-3 text-muted hover:text-oxblood transition-colors p-2 -m-2 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 rounded-sm"
+          >
+            <.icon name="hero-x-mark" class="size-5" />
+          </button>
+          <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted mb-2">
+            S{@open_episode.season} E{@open_episode.episode}
+          </p>
+          <h2 class="font-display text-ink text-2xl leading-tight mb-4 pr-6">
+            {@open_episode.title}
+          </h2>
+          <p
+            :if={@open_episode.synopsis && @open_episode.synopsis != ""}
+            class="font-display italic text-ink/85 text-base leading-relaxed"
+          >
+            {@open_episode.synopsis}
+          </p>
+          <p
+            :if={!@open_episode.synopsis || @open_episode.synopsis == ""}
+            class="font-display italic text-muted text-sm"
+          >
+            No synopsis yet.
+          </p>
+        </div>
+      </div>
 
       <VideoPlayer.overlay
         :if={@playing_item}
