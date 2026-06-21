@@ -802,7 +802,14 @@ defmodule AviaryWeb.ShowsDetailLive do
                 :for={ep <- episodes}
                 class={[
                   "border-b border-rule transition-colors duration-200",
-                  @in_library && "grid grid-cols-[32px_1fr] border-l-2",
+                  # minmax(0, 1fr) — not bare 1fr — so the column track
+                  # can SHRINK below its content's intrinsic width. A
+                  # plain `1fr` track has default min-width:auto, which
+                  # means a long episode title inside the play button
+                  # inflates the column past 1fr and pushes the
+                  # action_chip off the right edge of the viewport on
+                  # mobile. Same flex-min-w-0 trick, at the grid level.
+                  @in_library && "grid grid-cols-[32px_minmax(0,1fr)] border-l-2",
                   @in_library &&
                     case row_position(ep, @mark) do
                       :at -> "border-l-oxblood"
