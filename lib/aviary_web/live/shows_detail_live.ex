@@ -653,22 +653,25 @@ defmodule AviaryWeb.ShowsDetailLive do
                     disabled={action_disabled?(@show)}
                   />
                   <%!--
-                    Time-to-watchable line, only on the pre-download
-                    (:ready) state. The estimate uses the show's
-                    runtime_minutes (typically a single-episode
-                    average) because the user can start watching the
-                    first episode as soon as it lands — they don't
-                    wait for the whole series. Quiet italic Fraunces,
-                    same line as the movie page's counterpart.
+                    Live "until in your library" line. Tracks the same
+                    state machine as the button itself; in the
+                    downloading state it shows live timeleft from
+                    Sonarr's queue (first-episode-of-first-season,
+                    since that's what determines when the show
+                    becomes watchable). See Aviary.WatchProgress.
                   --%>
                   <p
                     :if={
-                      show_state(@show, @sonarr_status) == :ready and
-                        Aviary.WatchTimeEstimate.for_runtime(@show.runtime_minutes)
+                      label =
+                        Aviary.WatchProgress.label(
+                          show_state(@show, @sonarr_status),
+                          @show.runtime_minutes,
+                          show_timeleft_seconds(@show, @sonarr_status)
+                        )
                     }
                     class="font-display italic text-muted text-xs"
                   >
-                    Roughly {Aviary.WatchTimeEstimate.for_runtime(@show.runtime_minutes)} minutes until watchable
+                    {label}
                   </p>
                 </div>
 
@@ -1032,7 +1035,7 @@ defmodule AviaryWeb.ShowsDetailLive do
   # finished. The button is disabled in this state via
   # caught_up?/1; the calendar widget on the same page tells them
   # when the next episode airs.
-  defp action_label(%{source: :discover}), do: "Watch"
+  defp action_label(%{source: :discover}), do: "Add to library"
 
   # Library show whose next_up is a TMDB-only episode (not yet
   # downloaded — could be unaired or aired-but-missing). Two flavors:
@@ -1495,6 +1498,25 @@ defmodule AviaryWeb.ShowsDetailLive do
       _ -> :ready
     end
   end
+
+  # Reach into Sonarr's queue for the first-episode-of-first-season's
+  # `timeleft` field, parse it to seconds. That episode is what
+  # `show_state/2` keys off of — the user can start watching as soon
+  # as it lands. Returns nil if there's no queue record yet (e.g.,
+  # Sonarr is still searching) so the label gracefully omits.
+  defp show_timeleft_seconds(show, status)
+       when not is_nil(status) and is_list(status.queue) do
+    with [{_, [first | _]} | _] <- show.episodes_by_season,
+         %{id: sonarr_episode_id} <- Map.get(status.episodes, {first.season, first.episode}, %{}),
+         record when not is_nil(record) <-
+           Enum.find(status.queue, &(&1["episodeId"] == sonarr_episode_id)) do
+      Aviary.WatchProgress.parse_timeleft(record["timeleft"])
+    else
+      _ -> nil
+    end
+  end
+
+  defp show_timeleft_seconds(_show, _status), do: nil
 
   # Looks up an episode's current queue record. Returns one of:
   #   {:ok, pct}           bytes actively transferring

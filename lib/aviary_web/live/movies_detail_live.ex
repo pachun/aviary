@@ -421,21 +421,26 @@ defmodule AviaryWeb.MoviesDetailLive do
                     state={movie_state(@movie, @radarr_status, @download_seen)}
                   />
                   <%!--
-                    Time-to-watchable line, only on the pre-download
-                    (:ready) state. Surfaces the fact that Watch on a
-                    discover item kicks off a download → import flow,
-                    not an instant play. Italic Fraunces, muted —
-                    same editorial voice as poster metadata.
-                    See Aviary.WatchTimeEstimate for the formula.
+                    Live "until in your library" line. Reads as a static
+                    estimate before the download starts, ticks down with
+                    each Radarr poll (queue.timeleft + import buffer)
+                    while downloading, and flips to "Almost in your
+                    library" once the import phase begins. Hidden in
+                    the playable / no-signal cases. See
+                    Aviary.WatchProgress for the state→string mapping.
                   --%>
                   <p
                     :if={
-                      movie_state(@movie, @radarr_status, @download_seen) == :ready and
-                        Aviary.WatchTimeEstimate.for_runtime(@movie.runtime_minutes)
+                      label =
+                        Aviary.WatchProgress.label(
+                          movie_state(@movie, @radarr_status, @download_seen),
+                          @movie.runtime_minutes,
+                          movie_timeleft_seconds(@radarr_status)
+                        )
                     }
                     class="font-display italic text-muted text-xs"
                   >
-                    Roughly {Aviary.WatchTimeEstimate.for_runtime(@movie.runtime_minutes)} minutes until watchable
+                    {label}
                   </p>
                 </div>
 
@@ -547,11 +552,18 @@ defmodule AviaryWeb.MoviesDetailLive do
           phx-click="watch"
           class="bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
         >
-          Watch
+          Add to library
         </button>
     <% end %>
     """
   end
+
+  # Extract Radarr's queue.timeleft as seconds, or nil if there's no
+  # queue record yet. See Aviary.WatchProgress for the parser.
+  defp movie_timeleft_seconds(%{queue: %{"timeleft" => t}}),
+    do: Aviary.WatchProgress.parse_timeleft(t)
+
+  defp movie_timeleft_seconds(_), do: nil
 
   ## State machine
 
