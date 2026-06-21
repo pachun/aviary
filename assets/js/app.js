@@ -372,7 +372,18 @@ const Marquee = {
 // the focus call as "in response to navigation" and pops the keyboard.
 const AutoFocus = {
   mounted() {
-    requestAnimationFrame(() => this.el.focus())
+    requestAnimationFrame(() => {
+      this.el.focus()
+      // Move cursor to the end of any pre-filled value. When the
+      // user navigates back to /search after clicking a result, the
+      // input remounts with their previous query pre-filled — the
+      // browser's default `.focus()` puts the caret at position 0,
+      // forcing them to End-key or click to the end before they can
+      // edit. Cursor-at-end matches desktop omnibox refocus behavior
+      // and lets the user keep typing where they left off.
+      const len = this.el.value.length
+      this.el.setSelectionRange(len, len)
+    })
   },
 }
 
