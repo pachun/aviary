@@ -323,8 +323,31 @@ defmodule Aviary.Sonarr do
       {:ok, series} ->
         # Widen monitoring if the caller is asking for more than what's
         # currently set. Never narrows.
-        if Keyword.get(opts, :monitor) == "all" and series["monitored"] != true do
-          update_series_monitoring(series["id"], true)
+        if Keyword.get(opts, :monitor) == "all" do
+          if series["monitored"] != true do
+            update_series_monitoring(series["id"], true)
+          end
+
+          # Critical: also flip every episode's monitored flag.
+          # update_series_monitoring only sets the SERIES-level flag.
+          # Without this, an existing series added via watch_episode
+          # (which sets monitor=none and then monitors only the one
+          # episode) stays mostly-unmonitored after a watch_show
+          # widen — and search_each_missing's `ep["monitored"] == true`
+          # filter matches only that one already-imported episode, so
+          # zero new searches fire. Net symptom: the followup says
+          # "broadening to series" in the log, but nothing actually
+          # downloads. Listing episodes + bulk-monitoring the
+          # unmonitored ones closes the gap.
+          unmonitored_ids =
+            series["id"]
+            |> list_episodes()
+            |> Enum.reject(&(&1["monitored"] == true))
+            |> Enum.map(& &1["id"])
+
+          if unmonitored_ids != [] do
+            monitor_episodes(unmonitored_ids, true)
+          end
         end
 
         {:ok, series}
