@@ -210,8 +210,19 @@ defmodule AviaryWeb.Layouts do
         pinned position — detaching the sticky. Putting pb on the
         inner div fixes this by including the breathing room in the
         sticky's bounds.
+
+        Top padding adds env(safe-area-inset-top) ONLY when there's
+        no sticky mobile top bar to handle it. Editorial publications
+        never let content run under the masthead — and aviary's brand
+        is editorial-museum, so the status bar should always sit on
+        paper rather than have content scroll beneath it. The wrapper's
+        bg-paper covers the safe area visually. Reset to pt-0 at sm:
+        since desktop has its own masthead handling the top spacing.
       --%>
-      <main class="px-4 sm:px-8 lg:px-12">
+      <main class={[
+        "px-4 sm:px-8 lg:px-12",
+        is_nil(@mobile_title) && "pt-[env(safe-area-inset-top)] sm:pt-0"
+      ]}>
         <div class="mx-auto max-w-[1100px] pb-28 sm:pb-24">
           {render_slot(@inner_block)}
         </div>

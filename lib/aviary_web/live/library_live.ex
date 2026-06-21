@@ -74,7 +74,7 @@ defmodule AviaryWeb.LibraryLive do
       --%>
       <nav
         :if={@has_both_libraries}
-        class="sticky top-0 sm:top-[108px] z-10 bg-paper flex items-baseline gap-6 py-3 mb-8 font-sans text-[0.7rem] tracking-[0.18em] uppercase"
+        class="sticky top-[env(safe-area-inset-top)] sm:top-[108px] z-10 bg-paper flex items-baseline gap-6 py-3 mb-8 font-sans text-[0.7rem] tracking-[0.18em] uppercase"
       >
         <.tab patch={~p"/library?type=shows"} active={@type == :shows}>Shows</.tab>
         <.tab patch={~p"/library?type=movies"} active={@type == :movies}>Movies</.tab>
