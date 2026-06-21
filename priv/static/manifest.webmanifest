@@ -1,7 +1,7 @@
 {
   "name": "Aviary",
   "short_name": "Aviary",
-  "start_url": "/shows",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#F2F0E7",
