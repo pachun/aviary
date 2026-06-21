@@ -115,11 +115,25 @@ defmodule AviaryWeb.Layouts do
             >
               <path d="M10 2 L2 10 L10 18" />
             </svg>
-            <span :if={@mobile_back_label} class="font-sans text-base leading-none">
+            <%!--
+              leading-tight (not leading-none) so descenders in
+              labels like "Library" don't clip against the
+              overflow-hidden of the parent.
+            --%>
+            <span :if={@mobile_back_label} class="font-sans text-base leading-tight">
               {@mobile_back_label}
             </span>
           </a>
-          <h1 class="absolute left-1/2 -translate-x-1/2 max-w-[60%] font-display text-base text-ink leading-none truncate text-center">
+          <%!--
+            leading-tight (not leading-none) because `truncate`
+            adds overflow:hidden and the line-box from leading-none
+            clips the descenders in "Settings" / "Yellowjackets" /
+            anything with a g, y, p, q. leading-tight (1.25) puts
+            the line-box just past the descender for Fraunces at
+            text-base; bar height stays the same because the row
+            keeps items-center vertical-alignment.
+          --%>
+          <h1 class="absolute left-1/2 -translate-x-1/2 max-w-[60%] font-display text-base text-ink leading-tight truncate text-center">
             {@mobile_title}
           </h1>
         </div>
