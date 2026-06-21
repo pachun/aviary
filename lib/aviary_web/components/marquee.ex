@@ -180,10 +180,30 @@ defmodule AviaryWeb.Components.Marquee do
           "ring-2 ring-transparent transition-all duration-200",
           "group-hover:ring-oxblood group-focus-visible:ring-oxblood"
         ]}>
+          <%!--
+            No `loading="lazy"` here. The marquee hook restores
+            scrollLeft from sessionStorage AFTER mount, so lazy-loaded
+            images that scrolled into view via JS would fetch
+            sequentially as each came into the viewport — which is
+            what produced the "images loading in one at a time" feel
+            on return visits to Discover (cache hits but still
+            staggered). Eager loading fires all fetches in parallel;
+            browser cache serves them at near-zero cost on revisits.
+
+            `decoding="async"` lets the browser decode all images in
+            parallel rather than blocking paint on each one in DOM
+            order. Already the default in most modern browsers but
+            being explicit avoids surprises.
+
+            `fetchpriority="high"` boosts the marquee thumbnails
+            against any background network traffic. Acceptable here
+            because they ARE the page's primary visual.
+          --%>
           <img
             src={thumbnail_src(@item)}
             alt={@item.title}
-            loading="lazy"
+            decoding="async"
+            fetchpriority="high"
             class="w-full h-full object-cover"
           />
           <%!--
