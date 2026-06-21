@@ -32,7 +32,14 @@ defmodule AviaryWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <div class="min-h-screen bg-paper text-ink antialiased">
+    <%!--
+      overflow-x-clip catches any rogue child wider than the viewport
+      so it can't trigger horizontal scroll on mobile. `clip` (not
+      `hidden`) is intentional — `hidden` establishes a new scrolling
+      container which would break the sticky masthead inside it; `clip`
+      just snips the overflow without creating that scroll context.
+    --%>
+    <div class="min-h-screen bg-paper text-ink antialiased overflow-x-clip">
       <%!--
         Sticky masthead so the nav stays reachable on long pages
         (discover scrolls past a viewport now). bg-paper keeps content
@@ -45,9 +52,20 @@ defmodule AviaryWeb.Layouts do
           rests on the same baseline as the nav text — same typographic
           rhythm an editorial layout would set for a small glyph in
           running copy.
+
+          Mobile-tight spacing: gap-3 between nav and gear (was gap-8)
+          so a 360px viewport doesn't overflow once you account for
+          four tracked-uppercase nav links plus the gear. Restores to
+          gap-8 at sm.
         --%>
-        <div class="mx-auto max-w-[1100px] flex items-baseline justify-between gap-8">
-          <nav class="flex items-baseline gap-8 text-[0.78rem] font-sans tracking-[0.15em] uppercase">
+        <div class="mx-auto max-w-[1100px] flex items-baseline justify-between gap-3 sm:gap-8">
+          <%!--
+            Mobile: smaller text + tighter tracking + tighter gap so
+            four nav links fit comfortably on a 360px-wide phone.
+            Restores to the editorial rhythm at sm: same 0.78rem
+            tracked-0.15em the rest of the design was built around.
+          --%>
+          <nav class="flex items-baseline gap-4 sm:gap-8 text-[0.65rem] sm:text-[0.78rem] font-sans tracking-[0.08em] sm:tracking-[0.15em] uppercase">
             <.section_link
               :if={@nav_visibility.home}
               href={~p"/home"}
