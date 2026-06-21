@@ -34,7 +34,13 @@ defmodule AviaryWeb.Components.CatalogGrid do
         loading="lazy"
         class={[
           "aspect-[2/3] w-full object-cover rounded-sm bg-rule",
-          "ring-2 ring-transparent transition-all duration-200",
+          # ring-inset renders the ring INSIDE the image box rather
+          # than 2px outset. Outset rings get clipped by the sticky
+          # sub-nav above the grid as items scroll under it — the top
+          # 2px of an item's ring disappears behind the bg-paper of
+          # the nav. Inset keeps the ring fully within the image
+          # bounds; reads as a framing line on the artwork.
+          "ring-2 ring-inset ring-transparent transition-all duration-200",
           "group-hover:ring-oxblood group-focus-visible:ring-oxblood"
         ]}
       />

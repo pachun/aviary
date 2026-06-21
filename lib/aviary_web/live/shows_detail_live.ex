@@ -387,11 +387,29 @@ defmodule AviaryWeb.ShowsDetailLive do
       Aviary.Library.remove(user.id, show.tmdb_id)
     end
 
+    # Landing destination after a remove. Staying on the now-orphaned
+    # detail page would force the user to navigate away themselves
+    # and read a banner like "removed from library" against the same
+    # poster they just removed. Better: drop them where the next
+    # action lives.
+    #
+    #   - any shows still in library      → /library?type=shows
+    #   - no shows, but movies in library → /library?type=movies
+    #   - neither                         → /discover
+    #
+    # Catalog.list_shows / list_movies are filtered by library_entries,
+    # so they see the post-remove state on this call.
+    destination =
+      cond do
+        Aviary.Catalog.list_shows(user) != [] -> ~p"/library?type=shows"
+        Aviary.Catalog.list_movies(user) != [] -> ~p"/library?type=movies"
+        true -> ~p"/discover"
+      end
+
     {:noreply,
      socket
-     |> assign(:in_library, false)
-     |> Aviary.Nav.refresh_visibility()
-     |> put_flash(:info, "#{show.title} removed from your library.")}
+     |> put_flash(:info, "#{show.title} removed from your library.")
+     |> push_navigate(to: destination)}
   end
 
   def handle_event("add_to_library", _, socket) do
