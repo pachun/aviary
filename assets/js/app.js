@@ -360,31 +360,16 @@ const Marquee = {
   },
 }
 
-// AutoFocus hook — focuses the element and parks the cursor at the
-// end of any pre-filled value. Works alongside the HTML `autofocus`
-// attribute on the same element:
-//
-//   - On REAL page navigation (mobile bottom tab → /search), the
-//     browser honors `autofocus` itself, which is critical on iOS
-//     Safari: iOS only pops the soft keyboard when focus happens
-//     synchronously in response to a user gesture. A JS .focus()
-//     call from the hook's mounted() runs LATER, after iOS has
-//     already decided the gesture is over — so the cursor lands
-//     in the field but the keyboard stays down. autofocus runs
-//     during the browser's initial parse and qualifies.
-//
-//   - On LV soft navigation, `autofocus` doesn't fire (the page
-//     wasn't reloaded), but the JS hook does — covering that path.
-//
-// requestAnimationFrame removed: the deferral was kicking the
-// focus() call off the user-gesture stack and that was breaking
-// mobile keyboard popup on the soft-nav path. Synchronous focus
-// keeps the gesture context intact where possible.
+// AutoFocus hook — focuses the element on mount and parks the cursor
+// at the end of any pre-filled value (e.g. return-navigation to
+// /search with the previous query preserved). Works on desktop.
+// Mobile (iOS Safari) won't pop the soft keyboard from this kind of
+// programmatic focus — that's an OS-level restriction we couldn't
+// get around without a same-page focus gesture; for /search the
+// user has to tap the field once after landing.
 const AutoFocus = {
   mounted() {
     this.el.focus()
-    // Cursor at end of any pre-filled value (e.g. back from a
-    // search result with the query preserved).
     const len = this.el.value.length
     this.el.setSelectionRange(len, len)
   },

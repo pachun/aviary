@@ -62,22 +62,28 @@ defmodule AviaryWeb.Layouts do
     --%>
     <div class="min-h-dvh bg-paper text-ink antialiased">
       <%!--
-        Mobile safe-area mask. When there's NO sticky top bar
-        (Home, Discover, Library, Search), nothing visually covers
-        the status-bar / notch zone — scrolling content would
-        otherwise rise UP into that area and the status bar's time
-        / wifi / battery glyphs would sit on top of marquee
-        thumbnails or grid posters. This fixed-position strip pins
-        a bg-paper background under the status bar so content
-        scrolls behind it cleanly.
+        Mobile safe-area mask — always rendered, always covering
+        the status-bar / notch zone with bg-paper. Without this:
 
-        Hidden when `mobile_title` is set, because in that case the
-        sticky top bar (its own pt-[env(safe-area-inset-top)] +
-        bg-paper) is already doing this job.
+          - Pages without a sticky top bar (Home, Discover, Library,
+            Search) have content scrolling UP into the notch area,
+            with iOS's time/wifi/battery glyphs sitting over poster
+            art.
+          - Pages WITH a sticky top bar (Settings, detail pages)
+            ALSO show this bug whenever the bar is in its faded-out
+            state (initial render before the user scrolls past the
+            body title): the bar's `opacity-0` makes its bg-paper
+            transparent too, so the safe area is uncovered.
+
+        This mask is unconditional, sits above content (z-30) and
+        below interactive chrome. Inline `height` instead of a
+        Tailwind class because `h-[env(safe-area-inset-top)]`
+        wasn't compiling reliably; the env() function with a 0px
+        fallback is unambiguous in raw CSS.
       --%>
       <div
-        :if={is_nil(@mobile_title)}
-        class="sm:hidden fixed top-0 inset-x-0 h-[env(safe-area-inset-top)] bg-paper z-30 pointer-events-none"
+        class="sm:hidden fixed top-0 inset-x-0 bg-paper z-30 pointer-events-none"
+        style="height: env(safe-area-inset-top, 0px);"
       >
       </div>
 
