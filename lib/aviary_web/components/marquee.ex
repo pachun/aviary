@@ -161,7 +161,15 @@ defmodule AviaryWeb.Components.Marquee do
   """
   def skeleton(assigns) do
     ~H"""
-    <div class="flex gap-3 sm:gap-4 p-1 pb-4">
+    <%!--
+      overflow-hidden clips the placeholder cards to the viewport so
+      mobile users can't drag-scroll the skeleton row right —
+      scrolling into placeholder cards reads as if there's content
+      to discover, but there isn't yet. When real items arrive the
+      actual marquee row (`<ul ... overflow-x-auto>`) takes over and
+      scrolling re-enables.
+    --%>
+    <div class="flex gap-3 sm:gap-4 p-1 pb-4 overflow-hidden">
       <div
         :for={_ <- 1..5}
         class="shrink-0 w-[200px] sm:w-[240px] md:w-[260px] aspect-video bg-rule/40 rounded-sm animate-pulse"
