@@ -915,21 +915,18 @@ defmodule Aviary.Jellyfin do
       "PlaySessionId" => session_id,
       "DeviceId" => "aviary-web",
       "VideoCodec" => "h264",
-      # AAC + EAC3 + AC3 (in preference order) so Jellyfin direct-
-      # plays the source's existing surround codec when possible
-      # (no audio transcode → preserves quality, less CPU on the
-      # tank). EAC3/AC3 are widely supported in HLS by Safari /
-      # Chrome / Firefox. AAC stays as the fallback when transcoding
-      # is needed.
-      "AudioCodec" => "aac,eac3,ac3",
+      "AudioCodec" => "aac",
       "SegmentContainer" => "ts",
-      # 6 = 5.1 surround. Households with stereo-only browsers
-      # downmix multichannel HLS automatically at the player level;
-      # there's no penalty for sending the surround stream. 7.1
-      # (8 channels) downmixes to 5.1 inside Jellyfin's transcoder
-      # if the source has more.
-      "MaxAudioChannels" => "6",
-      "TranscodingMaxAudioChannels" => "6"
+      # Stereo cap stays at 2 channels. An earlier change bumped this
+      # to 6 + added `eac3,ac3` to the codec list to enable household
+      # surround for Lovesac/5.1 setups — but Jellyfin's playback
+      # decision pipeline flipped some titles into a transcode path
+      # the browser couldn't fulfill, killing playback. The surround
+      # work needs a more careful re-introduction (probably matching
+      # per-source codec capabilities + a fallback chain), so it's
+      # reverted to the known-working minimum.
+      "MaxAudioChannels" => "2",
+      "TranscodingMaxAudioChannels" => "2"
     }
 
     "#{public_url()}/Videos/#{item_id}/master.m3u8?#{URI.encode_query(params_map)}"
