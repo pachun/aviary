@@ -70,6 +70,7 @@ defmodule AviaryWeb.CoreComponents do
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
+      phx-hook="AutoDismissFlash"
       role="alert"
       class={[
         "w-80 sm:w-96 bg-surface border border-rule shadow-md rounded-sm cursor-pointer",

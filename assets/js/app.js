@@ -375,6 +375,40 @@ const AutoFocus = {
   },
 }
 
+// AutoDismissFlash — after the flash mounts, wait long enough for the
+// user to read it (info: 4s, error: 6s — errors warrant more time)
+// and then fire the flash card's own phx-click. That click is already
+// wired to push `lv:clear-flash` AND run the slide-out transition, so
+// the auto-dismiss is visually identical to a manual dismiss; we're
+// just triggering it on a timer instead of waiting for the user.
+//
+// Hover pauses the timer — if the user is reading and not in a hurry,
+// the flash sticks around until they move the cursor off. Helpful for
+// longer error copy. Manual X-click cleanup is handled separately by
+// the existing phx-click.
+const AutoDismissFlash = {
+  mounted() {
+    const kind = this.el.id.replace("flash-", "")
+    const ms = kind === "error" ? 6000 : 4000
+    this.start(ms)
+    this.el.addEventListener("mouseenter", () => this.cancel())
+    this.el.addEventListener("mouseleave", () => this.start(ms))
+  },
+  start(ms) {
+    this.cancel()
+    this.timer = window.setTimeout(() => this.el.click(), ms)
+  },
+  cancel() {
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+  },
+  destroyed() {
+    this.cancel()
+  },
+}
+
 // MobileTopBar — controls the iOS-style fade-in of the sticky mobile
 // top bar. The bar starts at opacity-0 (hidden, inert). On mount we
 // look for an element marked `data-mobile-top-bar-trigger` in the
@@ -426,7 +460,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, HlsPlayer, Marquee, AutoFocus, MobileTopBar},
+  hooks: {...colocatedHooks, HlsPlayer, Marquee, AutoFocus, MobileTopBar, AutoDismissFlash},
 })
 
 // Show progress bar on live navigation and form submits
