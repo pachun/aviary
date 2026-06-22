@@ -514,29 +514,17 @@ defmodule AviaryWeb.ShowsDetailLive do
       Aviary.Library.remove(user.id, show.tmdb_id, "show")
     end
 
-    # Landing destination after a remove. Staying on the now-orphaned
-    # detail page would force the user to navigate away themselves
-    # and read a banner like "removed from library" against the same
-    # poster they just removed. Better: drop them where the next
-    # action lives.
-    #
-    #   - any shows still in library      → /library?type=shows
-    #   - no shows, but movies in library → /library?type=movies
-    #   - neither                         → /discover
-    #
-    # Catalog.list_shows / list_movies are filtered by library_entries,
-    # so they see the post-remove state on this call.
-    destination =
-      cond do
-        Aviary.Catalog.list_shows(user) != [] -> ~p"/library?type=shows"
-        Aviary.Catalog.list_movies(user) != [] -> ~p"/library?type=movies"
-        true -> ~p"/discover"
-      end
-
+    # Stay on the detail page. The "not in user's library" state has
+    # its own clean treatment now: big "Add to library" CTA + the
+    # "Watchable now" subtitle, no "Remove from library" chip. Acts
+    # as the undo affordance too — re-add is a single click. The
+    # earlier redirect was built before that UI existed; now there's
+    # no need to bounce the user anywhere.
     {:noreply,
      socket
-     |> put_flash(:info, "#{show.title} removed from your library.")
-     |> push_navigate(to: destination)}
+     |> assign(:in_library, false)
+     |> Aviary.Nav.refresh_visibility()
+     |> put_flash(:info, "#{show.title} removed from your library.")}
   end
 
   def handle_event("add_to_library", _, socket) do
@@ -665,6 +653,11 @@ defmodule AviaryWeb.ShowsDetailLive do
   attr :label, :string, required: true
   attr :disabled, :boolean, default: false
 
+  attr :click_event, :string,
+    default: "play",
+    doc:
+      "Phoenix event the big CTA fires. \"play\" (default) plays + adds to library; \"add_to_library\" just adds the show to the user's library without playing — used when the show isn't in their library yet so the affordance reads as the editorial save action, not a hidden play."
+
   defp top_action_button(assigns) do
     state = show_state(assigns.show, assigns.status)
     assigns = assign(assigns, :state, state)
@@ -700,7 +693,7 @@ defmodule AviaryWeb.ShowsDetailLive do
       <% _ -> %>
         <button
           type="button"
-          phx-click="play"
+          phx-click={@click_event}
           disabled={@disabled}
           class="bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
         >
@@ -806,32 +799,38 @@ defmodule AviaryWeb.ShowsDetailLive do
                 />
 
                 <div class="space-y-2">
+                  <%!--
+                    When this show isn't in the user's library yet,
+                    the big CTA is always "Add to library" (regardless
+                    of whether the files are on disk). Hiding the
+                    downloaded-vs-discover distinction at this level
+                    keeps the UI consistent — the only thing that
+                    changes is the time estimate below. The actual
+                    click handler swaps from `play` to `add_to_library`
+                    so we're not pretending to play something the user
+                    hasn't opted into yet.
+                  --%>
                   <.top_action_button
                     show={@show}
                     status={@sonarr_status}
-                    label={action_label(@show)}
-                    disabled={action_disabled?(@show)}
+                    label={if @in_library, do: action_label(@show), else: "Add to library"}
+                    disabled={if @in_library, do: action_disabled?(@show), else: false}
+                    click_event={if @in_library, do: "play", else: "add_to_library"}
                   />
                   <%!--
-                    Live "until in your library" line. Tracks the same
-                    state machine as the button itself; in the
-                    downloading state it shows live timeleft from
-                    Sonarr's queue (first-episode-of-first-season,
-                    since that's what determines when the show
-                    becomes watchable). See Aviary.WatchProgress.
+                    Subtitle. When the user already has it in their
+                    library: the existing state-machine label (download
+                    progress, "Almost watchable", etc.). When NOT in
+                    their library AND the source has files: "Watchable
+                    now" — same look as the discover-state label below,
+                    just different copy because the show's already
+                    available. Otherwise: the regular waiting label.
                   --%>
                   <p
-                    :if={
-                      label =
-                        Aviary.WatchProgress.label(
-                          show_state(@show, @sonarr_status),
-                          @show.runtime_minutes,
-                          show_timeleft_seconds(@show, @sonarr_status)
-                        )
-                    }
+                    :if={subtitle = subtitle_label(@show, @sonarr_status, @in_library)}
                     class="font-display italic text-muted text-xs"
                   >
-                    {label}
+                    {subtitle}
                   </p>
                 </div>
 
@@ -857,6 +856,11 @@ defmodule AviaryWeb.ShowsDetailLive do
                   invited direction), Remove brightens to ink
                   (neutral — destructive but not alarming).
                 --%>
+                <%!--
+                  Secondary chips. "Add to library" is no longer here —
+                  the big CTA owns that action when the show isn't in
+                  the user's library. Remove + Recommend stay.
+                --%>
                 <div :if={@show.source == :library and @show.tmdb_id} class="mt-1 flex flex-wrap gap-2 items-center">
                   <button
                     :if={@in_library}
@@ -868,27 +872,12 @@ defmodule AviaryWeb.ShowsDetailLive do
                     Remove from library
                   </button>
                   <button
-                    :if={not @in_library}
-                    type="button"
-                    phx-click="add_to_library"
-                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                  >
-                    Add to library
-                  </button>
-                  <%!--
-                    Recommend chip — secondary action sitting alongside
-                    Add/Remove. Opens a popover with the household
-                    members (avatar + name + checkbox) so the sender
-                    can fan out the same recommendation to multiple
-                    people in one go.
-                  --%>
-                  <button
                     :if={@household_users != []}
                     type="button"
                     phx-click="open_recommend_popover"
                     class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
-                    Recommend
+                    Recommend to family
                   </button>
                 </div>
               </div>
@@ -1372,6 +1361,25 @@ defmodule AviaryWeb.ShowsDetailLive do
   # finished. The button is disabled in this state via
   # caught_up?/1; the calendar widget on the same page tells them
   # when the next episode airs.
+  # The line under the big CTA. Three branches:
+  #   * Not in user's library + show source has files on disk →
+  #     "Watchable now" (signals that hitting Add to library
+  #     immediately unlocks watching, no wait).
+  #   * Not in user's library + show source is discover → the
+  #     existing WatchProgress.label/3 (returns the "Roughly N
+  #     minutes until watchable" estimate before any download
+  #     starts, or download progress once it does).
+  #   * In user's library → the existing label.
+  defp subtitle_label(%{source: :library}, _status, false), do: "Watchable now"
+
+  defp subtitle_label(show, status, _in_library) do
+    Aviary.WatchProgress.label(
+      show_state(show, status),
+      show.runtime_minutes,
+      show_timeleft_seconds(show, status)
+    )
+  end
+
   defp action_label(%{source: :discover}), do: "Add to library"
 
   # Library show whose next_up is a TMDB-only episode (not yet

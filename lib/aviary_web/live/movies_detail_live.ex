@@ -284,9 +284,11 @@ defmodule AviaryWeb.MoviesDetailLive do
     end
   end
 
-  # Per-user library curation. Mirrors shows_detail — see that file's
-  # remove_from_library handler for the design rationale + redirect
-  # priority.
+  # Per-user library curation. See shows_detail's remove handler for
+  # the full rationale — short version: stay on the detail page,
+  # which now renders the "not in your library" state cleanly (big
+  # Add-to-library CTA + Watchable now subtitle), so a redirect
+  # somewhere else is unnecessary.
   def handle_event("remove_from_library", _, socket) do
     user = socket.assigns.current_user
     movie = socket.assigns.movie
@@ -295,21 +297,11 @@ defmodule AviaryWeb.MoviesDetailLive do
       Aviary.Library.remove(user.id, movie.tmdb_id, "movie")
     end
 
-    # Landing destination after a remove:
-    #   - movies still in library      → /library?type=movies
-    #   - no movies, shows in library  → /library?type=shows
-    #   - neither                      → /discover
-    destination =
-      cond do
-        Aviary.Catalog.list_movies(user) != [] -> ~p"/library?type=movies"
-        Aviary.Catalog.list_shows(user) != [] -> ~p"/library?type=shows"
-        true -> ~p"/discover"
-      end
-
     {:noreply,
      socket
-     |> put_flash(:info, "#{movie.title} removed from your library.")
-     |> push_navigate(to: destination)}
+     |> assign(:in_library, false)
+     |> Aviary.Nav.refresh_visibility()
+     |> put_flash(:info, "#{movie.title} removed from your library.")}
   end
 
   def handle_event("add_to_library", _, socket) do
@@ -539,31 +531,35 @@ defmodule AviaryWeb.MoviesDetailLive do
                   the state machine progresses.
                 --%>
                 <div class="space-y-2">
+                  <%!--
+                    See shows_detail's call site for full context. Big
+                    CTA is "Add to library" when this movie isn't in
+                    the user's library yet, regardless of whether the
+                    files are downloaded — the only thing that changes
+                    is the subtitle below. The click handler swaps too:
+                    `add_to_library` for downloaded-but-not-saved (just
+                    persist the row, no Radarr roundtrip) vs `watch`
+                    for discover (trigger the Radarr request).
+                  --%>
                   <.movie_action_button
                     movie={@movie}
                     state={movie_state(@movie, @radarr_status, @download_seen)}
+                    label={movie_action_label(@movie, @in_library)}
+                    click_event={movie_action_click_event(@movie, @in_library)}
                   />
-                  <%!--
-                    Live "until in your library" line. Reads as a static
-                    estimate before the download starts, ticks down with
-                    each Radarr poll (queue.timeleft + import buffer)
-                    while downloading, and flips to "Almost in your
-                    library" once the import phase begins. Hidden in
-                    the playable / no-signal cases. See
-                    Aviary.WatchProgress for the state→string mapping.
-                  --%>
                   <p
                     :if={
-                      label =
-                        Aviary.WatchProgress.label(
-                          movie_state(@movie, @radarr_status, @download_seen),
-                          @movie.runtime_minutes,
-                          movie_timeleft_seconds(@radarr_status)
+                      subtitle =
+                        movie_subtitle_label(
+                          @movie,
+                          @radarr_status,
+                          @download_seen,
+                          @in_library
                         )
                     }
                     class="font-display italic text-muted text-xs"
                   >
-                    {label}
+                    {subtitle}
                   </p>
                 </div>
 
@@ -573,6 +569,7 @@ defmodule AviaryWeb.MoviesDetailLive do
                   treatment + same hover semantics (Add → oxblood
                   invitation, Remove → neutral ink).
                 --%>
+                <%!-- "Add to library" chip removed — big CTA owns it. --%>
                 <div :if={@movie.source == :library and @movie.tmdb_id} class="mt-1 flex flex-wrap gap-2 items-center">
                   <button
                     :if={@in_library}
@@ -584,20 +581,12 @@ defmodule AviaryWeb.MoviesDetailLive do
                     Remove from library
                   </button>
                   <button
-                    :if={not @in_library}
-                    type="button"
-                    phx-click="add_to_library"
-                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-                  >
-                    Add to library
-                  </button>
-                  <button
                     :if={@household_users != []}
                     type="button"
                     phx-click="open_recommend_popover"
                     class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
-                    Recommend
+                    Recommend to family
                   </button>
                 </div>
               </div>
@@ -715,24 +704,20 @@ defmodule AviaryWeb.MoviesDetailLive do
     """
   end
 
-  # Top-of-page action button — Play for library, the Radarr state
-  # machine for discover. Mirrors top_action_button/1 in
-  # ShowsDetailLive but for a movie (no Resume vs Continue branching,
-  # no caught-up special case).
+  # Top-of-page action button. Label + click_event are passed in so
+  # the call site can swap between "Play"/"Resume" + `play` (in-library
+  # downloaded), "Add to library" + `add_to_library` (downloaded but
+  # not in this user's library), and "Add to library" + `watch` (not
+  # downloaded — triggers Radarr). The transitional states still
+  # render their own status pills regardless.
   attr :movie, :map, required: true
   attr :state, :any, required: true
+  attr :label, :string, required: true
+  attr :click_event, :string, required: true
 
   defp movie_action_button(assigns) do
     ~H"""
     <%= case @state do %>
-      <% :playable -> %>
-        <button
-          type="button"
-          phx-click="play"
-          class="bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-        >
-          {if @movie.resume_seconds, do: "Resume", else: "Play"}
-        </button>
       <% {:downloading, pct} -> %>
         <div class="relative overflow-hidden inline-block bg-oxblood/20 text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm tabular-nums">
           <span
@@ -753,10 +738,10 @@ defmodule AviaryWeb.MoviesDetailLive do
       <% _ -> %>
         <button
           type="button"
-          phx-click="watch"
+          phx-click={@click_event}
           class="bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-7 py-3 rounded-sm cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
         >
-          Add to library
+          {@label}
         </button>
     <% end %>
     """
@@ -768,6 +753,35 @@ defmodule AviaryWeb.MoviesDetailLive do
     do: Aviary.WatchProgress.parse_timeleft(t)
 
   defp movie_timeleft_seconds(_), do: nil
+
+  # Big CTA label. When the movie is in the user's library AND has
+  # files, fall back to the Play/Resume affordance. Otherwise the
+  # label is always "Add to library" — same vocabulary whether the
+  # files are on disk yet or not.
+  defp movie_action_label(%{resume_seconds: r}, true) when is_number(r) and r > 0, do: "Resume"
+  defp movie_action_label(_movie, true), do: "Play"
+  defp movie_action_label(_movie, false), do: "Add to library"
+
+  # Click event paired with the label. Discover-source movies trigger
+  # Radarr via `watch`; library-source movies that the user hasn't
+  # added yet just persist the library_entries row via
+  # `add_to_library`. In-library + playable goes through `play`.
+  defp movie_action_click_event(_movie, true), do: "play"
+  defp movie_action_click_event(%{source: :library}, false), do: "add_to_library"
+  defp movie_action_click_event(_movie, false), do: "watch"
+
+  # Subtitle under the big CTA. When not in user library + already
+  # downloaded → "Watchable now"; otherwise the regular progress
+  # label (returns nil for :playable so in-library shows no label).
+  defp movie_subtitle_label(%{source: :library}, _status, _seen, false), do: "Watchable now"
+
+  defp movie_subtitle_label(movie, status, seen, _in_library) do
+    Aviary.WatchProgress.label(
+      movie_state(movie, status, seen),
+      movie.runtime_minutes,
+      movie_timeleft_seconds(status)
+    )
+  end
 
   ## State machine
 
