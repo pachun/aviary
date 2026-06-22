@@ -299,13 +299,18 @@ defmodule AviaryWeb.Layouts do
             icon_outline="hero-magnifying-glass"
             icon_solid="hero-magnifying-glass-solid"
           />
+          <%!--
+            Mobile Settings tab is always a gear glyph — photos in
+            a tab bar break iOS HIG / Material conventions and read
+            as a foreign element among the other icon tabs. Avatar
+            usage stays on the desktop masthead only.
+          --%>
           <.tab_bar_link
             href={~p"/settings"}
             active={@current_section == "settings"}
             label="Settings"
             icon_outline="hero-cog-6-tooth"
             icon_solid="hero-cog-6-tooth-solid"
-            avatar_user={@current_user}
           />
         </div>
       </nav>
@@ -346,20 +351,12 @@ defmodule AviaryWeb.Layouts do
   attr :icon_outline, :string, required: true, doc: "heroicon name for the inactive state"
   attr :icon_solid, :string, required: true, doc: "heroicon name for the active state"
 
-  attr :avatar_user, :map,
-    default: nil,
-    doc:
-      "When set, the tab renders the user's avatar (circular img with initials fallback) INSTEAD of the icon. Used for the Settings tab so the family member's face replaces the gear glyph."
-
   defp tab_bar_link(assigns) do
     ~H"""
     <%!--
-      Single tab in the mobile bottom bar. iOS HIG shape: icon (or
-      user avatar) stacked above a small text label, full-width touch
-      target. Outline icon flips to solid when active; color shifts
-      from muted to oxblood. When `avatar_user` is set, the icon is
-      replaced by a circular avatar (which still gets an oxblood ring
-      on active to mirror the icon's color treatment).
+      Single tab in the mobile bottom bar. iOS HIG shape: icon stacked
+      above a small text label, full-width touch target. Outline icon
+      flips to solid when active; color shifts from muted to oxblood.
 
       flex-1 spreads tabs evenly across the bar regardless of how
       many render (3, 4, or 5 depending on nav_visibility).
@@ -376,11 +373,7 @@ defmodule AviaryWeb.Layouts do
         !@active && "text-muted hover:text-ink"
       ]}
     >
-      <%= if @avatar_user do %>
-        <.user_avatar user={@avatar_user} size_class="size-6" active={@active} />
-      <% else %>
-        <.icon name={if @active, do: @icon_solid, else: @icon_outline} class="size-6" />
-      <% end %>
+      <.icon name={if @active, do: @icon_solid, else: @icon_outline} class="size-6" />
       <span class="font-sans text-[0.65rem] leading-none">{@label}</span>
     </a>
     """
@@ -393,14 +386,13 @@ defmodule AviaryWeb.Layouts do
   @doc """
   Circular avatar for a Jellyfin user. Renders an `<img>` proxied via
   /user-image when the user has a PrimaryImageTag set in Jellyfin;
-  falls back to a circle with their first initial in display serif
-  when they don't. Cache-busted by the image tag in the URL.
+  falls back to the settings gear icon when they don't — keeps the
+  rest position visually consistent with the pre-avatar design for
+  users who haven't uploaded a photo yet. Cache-busted by the image
+  tag in the URL.
   """
   def user_avatar(assigns) do
-    assigns =
-      assigns
-      |> assign(:has_image, !is_nil(Map.get(assigns.user, :primary_image_tag)))
-      |> assign(:initial, assigns.user.username |> String.first() |> String.upcase())
+    assigns = assign(assigns, :has_image, !is_nil(Map.get(assigns.user, :primary_image_tag)))
 
     ~H"""
     <%= if @has_image do %>
@@ -414,16 +406,10 @@ defmodule AviaryWeb.Layouts do
         ]}
       />
     <% else %>
-      <span
-        aria-hidden="true"
-        class={[
-          @size_class,
-          "rounded-full bg-rule text-ink flex items-center justify-center font-display text-xs leading-none",
-          @active && "ring-2 ring-oxblood ring-offset-2 ring-offset-paper"
-        ]}
-      >
-        {@initial}
-      </span>
+      <.icon
+        name="hero-cog-6-tooth"
+        class={[@size_class, "text-muted hover:text-oxblood transition-colors duration-200"]}
+      />
     <% end %>
     """
   end
