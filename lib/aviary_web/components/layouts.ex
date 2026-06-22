@@ -212,18 +212,28 @@ defmodule AviaryWeb.Layouts do
           </nav>
 
           <%!--
-            Settings entry-point — user's Jellyfin avatar, circular,
-            with the gear-icon fallback to initials when there's no
-            avatar set. Links to /settings.
+            Settings entry-point — plain text link of the signed-in
+            user's name, styled with the same tracked-uppercase
+            rhythm as the section nav-links on the left, so it reads
+            as part of the same typographic system rather than a
+            bolted-on profile chip. Avatars + gears reserved for
+            the settings page itself (the larger profile card) and
+            the mobile tab bar respectively; the desktop masthead
+            stays pure typography.
+
+            The wrapping span sets the same font-size + tracking +
+            uppercase that the nav <nav> applies to its section_link
+            children — without it the username text would inherit
+            from page defaults instead.
           --%>
-          <a
+          <span
             :if={@current_user}
-            href={~p"/settings"}
-            aria-label="Settings"
-            class="focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-full"
+            class="text-[0.78rem] font-sans tracking-[0.15em] uppercase"
           >
-            <.user_avatar user={@current_user} size_class="size-6" />
-          </a>
+            <.section_link href={~p"/settings"} active={@current_section == "settings"}>
+              {@current_user.username}
+            </.section_link>
+          </span>
         </div>
       </header>
 
