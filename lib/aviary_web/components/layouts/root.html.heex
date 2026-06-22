@@ -93,6 +93,29 @@
         });
       })();
     </script>
+
+    <%!--
+      iOS install gate. Family members are on iPhones; if they hit the
+      login screen via a normal Safari tab (not from the home-screen
+      icon), we want them in the full PWA, not a browser tab. So the
+      login template renders TWO panels — one with the form and one
+      with install instructions — and this script sets a data
+      attribute on <html> synchronously so the right one shows before
+      paint. iOS Safari + not standalone → install prompt; everything
+      else (desktop, Android, or already-installed PWA) → form.
+    --%>
+    <script>
+      (() => {
+        const ua = navigator.userAgent || "";
+        const isIOS = /iPhone|iPad|iPod/.test(ua) && !window.MSStream;
+        const isStandalone =
+          window.matchMedia("(display-mode: standalone)").matches ||
+          window.navigator.standalone === true;
+        if (isIOS && !isStandalone) {
+          document.documentElement.setAttribute("data-needs-install", "true");
+        }
+      })();
+    </script>
   </head>
   <body>
     {@inner_content}

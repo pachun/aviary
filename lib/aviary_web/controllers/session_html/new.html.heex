@@ -1,22 +1,149 @@
 <%!--
-  Pre-auth screen: form anchored toward the TOP of the viewport
-  (items-start + pt-16/sm:pt-32). Vertical centering looked OK on
-  desktop but on mobile it pushed the form low enough that the
-  iOS soft keyboard came up over the Sign-In button. With the form
-  near the top, the keyboard just covers blank space below — the
-  fields and button stay visible. Generous top padding keeps it from
-  feeling glued to the very top edge.
+  Pre-auth screen — TWO panels rendered:
+  1) The install prompt, shown only when `<html data-needs-install>`
+     is set (iOS Safari + not yet installed to home screen).
+  2) The login form, shown otherwise (desktop, Android, or
+     already-installed PWA on iOS).
+
+  The data attribute is set synchronously in root.html.heex before
+  paint, so the right panel is visible from frame one. No flash.
 --%>
+<style>
+  /* By default the install prompt is hidden; the form shows. */
+  .pwa-install-prompt { display: none; }
+  /* iOS Safari, not standalone: flip them. */
+  html[data-needs-install="true"] .pwa-install-prompt { display: flex; }
+  html[data-needs-install="true"] .pwa-login-panel { display: none; }
+</style>
+
 <div class="bg-paper text-ink antialiased flex flex-col min-h-dvh">
-  <main class="flex-1 flex justify-center items-start px-6 pt-16 sm:pt-32">
+  <%!--
+    Install prompt panel (hidden by default; shown on iOS Safari +
+    not standalone). Editorial styling matches the rest of aviary:
+    serif display heading, italic Fraunces sub, tracked-uppercase
+    step numbers. The Share icon is inline SVG so we don't depend
+    on any external asset.
+  --%>
+  <main class="pwa-install-prompt flex-1 justify-center items-start px-6 pt-12 sm:pt-24 pb-12 flex-col">
+    <div class="w-full max-w-md mx-auto">
+      <p
+        :if={@custom_domain}
+        class="font-sans font-bold tracking-[0.15em] uppercase text-center text-ink text-base mb-4"
+      >
+        {@custom_domain}
+      </p>
+
+      <h1 class="font-display text-3xl sm:text-4xl text-ink leading-tight text-center mb-3">
+        Add to your home screen
+      </h1>
+      <p class="font-display italic text-muted text-center mb-10 leading-relaxed">
+        For the best experience, install this as an app first. It only takes a second.
+      </p>
+
+      <ol class="flex flex-col gap-6">
+        <li class="flex items-start gap-4">
+          <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-1">01</span>
+          <div class="flex-1">
+            <p class="text-ink leading-snug">
+              Tap the menu button in the bottom-right of Safari.
+            </p>
+            <div class="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border border-rule bg-surface">
+              <%!-- Three-dot menu glyph (the Liquid Glass "…" button). --%>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                class="size-5 text-ink"
+              >
+                <circle cx="5" cy="12" r="1.5" />
+                <circle cx="12" cy="12" r="1.5" />
+                <circle cx="19" cy="12" r="1.5" />
+              </svg>
+              <span class="font-sans text-xs text-muted">the "…" icon</span>
+            </div>
+          </div>
+        </li>
+
+        <li class="flex items-start gap-4">
+          <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-1">02</span>
+          <div class="flex-1">
+            <p class="text-ink leading-snug">
+              Tap <strong>Share</strong> in the menu that opens.
+            </p>
+            <div class="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border border-rule bg-surface">
+              <%!-- iOS Share glyph: square with up-arrow. --%>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                class="size-5 text-ink"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25" />
+              </svg>
+              <span class="font-sans text-xs text-muted">the share icon</span>
+            </div>
+          </div>
+        </li>
+
+        <li class="flex items-start gap-4">
+          <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-1">03</span>
+          <div class="flex-1">
+            <p class="text-ink leading-snug">
+              In the bottom row of options, tap the circle with the
+              down arrow — the last icon in the row.
+            </p>
+            <div class="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border border-rule bg-surface">
+              <%!-- Circle with down arrow. --%>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                class="size-5 text-ink"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5v9m0 0 3-3m-3 3-3-3" />
+              </svg>
+              <span class="font-sans text-xs text-muted">more options</span>
+            </div>
+          </div>
+        </li>
+
+        <li class="flex items-start gap-4">
+          <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-1">04</span>
+          <div class="flex-1">
+            <p class="text-ink leading-snug">
+              Tap <strong>Add to Home Screen</strong> at the bottom of
+              the modal that opens.
+            </p>
+          </div>
+        </li>
+
+        <li class="flex items-start gap-4">
+          <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-1">05</span>
+          <div class="flex-1">
+            <p class="text-ink leading-snug">
+              Open the new icon from your home screen to sign in.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <p class="font-display italic text-muted/80 text-sm text-center mt-12 leading-relaxed">
+        Already installed? Open the app from your home screen instead of Safari.
+      </p>
+    </div>
+  </main>
+
+  <%!--
+    Login panel (default). Form anchored toward the top so the iOS
+    keyboard doesn't push the Sign-In button below the fold.
+  --%>
+  <main class="pwa-login-panel flex-1 flex justify-center items-start px-6 pt-16 sm:pt-32">
     <div class="w-full max-w-sm">
-      <%!--
-        Custom-domain banner: when PHX_HOST is set to a real domain
-        (e.g. pachulski.tv) rather than the tailscale URL, show it in
-        bold tracked uppercase above the form. Gives family members
-        landing on the public URL an immediate "yes, this is OUR
-        thing" cue before they enter credentials.
-      --%>
       <p
         :if={@custom_domain}
         class="font-sans font-bold tracking-[0.15em] uppercase text-center text-ink text-base mb-6"
@@ -63,12 +190,9 @@
 </div>
 
 <%!--
-  Belt-and-suspenders autofocus. The `autofocus` attribute alone works
-  on desktop and most modern mobile browsers, but a few mobile envs
-  (older iOS, embedded webviews) ignore it. The script call lands in
-  the same DOMContentLoaded window, so where autofocus works it's a
-  no-op, and where it doesn't, the explicit .focus() picks up the
-  slack.
+  Autofocus for the login panel only. When the install prompt is the
+  one showing, the login field is display:none and focus calls are
+  no-ops anyway.
 --%>
 <script>
   document.addEventListener("DOMContentLoaded", () => {
