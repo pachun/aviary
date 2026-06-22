@@ -809,6 +809,11 @@ defmodule Aviary.Jellyfin do
       lang: stream["Language"] || "und",
       label: stream["DisplayTitle"] || stream["Title"] || "Audio",
       default: stream["IsDefault"] == true,
+      # Channel count drives the surround-preference pick in
+      # default_audio_index — higher is better (5.1 > stereo).
+      # Default to 0 when missing so multichannel tracks always
+      # outrank a track without metadata.
+      channels: stream["Channels"] || 0,
       description?: audio_description?(stream)
     }
   end
@@ -843,18 +848,38 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
-  Picks the audio stream index aviary should default to: prefers a
-  non-description track marked `IsDefault`, falls back to the first
-  non-description track, then any track at all. Returns nil when the
-  list is empty — callers should then omit `AudioStreamIndex` from
-  the HLS URL and let Jellyfin pick.
+  Picks the audio stream index aviary should default to. Selection
+  priority (highest first):
+
+    1. Most channels (5.1 > stereo). Households with surround setups
+       prefer the multichannel track; stereo-only browsers downmix
+       the multichannel stream automatically so there's no penalty
+       for picking it as the default.
+    2. Among same-channel-count tracks, prefer the one Jellyfin
+       marks `IsDefault`.
+    3. Among same-channel + same-default tracks, take the first by
+       order in the file.
+
+  Audio-description tracks are excluded before sorting. Returns nil
+  when the list is empty.
   """
   def default_audio_index([]), do: nil
 
   def default_audio_index(streams) do
     non_desc = Enum.reject(streams, & &1.description?)
-    default = Enum.find(non_desc, & &1.default) || List.first(non_desc) || List.first(streams)
-    default && default.index
+
+    chosen =
+      (non_desc != [] && non_desc) || streams
+
+    chosen
+    |> Enum.sort_by(
+      fn s -> {-s.channels, if(s.default, do: 0, else: 1), s.index} end
+    )
+    |> List.first()
+    |> case do
+      nil -> nil
+      track -> track.index
+    end
   end
 
   @doc """
@@ -890,10 +915,21 @@ defmodule Aviary.Jellyfin do
       "PlaySessionId" => session_id,
       "DeviceId" => "aviary-web",
       "VideoCodec" => "h264",
-      "AudioCodec" => "aac",
+      # AAC + EAC3 + AC3 (in preference order) so Jellyfin direct-
+      # plays the source's existing surround codec when possible
+      # (no audio transcode → preserves quality, less CPU on the
+      # tank). EAC3/AC3 are widely supported in HLS by Safari /
+      # Chrome / Firefox. AAC stays as the fallback when transcoding
+      # is needed.
+      "AudioCodec" => "aac,eac3,ac3",
       "SegmentContainer" => "ts",
-      "MaxAudioChannels" => "2",
-      "TranscodingMaxAudioChannels" => "2"
+      # 6 = 5.1 surround. Households with stereo-only browsers
+      # downmix multichannel HLS automatically at the player level;
+      # there's no penalty for sending the surround stream. 7.1
+      # (8 channels) downmixes to 5.1 inside Jellyfin's transcoder
+      # if the source has more.
+      "MaxAudioChannels" => "6",
+      "TranscodingMaxAudioChannels" => "6"
     }
 
     "#{public_url()}/Videos/#{item_id}/master.m3u8?#{URI.encode_query(params_map)}"
