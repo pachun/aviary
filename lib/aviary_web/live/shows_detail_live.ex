@@ -1257,14 +1257,20 @@ defmodule AviaryWeb.ShowsDetailLive do
       <div
         :if={@recommend_popover_open}
         class="fixed inset-0 z-50 flex items-center justify-center px-4"
-        phx-click="close_recommend_popover"
       >
-        <div class="absolute inset-0 bg-ink/60 backdrop-blur-sm"></div>
+        <%!--
+          Backdrop owns the close-on-click. Modal box deliberately has
+          no phx-click of its own — that's what lets buttons inside it
+          fire their own phx-click handlers without us having to fight
+          event-propagation order.
+        --%>
         <div
-          class="relative z-10 w-full max-w-sm bg-paper rounded-sm shadow-xl border border-rule p-6"
-          phx-click-away="close_recommend_popover"
-          onclick="event.stopPropagation()"
+          class="absolute inset-0 bg-ink/60 backdrop-blur-sm cursor-pointer"
+          phx-click="close_recommend_popover"
+          aria-label="Close"
         >
+        </div>
+        <div class="relative z-10 w-full max-w-sm bg-paper rounded-sm shadow-xl border border-rule p-6">
           <div class="flex items-baseline justify-between mb-4">
             <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted">
               Recommend to
