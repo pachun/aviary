@@ -83,28 +83,6 @@ defmodule AviaryWeb.HomeLive do
       --%>
       <div class="pt-2 space-y-12">
         <%!--
-          Family Recommended — items household members have sent you
-          that you haven't watched yet AND haven't dismissed. Sender
-          avatars stack in the bottom-right of each thumbnail. X on
-          hover removes (per-item dismissal — doesn't bother you
-          with re-recs of the same item from anyone).
-        --%>
-        <section :if={@recommendations != []}>
-          <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
-            Family Recommended
-          </h2>
-          <Marquee.row
-            items={@recommendations}
-            from="home"
-            key="home:recommended"
-            dismiss_event="dismiss_recommendation"
-            dismissible
-          >
-            <:empty></:empty>
-          </Marquee.row>
-        </section>
-
-        <%!--
           Continue Watching only renders when populated. Empty section
           with a "nothing in progress" message was noise; same pattern
           as Upcoming below — section presence itself is the signal.
@@ -162,6 +140,35 @@ defmodule AviaryWeb.HomeLive do
             </.link>
           </li>
         </ul>
+        </section>
+
+        <%!--
+          Family Recommended — items household members have sent the
+          user that they haven't watched yet, haven't dismissed, AND
+          don't already have in their library (already-in-library
+          recs are filtered out; see Aviary.Recommendations.list_for_marquee).
+          Sender avatars stack in the bottom-right of each thumbnail.
+          X on hover removes (per-item dismissal — doesn't bother
+          them with re-recs of the same item from anyone).
+
+          Placed AFTER Continue Watching + Upcoming because those
+          are higher-priority signals (what the user is mid-watch,
+          what's dropping for them this week) than a family member's
+          suggestion.
+        --%>
+        <section :if={@recommendations != []}>
+          <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
+            Family Recommended
+          </h2>
+          <Marquee.row
+            items={@recommendations}
+            from="home"
+            key="home:recommended"
+            dismiss_event="dismiss_recommendation"
+            dismissible
+          >
+            <:empty></:empty>
+          </Marquee.row>
         </section>
       </div>
     </Layouts.app>

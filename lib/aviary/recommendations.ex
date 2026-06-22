@@ -176,6 +176,12 @@ defmodule Aviary.Recommendations do
     user
     |> Map.fetch!(:id)
     |> list_active_for_user()
+    # Recommending something the recipient already has in their
+    # library is noise — they don't need a sender's avatar in their
+    # face for a show they're actively watching. Filtered out at
+    # display time only (the DB row stays, so it can come back if
+    # they ever remove from library and re-discover via the rec).
+    |> Enum.reject(&Aviary.Library.member?(user.id, &1.tmdb_id))
     |> Enum.map(fn rec ->
       metadata = resolve_metadata(rec, user)
 
@@ -188,6 +194,18 @@ defmodule Aviary.Recommendations do
       end
     end)
     |> Enum.reject(&is_nil/1)
+  end
+
+  @doc """
+  Same as list_active_for_user/1 but also drops anything the user
+  already has in their library. Used by Aviary.Nav.visibility — Home
+  shouldn't appear "for the rec row" if every active rec is already
+  in the library and would be filtered from view anyway.
+  """
+  def list_active_for_user_excluding_library(user_id) do
+    user_id
+    |> list_active_for_user()
+    |> Enum.reject(&Aviary.Library.member?(user_id, &1.tmdb_id))
   end
 
   defp resolve_metadata(%{tmdb_id: tmdb_id, kind: "show"}, user) do

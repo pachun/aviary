@@ -34,11 +34,13 @@ defmodule Aviary.Nav do
           # library — same gate the Library page applies.
           Task.async(fn -> Catalog.list_shows(user) end),
           Task.async(fn -> Catalog.list_movies(user) end),
-          # Family Recommended row also gates Home visibility — if
-          # you have no CW + no Upcoming but someone recommended you
-          # a show, the Home tab should still appear so you can see
-          # the rec.
-          Task.async(fn -> Aviary.Recommendations.list_active_for_user(user.id) end)
+          # Family Recommended row also gates Home visibility. Filter
+          # by "not in library" so a Home tab doesn't appear just
+          # because every active rec is for a show the user already
+          # has (those would be hidden from the row anyway).
+          Task.async(fn ->
+            Aviary.Recommendations.list_active_for_user_excluding_library(user.id)
+          end)
         ],
         15_000
       )
