@@ -72,23 +72,32 @@ defmodule AviaryWeb.LibraryLive do
         z-10 puts it below the masthead (z-20) so they don't overlap.
         bg-paper + vertical padding so content scrolls cleanly behind.
       --%>
-      <nav
-        :if={@has_both_libraries}
-        class="sticky top-0 sm:top-[108px] z-10 bg-paper flex items-baseline gap-6 py-3 mb-8 font-sans text-[0.7rem] tracking-[0.18em] uppercase"
-      >
-        <.tab patch={~p"/library?type=shows"} active={@type == :shows}>Shows</.tab>
-        <.tab patch={~p"/library?type=movies"} active={@type == :movies}>Movies</.tab>
-      </nav>
+      <%!--
+        pt-2 on the wrapping div matches Home / Discover / Search,
+        whose content opens with the same top breathing. Without
+        this, the sub-toggle's `py-3` + the chip's internal `py-1.5`
+        compounded to drop the visual baseline ~10px below where the
+        other pages' first content lands.
+      --%>
+      <div class="pt-2">
+        <nav
+          :if={@has_both_libraries}
+          class="sticky top-0 sm:top-[108px] z-10 bg-paper flex items-baseline gap-6 pb-6 font-sans text-[0.7rem] tracking-[0.18em] uppercase"
+        >
+          <.tab patch={~p"/library?type=shows"} active={@type == :shows}>Shows</.tab>
+          <.tab patch={~p"/library?type=movies"} active={@type == :movies}>Movies</.tab>
+        </nav>
 
-      <CatalogGrid.grid items={@items}>
-        <:empty>
-          <%= if @type == :shows do %>
-            You don't have any shows.
-          <% else %>
-            You don't have any movies.
-          <% end %>
-        </:empty>
-      </CatalogGrid.grid>
+        <CatalogGrid.grid items={@items}>
+          <:empty>
+            <%= if @type == :shows do %>
+              You don't have any shows.
+            <% else %>
+              You don't have any movies.
+            <% end %>
+          </:empty>
+        </CatalogGrid.grid>
+      </div>
     </Layouts.app>
     """
   end
