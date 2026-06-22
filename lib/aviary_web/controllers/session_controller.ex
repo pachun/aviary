@@ -10,10 +10,17 @@ defmodule AviaryWeb.SessionController do
   alias AviaryWeb.UserAuth
 
   def new(conn, _params) do
-    render(conn, :new, error: nil, username: "", custom_domain: custom_domain(), layout: false)
+    conn
+    |> assign(:page_title, "Sign in")
+    |> render(:new, error: nil, username: "", custom_domain: custom_domain(), layout: false)
   end
 
   def create(conn, %{"login" => %{"username" => username, "password" => password}}) do
+    # page_title flows to the root layout's <.live_title>; without it the
+    # brand-suffixed title doubles to "PACHULSKI.TV · PACHULSKI.TV". The
+    # success path redirects so the assign is harmless there.
+    conn = assign(conn, :page_title, "Sign in")
+
     case Auth.log_in(String.trim(username), password) do
       {:ok, user} ->
         UserAuth.log_in_user(conn, user)

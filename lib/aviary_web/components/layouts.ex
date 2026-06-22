@@ -25,6 +25,37 @@ defmodule AviaryWeb.Layouts do
     Application.get_env(:aviary, :tab_title, "Aviary")
   end
 
+  @doc """
+  Short brand label for the iOS home-screen icon, where the OS
+  truncates past ~12 characters. Read from `:aviary,
+  :home_screen_title` (env `HOME_SCREEN_TITLE`); falls back to the
+  full brand so most instances need only set `TAB_TITLE`.
+  """
+  def home_screen_title do
+    Application.get_env(:aviary, :home_screen_title) || tab_title()
+  end
+
+  @doc """
+  One-line site description for the `<meta name="description">` tag
+  and the Open Graph / Twitter share card. Read from `:aviary,
+  :site_description` (env `SITE_DESCRIPTION`).
+  """
+  def site_description do
+    Application.get_env(:aviary, :site_description, "A private movie and TV library.")
+  end
+
+  @doc """
+  Absolute URL for the share-preview image (og:image / twitter:image).
+  Unfurlers like iMessage require an absolute URL, so this prefixes
+  the endpoint host. Uses the `OG_IMAGE` override when set; otherwise
+  points at the bundled `/images/og-image.png`, derived from whatever
+  host this instance is served on.
+  """
+  def og_image_url do
+    Application.get_env(:aviary, :og_image) ||
+      AviaryWeb.Endpoint.url() <> "/images/og-image.png"
+  end
+
   attr :flash, :map, required: true, doc: "the map of flash messages"
 
   attr :current_section, :string,

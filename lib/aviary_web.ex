@@ -17,7 +17,11 @@ defmodule AviaryWeb do
   those modules here.
   """
 
-  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt manifest.webmanifest)
+  # manifest.webmanifest is intentionally NOT here — it's served
+  # dynamically by AviaryWeb.BrandController so the PWA name/description
+  # track the brand config. Listing it would let Plug.Static shadow the
+  # route with a stale file.
+  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
 
   def router do
     quote do

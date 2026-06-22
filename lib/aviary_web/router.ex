@@ -22,6 +22,13 @@ defmodule AviaryWeb.Router do
     plug :accepts, ["json"]
   end
 
+  ## Public PWA manifest — fetched by the browser before sign-in, so
+  ## it can't sit behind a session/auth pipeline. Served dynamically
+  ## (BrandController) so the PWA name tracks the brand config.
+  scope "/", AviaryWeb do
+    get "/manifest.webmanifest", BrandController, :manifest
+  end
+
   ## Public — login form / submit / logout
 
   scope "/", AviaryWeb do

@@ -14,12 +14,43 @@
     --%>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Aviary" />
+    <meta name="apple-mobile-web-app-title" content={AviaryWeb.Layouts.home_screen_title()} />
+    <%!--
+      Two icons on purpose. apple-touch-icon (180px, with the oxblood
+      rule) is the iOS home-screen / PWA icon, where there's room for
+      the full mark. favicon.ico carries a rule-less PTV at 16/32/48 —
+      the rule can't survive a downscale to a browser tab, so the small
+      sizes drop it and letterspace the letters instead.
+    --%>
     <link rel="apple-touch-icon" href={~p"/images/apple-touch-icon.png"} />
-    <link rel="icon" type="image/png" href={~p"/images/apple-touch-icon.png"} />
+    <link rel="icon" href={~p"/favicon.ico"} sizes="any" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#F2F0E7" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1B1B26" media="(prefers-color-scheme: dark)" />
+
+    <%!--
+      Link-unfurl preview + search snippet. iMessage, Slack, etc. read
+      Open Graph tags to render the rich card when someone shares the
+      link; that fetch is unauthenticated, so these must live in the
+      global layout (they render on the login page too, which is what
+      a family member's shared link lands on). og:image must be an
+      ABSOLUTE url — Layouts.og_image_url/0 builds one from the
+      configured host. twitter:card upgrades the preview to the
+      large-image format on clients that read the twitter: namespace.
+      All values come from the same brand config as the tab title.
+    --%>
+    <meta name="description" content={AviaryWeb.Layouts.site_description()} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={AviaryWeb.Layouts.tab_title()} />
+    <meta property="og:title" content={AviaryWeb.Layouts.tab_title()} />
+    <meta property="og:description" content={AviaryWeb.Layouts.site_description()} />
+    <meta property="og:url" content={AviaryWeb.Endpoint.url()} />
+    <meta property="og:image" content={AviaryWeb.Layouts.og_image_url()} />
+    <meta property="og:image:alt" content={AviaryWeb.Layouts.tab_title()} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={AviaryWeb.Layouts.tab_title()} />
+    <meta name="twitter:description" content={AviaryWeb.Layouts.site_description()} />
+    <meta name="twitter:image" content={AviaryWeb.Layouts.og_image_url()} />
     <%!--
       Tab title brand — defaults to "Aviary" but reads TAB_TITLE env
       at runtime (set in depot's aviary.rb compose env). Per-LiveView

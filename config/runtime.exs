@@ -29,9 +29,28 @@ config :aviary, AviaryWeb.Endpoint,
 # container's env. Either way, Aviary.Jellyfin reaches for them via
 # Application.fetch_env!/2.
 config :aviary,
-  # Browser tab title brand (e.g. "Pachulski TV" so tabs read as
-  # "Settings · Pachulski TV"). Defaults to "Aviary" if unset.
+  # Browser tab title brand (e.g. "PACHULSKI.TV" so tabs read as
+  # "Settings · PACHULSKI.TV"). Defaults to "Aviary" if unset. This
+  # one string is the brand everywhere: tab title, share/unfurl title,
+  # PWA name, and the default iOS home-screen label.
   tab_title: System.get_env("TAB_TITLE", "Aviary"),
+  # Short label shown UNDER the iOS home-screen icon, where the OS
+  # truncates anything past ~12 characters. Lets a long brand like
+  # "PACHULSKI.TV" set a clean short label ("Pachulski") for the icon
+  # without shortening the brand anywhere else. Falls back to the full
+  # brand when unset.
+  home_screen_title: System.get_env("HOME_SCREEN_TITLE"),
+  # One-line site description for the <meta name="description"> tag and
+  # the Open Graph / Twitter share card — the rich preview iMessage,
+  # Slack, etc. render when someone shares the link.
+  site_description:
+    System.get_env("SITE_DESCRIPTION", "A private movie and TV library."),
+  # Absolute URL for the share-preview image (og:image / twitter:image).
+  # Optional: when unset, Layouts.og_image_url/0 derives it from the
+  # endpoint host (…/images/og-image.png), which is correct per deploy
+  # with no extra config. Set this only to point at an externally
+  # hosted image.
+  og_image: System.get_env("OG_IMAGE"),
   jellyfin_url: System.get_env("JELLYFIN_URL"),
   jellyfin_api_key: System.get_env("JELLYFIN_API_KEY"),
   # Browser-facing Jellyfin URL — must be reachable from the
