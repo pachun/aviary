@@ -111,7 +111,8 @@
         const isStandalone =
           window.matchMedia("(display-mode: standalone)").matches ||
           window.navigator.standalone === true;
-        if (isIOS && !isStandalone) {
+        const forceInstall = new URLSearchParams(window.location.search).has("install");
+        if ((isIOS && !isStandalone) || forceInstall) {
           document.documentElement.setAttribute("data-needs-install", "true");
         }
       })();

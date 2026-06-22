@@ -24,115 +24,102 @@
     step numbers. The Share icon is inline SVG so we don't depend
     on any external asset.
   --%>
-  <main class="pwa-install-prompt flex-1 justify-center items-start px-6 pt-12 sm:pt-24 pb-12 flex-col">
+  <%!--
+    Anchored at the TOP of the viewport with `justify-start` and minimal
+    top padding so the steps stay visible even when Safari's share
+    sheet (which grows as the user navigates through it) covers the
+    bottom of the screen. Tighter typography + smaller gaps fit all
+    five steps in the upper portion of an iPhone viewport.
+  --%>
+  <main class="pwa-install-prompt flex-1 justify-start items-start px-5 pt-6 pb-12 flex-col">
     <div class="w-full max-w-md mx-auto">
       <p
         :if={@custom_domain}
-        class="font-sans font-bold tracking-[0.15em] uppercase text-center text-ink text-base mb-4"
+        class="font-sans font-bold tracking-[0.15em] uppercase text-center text-ink text-sm mb-2"
       >
         {@custom_domain}
       </p>
 
-      <h1 class="font-display text-3xl sm:text-4xl text-ink leading-tight text-center mb-3">
+      <h1 class="font-display text-2xl text-ink leading-tight text-center mb-1">
         Add to your home screen
       </h1>
-      <p class="font-display italic text-muted text-center mb-10 leading-relaxed">
-        For the best experience, install this as an app first. It only takes a second.
+      <p class="font-display italic text-muted text-center text-sm mb-5 leading-snug">
+        For the best experience, install this as an app first.
       </p>
 
-      <ol class="flex flex-col gap-6">
-        <li class="flex items-start gap-4">
-          <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-1">01</span>
-          <div class="flex-1">
-            <p class="text-ink leading-snug">
-              Tap the menu button in the bottom-right of Safari.
-            </p>
-            <div class="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border border-rule bg-surface">
-              <%!-- Three-dot menu glyph (the Liquid Glass "…" button). --%>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                class="size-5 text-ink"
-              >
-                <circle cx="5" cy="12" r="1.5" />
-                <circle cx="12" cy="12" r="1.5" />
-                <circle cx="19" cy="12" r="1.5" />
-              </svg>
-              <span class="font-sans text-xs text-muted">the "…" icon</span>
-            </div>
-          </div>
+      <ol class="flex flex-col gap-3">
+        <li class="flex items-start gap-3">
+          <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">01</span>
+          <p class="text-ink text-sm leading-snug flex-1">
+            Tap the
+            <%!-- Inline three-dot menu glyph. --%>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              class="inline-block size-4 align-middle mx-0.5 -mt-0.5 text-ink"
+            >
+              <circle cx="5" cy="12" r="1.5" />
+              <circle cx="12" cy="12" r="1.5" />
+              <circle cx="19" cy="12" r="1.5" />
+            </svg>
+            menu in the bottom-right of Safari.
+          </p>
         </li>
 
-        <li class="flex items-start gap-4">
-          <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-1">02</span>
-          <div class="flex-1">
-            <p class="text-ink leading-snug">
-              Tap <strong>Share</strong> in the menu that opens.
-            </p>
-            <div class="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border border-rule bg-surface">
-              <%!-- iOS Share glyph: square with up-arrow. --%>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                class="size-5 text-ink"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25" />
-              </svg>
-              <span class="font-sans text-xs text-muted">the share icon</span>
-            </div>
-          </div>
+        <li class="flex items-start gap-3">
+          <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">02</span>
+          <p class="text-ink text-sm leading-snug flex-1">
+            Tap
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              class="inline-block size-4 align-middle mx-0.5 -mt-0.5 text-ink"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25" />
+            </svg>
+            <strong>Share</strong>.
+          </p>
         </li>
 
-        <li class="flex items-start gap-4">
-          <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-1">03</span>
-          <div class="flex-1">
-            <p class="text-ink leading-snug">
-              In the bottom row of options, tap the circle with the
-              down arrow — the last icon in the row.
-            </p>
-            <div class="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border border-rule bg-surface">
-              <%!-- Circle with down arrow. --%>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                class="size-5 text-ink"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5v9m0 0 3-3m-3 3-3-3" />
-              </svg>
-              <span class="font-sans text-xs text-muted">more options</span>
-            </div>
-          </div>
+        <li class="flex items-start gap-3">
+          <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">03</span>
+          <p class="text-ink text-sm leading-snug flex-1">
+            Tap the
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              class="inline-block size-4 align-middle mx-0.5 -mt-0.5 text-ink"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5v9m0 0 3-3m-3 3-3-3" />
+            </svg>
+            circle (last in the bottom row of icons).
+          </p>
         </li>
 
-        <li class="flex items-start gap-4">
-          <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-1">04</span>
-          <div class="flex-1">
-            <p class="text-ink leading-snug">
-              Tap <strong>Add to Home Screen</strong> at the bottom of
-              the modal that opens.
-            </p>
-          </div>
+        <li class="flex items-start gap-3">
+          <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">04</span>
+          <p class="text-ink text-sm leading-snug flex-1">
+            Tap <strong>Add to Home Screen</strong> at the bottom of the modal.
+          </p>
         </li>
 
-        <li class="flex items-start gap-4">
-          <span class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-1">05</span>
-          <div class="flex-1">
-            <p class="text-ink leading-snug">
-              Open the new icon from your home screen to sign in.
-            </p>
-          </div>
+        <li class="flex items-start gap-3">
+          <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">05</span>
+          <p class="text-ink text-sm leading-snug flex-1">
+            Open the new icon from your home screen to sign in.
+          </p>
         </li>
       </ol>
 
-      <p class="font-display italic text-muted/80 text-sm text-center mt-12 leading-relaxed">
+      <p class="font-display italic text-muted/80 text-xs text-center mt-5 leading-snug">
         Already installed? Open the app from your home screen instead of Safari.
       </p>
     </div>
