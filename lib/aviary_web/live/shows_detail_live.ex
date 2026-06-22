@@ -41,7 +41,14 @@ defmodule AviaryWeb.ShowsDetailLive do
             # Mobile-first: episode titles truncate in the row. Tapping
             # the title area opens this episode's details (full title +
             # synopsis) in a centered modal. nil = no modal showing.
-            open_episode: nil
+            open_episode: nil,
+            # Family Recommendations state — see handle_event
+            # "open_recommend_popover" for the popover behavior.
+            household_users: list_household_users(socket.assigns.current_user),
+            recommenders:
+              recommender_records(show, socket.assigns.current_user),
+            recommend_popover_open: false,
+            recommend_popover_recipients: []
           )
           |> fetch_sonarr_status()
           |> schedule_sonarr_poll()
@@ -237,6 +244,54 @@ defmodule AviaryWeb.ShowsDetailLive do
 
   defp in_library?(_, _), do: false
 
+  # Household member list for the Recommend popover. Excludes the
+  # signed-in user themselves (no recommending shows to yourself).
+  defp list_household_users(current_user) do
+    current_user
+    |> Aviary.Jellyfin.list_users()
+    |> Enum.reject(&(&1["Id"] == current_user.id))
+    |> Enum.sort_by(&(&1["Name"] || ""))
+  end
+
+  # "Chris thinks you'll like this." / "Chris and Sarah think you'll
+  # like this." / "Chris, Sarah, and Alex think you'll like this."
+  # Pluralizes "think" naturally.
+  defp recommender_phrase([%{"Name" => name}]),
+    do: "#{name} thinks you'll like this."
+
+  defp recommender_phrase([%{"Name" => a}, %{"Name" => b}]),
+    do: "#{a} and #{b} think you'll like this."
+
+  defp recommender_phrase(senders) when length(senders) > 2 do
+    names = Enum.map(senders, & &1["Name"])
+    {init, [last]} = Enum.split(names, length(names) - 1)
+    "#{Enum.join(init, ", ")}, and #{last} think you'll like this."
+  end
+
+  defp recommender_phrase(_), do: ""
+
+  # The recommenders-of-record for the "X thinks you'll like this"
+  # detail-page badge. Resolves the from_user_ids to Jellyfin user
+  # maps so the template can read username + PrimaryImageTag.
+  defp recommender_records(show, current_user) do
+    case show.tmdb_id do
+      nil ->
+        []
+
+      tmdb_id ->
+        sender_ids =
+          Aviary.Recommendations.recommenders_for(current_user.id, tmdb_id, "show")
+
+        if sender_ids == [] do
+          []
+        else
+          current_user
+          |> Aviary.Jellyfin.list_users()
+          |> Enum.filter(&(&1["Id"] in sender_ids))
+        end
+    end
+  end
+
   defp kicker("home", _), do: %{label: "Home", path: "/home"}
   defp kicker("discover", _), do: %{label: "Discover", path: "/discover"}
   defp kicker("library_movies", _), do: %{label: "Library", path: "/library?type=movies"}
@@ -375,6 +430,59 @@ defmodule AviaryWeb.ShowsDetailLive do
 
   def handle_event("close_episode_details", _, socket) do
     {:noreply, assign(socket, :open_episode, nil)}
+  end
+
+  # === Family Recommendations on the show detail page ===
+
+  def handle_event("open_recommend_popover", _, socket) do
+    show = socket.assigns.show
+    user = socket.assigns.current_user
+
+    recipients =
+      if is_binary(show.tmdb_id) do
+        Aviary.Recommendations.recipients_for(user.id, show.tmdb_id, "show")
+      else
+        []
+      end
+
+    {:noreply,
+     socket
+     |> assign(:recommend_popover_open, true)
+     |> assign(:recommend_popover_recipients, recipients)}
+  end
+
+  def handle_event("close_recommend_popover", _, socket) do
+    {:noreply, assign(socket, :recommend_popover_open, false)}
+  end
+
+  def handle_event("send_recommendation", %{"to" => to_user_id}, socket) do
+    show = socket.assigns.show
+    user = socket.assigns.current_user
+
+    if is_binary(show.tmdb_id) and to_user_id != user.id do
+      Aviary.Recommendations.recommend(user.id, to_user_id, show.tmdb_id, "show")
+    end
+
+    recipients = [to_user_id | socket.assigns.recommend_popover_recipients] |> Enum.uniq()
+
+    {:noreply,
+     socket
+     |> assign(:recommend_popover_recipients, recipients)
+     |> put_flash(:info, "Recommended.")}
+  end
+
+  def handle_event("dismiss_recommendation_detail", _, socket) do
+    show = socket.assigns.show
+    user = socket.assigns.current_user
+
+    if is_binary(show.tmdb_id) do
+      Aviary.Recommendations.dismiss(user.id, show.tmdb_id, "show")
+    end
+
+    {:noreply,
+     socket
+     |> assign(:recommenders, [])
+     |> Aviary.Nav.refresh_visibility()}
   end
 
   def handle_event("close_player", _, socket) do
@@ -646,6 +754,39 @@ defmodule AviaryWeb.ShowsDetailLive do
                   ← {@kicker.label}
                 </.link>
 
+                <%!--
+                  Family Recommendation note — "Chris thinks you'll
+                  like this" (or "Chris and Sarah think you'll like
+                  this"). Small avatar(s) + italic Fraunces sentence,
+                  feels like an editorial sidebar note. Persists
+                  through Continue Watching transitions; goes away
+                  when the recipient dismisses.
+                --%>
+                <div
+                  :if={@recommenders != []}
+                  class="flex items-center gap-2 -mt-1"
+                >
+                  <div class="flex flex-row-reverse">
+                    <span
+                      :for={r <- @recommenders}
+                      class="size-7 -ml-2 rounded-full ring-2 ring-paper bg-rule overflow-hidden flex items-center justify-center text-ink font-display text-xs"
+                    >
+                      <img
+                        :if={r["PrimaryImageTag"]}
+                        src={"/user-image/#{r["Id"]}?tag=#{r["PrimaryImageTag"]}"}
+                        alt={r["Name"]}
+                        class="w-full h-full object-cover"
+                      />
+                      <span :if={!r["PrimaryImageTag"]}>
+                        {r["Name"] |> String.first() |> String.upcase()}
+                      </span>
+                    </span>
+                  </div>
+                  <p class="font-display italic text-muted text-sm leading-tight">
+                    {recommender_phrase(@recommenders)}
+                  </p>
+                </div>
+
                 <h1
                   data-mobile-top-bar-trigger
                   class="font-heading text-ink tracking-tight leading-[1.1]"
@@ -716,13 +857,13 @@ defmodule AviaryWeb.ShowsDetailLive do
                   invited direction), Remove brightens to ink
                   (neutral — destructive but not alarming).
                 --%>
-                <div :if={@show.source == :library and @show.tmdb_id} class="mt-1">
+                <div :if={@show.source == :library and @show.tmdb_id} class="mt-1 flex flex-wrap gap-2 items-center">
                   <button
                     :if={@in_library}
                     type="button"
                     phx-click="remove_from_library"
                     data-confirm={"Remove #{@show.title} from your library?"}
-                    class="w-fit font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-ink hover:text-ink hover:bg-ink/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-ink hover:text-ink hover:bg-ink/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     Remove from library
                   </button>
@@ -730,9 +871,24 @@ defmodule AviaryWeb.ShowsDetailLive do
                     :if={not @in_library}
                     type="button"
                     phx-click="add_to_library"
-                    class="w-fit font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     Add to library
+                  </button>
+                  <%!--
+                    Recommend chip — secondary action sitting alongside
+                    Add/Remove. Opens a popover with the household
+                    members (avatar + name + checkbox) so the sender
+                    can fan out the same recommendation to multiple
+                    people in one go.
+                  --%>
+                  <button
+                    :if={@household_users != []}
+                    type="button"
+                    phx-click="open_recommend_popover"
+                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                  >
+                    Recommend
                   </button>
                 </div>
               </div>
@@ -1089,6 +1245,82 @@ defmodule AviaryWeb.ShowsDetailLive do
         subtitles={@playing_subtitles}
         audio_stream_index={@playing_audio_index}
       />
+
+      <%!--
+        Recommend popover — modal overlay listing household members
+        with avatar + name + a state pill ("Recommend" or "Sent").
+        Click a row to send the recommendation; the row flips to
+        "Sent" with no retraction (matches the recipient-only
+        dismissal model). Click outside (the backdrop) or the X to
+        close.
+      --%>
+      <div
+        :if={@recommend_popover_open}
+        class="fixed inset-0 z-50 flex items-center justify-center px-4"
+        phx-click="close_recommend_popover"
+      >
+        <div class="absolute inset-0 bg-ink/60 backdrop-blur-sm"></div>
+        <div
+          class="relative z-10 w-full max-w-sm bg-paper rounded-sm shadow-xl border border-rule p-6"
+          phx-click-away="close_recommend_popover"
+          onclick="event.stopPropagation()"
+        >
+          <div class="flex items-baseline justify-between mb-4">
+            <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted">
+              Recommend to
+            </p>
+            <button
+              type="button"
+              phx-click="close_recommend_popover"
+              aria-label="Close"
+              class="text-muted hover:text-ink cursor-pointer transition-colors text-sm leading-none"
+            >
+              ✕
+            </button>
+          </div>
+          <ul class="flex flex-col">
+            <li
+              :for={u <- @household_users}
+              class="border-b border-rule last:border-b-0"
+            >
+              <button
+                type="button"
+                phx-click="send_recommendation"
+                phx-value-to={u["Id"]}
+                disabled={u["Id"] in @recommend_popover_recipients}
+                class="w-full flex items-center gap-3 py-3 px-1 text-left transition-colors hover:bg-rule/30 disabled:hover:bg-transparent disabled:cursor-default cursor-pointer focus:outline-none focus-visible:bg-rule/30"
+              >
+                <span class="size-9 rounded-full bg-rule overflow-hidden flex items-center justify-center text-ink font-display text-xs shrink-0">
+                  <img
+                    :if={u["PrimaryImageTag"]}
+                    src={"/user-image/#{u["Id"]}?tag=#{u["PrimaryImageTag"]}"}
+                    alt={u["Name"]}
+                    class="w-full h-full object-cover"
+                  />
+                  <span :if={!u["PrimaryImageTag"]}>
+                    {u["Name"] |> String.first() |> String.upcase()}
+                  </span>
+                </span>
+                <span class="font-display text-ink text-base flex-1 truncate">
+                  {u["Name"]}
+                </span>
+                <span
+                  :if={u["Id"] in @recommend_popover_recipients}
+                  class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-oxblood"
+                >
+                  Sent
+                </span>
+                <span
+                  :if={u["Id"] not in @recommend_popover_recipients}
+                  class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted"
+                >
+                  Send
+                </span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
     </Layouts.app>
     """
   end

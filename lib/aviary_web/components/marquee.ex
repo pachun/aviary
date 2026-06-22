@@ -24,7 +24,12 @@ defmodule AviaryWeb.Components.Marquee do
   attr :dismissible, :boolean,
     default: false,
     doc:
-      "When true, renders a hover-revealed X button on each card; click fires phx-click=\"dismiss\" with kind + detail_id. Home uses this to give the user direct control over Continue Watching."
+      "When true, renders a hover-revealed X button on each card; click fires phx-click=\"dismiss\" with kind + detail_id (or the value of `dismiss_event` if set). Home uses this to give the user direct control over Continue Watching."
+
+  attr :dismiss_event, :string,
+    default: "dismiss",
+    doc:
+      "Phoenix event name the dismiss X fires. Defaults to \"dismiss\" (the Continue Watching reset path). Family Recommended overrides this to \"dismiss_recommendation\" so its X writes to dismissed_recommendations instead."
 
   slot :empty, doc: "rendered when there's nothing to show"
 
@@ -60,7 +65,12 @@ defmodule AviaryWeb.Components.Marquee do
           class="flex gap-3 sm:gap-4 overflow-x-auto overscroll-x-contain snap-x snap-mandatory p-1 pb-4 scroll-p-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
         >
           <li :for={item <- @items} class="snap-start shrink-0">
-            <.card item={item} from={@from} dismissible={@dismissible} />
+            <.card
+              item={item}
+              from={@from}
+              dismissible={@dismissible}
+              dismiss_event={@dismiss_event}
+            />
           </li>
         </ul>
         <%!--
@@ -164,6 +174,7 @@ defmodule AviaryWeb.Components.Marquee do
   attr :item, :map, required: true
   attr :from, :string, required: true
   attr :dismissible, :boolean, default: false
+  attr :dismiss_event, :string, default: "dismiss"
 
   defp card(assigns) do
     ~H"""
@@ -263,6 +274,35 @@ defmodule AviaryWeb.Components.Marquee do
               {@item.subtitle}
             </p>
           </div>
+
+          <%!--
+            Recommender avatar stack — only when this card came from
+            a Family Recommended row. Sits ABOVE the title gradient
+            (z-10) in the bottom-right. Slight negative right-margin
+            between avatars gives the overlapping-pill effect.
+            ring-2 ring-paper carves each circle out of its neighbor
+            so the stack reads as discrete heads rather than a blob.
+          --%>
+          <div
+            :if={Map.get(@item, :recommenders, []) != []}
+            class="absolute bottom-2 right-2 z-10 flex flex-row-reverse"
+          >
+            <span
+              :for={r <- @item.recommenders}
+              class="size-7 -ml-2 rounded-full ring-2 ring-paper bg-rule overflow-hidden flex items-center justify-center text-ink font-display text-xs"
+              title={"Recommended by #{r.username}"}
+            >
+              <img
+                :if={r.primary_image_tag}
+                src={"/user-image/#{r.id}?tag=#{r.primary_image_tag}"}
+                alt={r.username}
+                class="w-full h-full object-cover"
+              />
+              <span :if={!r.primary_image_tag} aria-hidden="true">
+                {r.username |> String.first() |> String.upcase()}
+              </span>
+            </span>
+          </div>
         </div>
       </.link>
 
@@ -279,11 +319,11 @@ defmodule AviaryWeb.Components.Marquee do
       <button
         :if={@dismissible}
         type="button"
-        phx-click="dismiss"
+        phx-click={@dismiss_event}
         phx-value-id={dismiss_id(@item)}
-        phx-value-kind={to_string(@item.kind)}
-        data-confirm="Removing this show from 'Continue Watching' will delete your watch history for it but keep it in your library. Continue?"
-        aria-label="Remove from Continue Watching"
+        phx-value-kind={dismiss_kind(@item)}
+        data-confirm={dismiss_confirm(@dismiss_event)}
+        aria-label="Remove"
         class="absolute top-2 right-2 z-10 size-6 rounded-full bg-black/60 backdrop-blur-sm text-white text-xs leading-none flex items-center justify-center cursor-pointer transition-opacity duration-200 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
         ✕
@@ -322,5 +362,21 @@ defmodule AviaryWeb.Components.Marquee do
 
   defp has_score?(_), do: false
 
+  # For Continue Watching the dismiss handler resets watch state and
+  # needs the Jellyfin id. For Family Recommended it writes to
+  # dismissed_recommendations and needs the TMDB id. Item shape
+  # distinguishes them: rec items carry `rec_tmdb_id` + `rec_kind`,
+  # CW items don't.
+  defp dismiss_id(%{rec_tmdb_id: tmdb_id}), do: tmdb_id
   defp dismiss_id(%{detail_id: id}), do: id
+
+  defp dismiss_kind(%{rec_kind: kind}), do: kind
+  defp dismiss_kind(%{kind: kind}), do: to_string(kind)
+
+  defp dismiss_confirm("dismiss_recommendation"),
+    do: "Remove this recommendation? You won't see it again — even if someone else recommends the same thing."
+
+  defp dismiss_confirm(_),
+    do:
+      "Removing this from 'Continue Watching' will delete your watch history for it but keep it in your library. Continue?"
 end

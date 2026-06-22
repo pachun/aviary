@@ -10,7 +10,12 @@ defmodule AviaryWeb.HomeLive do
      assign(socket,
        page_title: "Home",
        items: Aviary.Home.continue_watching(user),
-       upcoming: Aviary.Upcoming.releases(user)
+       upcoming: Aviary.Upcoming.releases(user),
+       recommendations:
+         Aviary.Recommendations.list_for_marquee(
+           user,
+           Aviary.Jellyfin.list_users(user)
+         )
      )}
   end
 
@@ -30,6 +35,17 @@ defmodule AviaryWeb.HomeLive do
     {:noreply, refresh_continue_watching(socket)}
   end
 
+  # Family Recommended dismiss — adds a per-item row to
+  # dismissed_recommendations, then refreshes the section data so the
+  # entry leaves the row immediately. Same shape as the CW dismiss
+  # event but a different phx-click name so the marquee can route
+  # them to different paths.
+  def handle_event("dismiss_recommendation", %{"id" => tmdb_id, "kind" => kind}, socket)
+      when kind in ["show", "movie"] do
+    Aviary.Recommendations.dismiss(socket.assigns.current_user.id, tmdb_id, kind)
+    {:noreply, refresh_continue_watching(socket)}
+  end
+
   # After a dismiss the user's home state may have changed enough to
   # affect nav visibility (e.g., they just emptied Continue Watching
   # and Upcoming both — Home tab should disappear). Recompute both
@@ -41,6 +57,10 @@ defmodule AviaryWeb.HomeLive do
     socket
     |> assign(:items, Aviary.Home.continue_watching(user))
     |> assign(:upcoming, Aviary.Upcoming.releases(user))
+    |> assign(
+      :recommendations,
+      Aviary.Recommendations.list_for_marquee(user, Aviary.Jellyfin.list_users(user))
+    )
     |> assign(:nav_visibility, Aviary.Nav.visibility(user))
   end
 
@@ -62,6 +82,28 @@ defmodule AviaryWeb.HomeLive do
         leave a phantom gap.
       --%>
       <div class="pt-2 space-y-12">
+        <%!--
+          Family Recommended — items household members have sent you
+          that you haven't watched yet AND haven't dismissed. Sender
+          avatars stack in the bottom-right of each thumbnail. X on
+          hover removes (per-item dismissal — doesn't bother you
+          with re-recs of the same item from anyone).
+        --%>
+        <section :if={@recommendations != []}>
+          <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
+            Family Recommended
+          </h2>
+          <Marquee.row
+            items={@recommendations}
+            from="home"
+            key="home:recommended"
+            dismiss_event="dismiss_recommendation"
+            dismissible
+          >
+            <:empty></:empty>
+          </Marquee.row>
+        </section>
+
         <%!--
           Continue Watching only renders when populated. Empty section
           with a "nothing in progress" message was noise; same pattern

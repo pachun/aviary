@@ -34,6 +34,12 @@ defmodule AviaryWeb.MoviesDetailLive do
             radarr_status: nil,
             imported_stuck_since: nil,
             in_library: in_library?(movie, socket.assigns.current_user),
+            # Family Recommendations state — see shows_detail_live for
+            # docs; movies use the same pattern with kind "movie".
+            household_users: list_household_users(socket.assigns.current_user),
+            recommenders: recommender_records(movie, socket.assigns.current_user),
+            recommend_popover_open: false,
+            recommend_popover_recipients: [],
             # Latches true the first time we observe the movie actively
             # downloading. Once latched, a transient queue-gone +
             # has_file=false state is read as :imported instead of
@@ -173,6 +179,47 @@ defmodule AviaryWeb.MoviesDetailLive do
 
   defp in_library?(_, _), do: false
 
+  # Household member list for the Recommend popover. Excludes self.
+  defp list_household_users(current_user) do
+    current_user
+    |> Aviary.Jellyfin.list_users()
+    |> Enum.reject(&(&1["Id"] == current_user.id))
+    |> Enum.sort_by(&(&1["Name"] || ""))
+  end
+
+  defp recommender_phrase([%{"Name" => name}]),
+    do: "#{name} thinks you'll like this."
+
+  defp recommender_phrase([%{"Name" => a}, %{"Name" => b}]),
+    do: "#{a} and #{b} think you'll like this."
+
+  defp recommender_phrase(senders) when length(senders) > 2 do
+    names = Enum.map(senders, & &1["Name"])
+    {init, [last]} = Enum.split(names, length(names) - 1)
+    "#{Enum.join(init, ", ")}, and #{last} think you'll like this."
+  end
+
+  defp recommender_phrase(_), do: ""
+
+  defp recommender_records(movie, current_user) do
+    case movie.tmdb_id do
+      nil ->
+        []
+
+      tmdb_id ->
+        sender_ids =
+          Aviary.Recommendations.recommenders_for(current_user.id, tmdb_id, "movie")
+
+        if sender_ids == [] do
+          []
+        else
+          current_user
+          |> Aviary.Jellyfin.list_users()
+          |> Enum.filter(&(&1["Id"] in sender_ids))
+        end
+    end
+  end
+
   # Resolve the kicker (back link above the title) from the `from`
   # query param. Default lands on the Movies tab of /library since
   # there's no movie-other natural landing place. Search preserves
@@ -280,6 +327,59 @@ defmodule AviaryWeb.MoviesDetailLive do
      |> put_flash(:info, "#{movie.title} added to your library.")}
   end
 
+  # === Family Recommendations on the movie detail page ===
+
+  def handle_event("open_recommend_popover", _, socket) do
+    movie = socket.assigns.movie
+    user = socket.assigns.current_user
+
+    recipients =
+      if is_binary(movie.tmdb_id) do
+        Aviary.Recommendations.recipients_for(user.id, movie.tmdb_id, "movie")
+      else
+        []
+      end
+
+    {:noreply,
+     socket
+     |> assign(:recommend_popover_open, true)
+     |> assign(:recommend_popover_recipients, recipients)}
+  end
+
+  def handle_event("close_recommend_popover", _, socket) do
+    {:noreply, assign(socket, :recommend_popover_open, false)}
+  end
+
+  def handle_event("send_recommendation", %{"to" => to_user_id}, socket) do
+    movie = socket.assigns.movie
+    user = socket.assigns.current_user
+
+    if is_binary(movie.tmdb_id) and to_user_id != user.id do
+      Aviary.Recommendations.recommend(user.id, to_user_id, movie.tmdb_id, "movie")
+    end
+
+    recipients = [to_user_id | socket.assigns.recommend_popover_recipients] |> Enum.uniq()
+
+    {:noreply,
+     socket
+     |> assign(:recommend_popover_recipients, recipients)
+     |> put_flash(:info, "Recommended.")}
+  end
+
+  def handle_event("dismiss_recommendation_detail", _, socket) do
+    movie = socket.assigns.movie
+    user = socket.assigns.current_user
+
+    if is_binary(movie.tmdb_id) do
+      Aviary.Recommendations.dismiss(user.id, movie.tmdb_id, "movie")
+    end
+
+    {:noreply,
+     socket
+     |> assign(:recommenders, [])
+     |> Aviary.Nav.refresh_visibility()}
+  end
+
   def handle_event("close_player", _, socket) do
     # Refresh nav_visibility — playing this movie added a
     # library_entries row + flipped Jellyfin's Continue Watching
@@ -384,6 +484,29 @@ defmodule AviaryWeb.MoviesDetailLive do
                   ← {@kicker.label}
                 </.link>
 
+                <%!-- Family recommendation note — see shows_detail. --%>
+                <div :if={@recommenders != []} class="flex items-center gap-2 -mt-1">
+                  <div class="flex flex-row-reverse">
+                    <span
+                      :for={r <- @recommenders}
+                      class="size-7 -ml-2 rounded-full ring-2 ring-paper bg-rule overflow-hidden flex items-center justify-center text-ink font-display text-xs"
+                    >
+                      <img
+                        :if={r["PrimaryImageTag"]}
+                        src={"/user-image/#{r["Id"]}?tag=#{r["PrimaryImageTag"]}"}
+                        alt={r["Name"]}
+                        class="w-full h-full object-cover"
+                      />
+                      <span :if={!r["PrimaryImageTag"]}>
+                        {r["Name"] |> String.first() |> String.upcase()}
+                      </span>
+                    </span>
+                  </div>
+                  <p class="font-display italic text-muted text-sm leading-tight">
+                    {recommender_phrase(@recommenders)}
+                  </p>
+                </div>
+
                 <%!--
                   Title scaled down from the previous hero clamp because
                   the poster already says what this is — the text serves
@@ -450,13 +573,13 @@ defmodule AviaryWeb.MoviesDetailLive do
                   treatment + same hover semantics (Add → oxblood
                   invitation, Remove → neutral ink).
                 --%>
-                <div :if={@movie.source == :library and @movie.tmdb_id} class="mt-1">
+                <div :if={@movie.source == :library and @movie.tmdb_id} class="mt-1 flex flex-wrap gap-2 items-center">
                   <button
                     :if={@in_library}
                     type="button"
                     phx-click="remove_from_library"
                     data-confirm={"Remove #{@movie.title} from your library?"}
-                    class="w-fit font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-ink hover:text-ink hover:bg-ink/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-ink hover:text-ink hover:bg-ink/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     Remove from library
                   </button>
@@ -464,9 +587,17 @@ defmodule AviaryWeb.MoviesDetailLive do
                     :if={not @in_library}
                     type="button"
                     phx-click="add_to_library"
-                    class="w-fit font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
                   >
                     Add to library
+                  </button>
+                  <button
+                    :if={@household_users != []}
+                    type="button"
+                    phx-click="open_recommend_popover"
+                    class="font-sans text-[0.7rem] tracking-[0.18em] uppercase font-medium px-3 py-1.5 rounded-sm border border-ink/30 text-ink/80 hover:border-oxblood hover:text-oxblood hover:bg-oxblood/5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+                  >
+                    Recommend
                   </button>
                 </div>
               </div>
@@ -507,6 +638,74 @@ defmodule AviaryWeb.MoviesDetailLive do
         subtitles={@playing_subtitles}
         audio_stream_index={@playing_audio_index}
       />
+
+      <%!--
+        Recommend popover — see shows_detail_live for behavior docs.
+      --%>
+      <div
+        :if={@recommend_popover_open}
+        class="fixed inset-0 z-50 flex items-center justify-center px-4"
+        phx-click="close_recommend_popover"
+      >
+        <div class="absolute inset-0 bg-ink/60 backdrop-blur-sm"></div>
+        <div
+          class="relative z-10 w-full max-w-sm bg-paper rounded-sm shadow-xl border border-rule p-6"
+          phx-click-away="close_recommend_popover"
+          onclick="event.stopPropagation()"
+        >
+          <div class="flex items-baseline justify-between mb-4">
+            <p class="font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted">
+              Recommend to
+            </p>
+            <button
+              type="button"
+              phx-click="close_recommend_popover"
+              aria-label="Close"
+              class="text-muted hover:text-ink cursor-pointer transition-colors text-sm leading-none"
+            >
+              ✕
+            </button>
+          </div>
+          <ul class="flex flex-col">
+            <li :for={u <- @household_users} class="border-b border-rule last:border-b-0">
+              <button
+                type="button"
+                phx-click="send_recommendation"
+                phx-value-to={u["Id"]}
+                disabled={u["Id"] in @recommend_popover_recipients}
+                class="w-full flex items-center gap-3 py-3 px-1 text-left transition-colors hover:bg-rule/30 disabled:hover:bg-transparent disabled:cursor-default cursor-pointer focus:outline-none focus-visible:bg-rule/30"
+              >
+                <span class="size-9 rounded-full bg-rule overflow-hidden flex items-center justify-center text-ink font-display text-xs shrink-0">
+                  <img
+                    :if={u["PrimaryImageTag"]}
+                    src={"/user-image/#{u["Id"]}?tag=#{u["PrimaryImageTag"]}"}
+                    alt={u["Name"]}
+                    class="w-full h-full object-cover"
+                  />
+                  <span :if={!u["PrimaryImageTag"]}>
+                    {u["Name"] |> String.first() |> String.upcase()}
+                  </span>
+                </span>
+                <span class="font-display text-ink text-base flex-1 truncate">
+                  {u["Name"]}
+                </span>
+                <span
+                  :if={u["Id"] in @recommend_popover_recipients}
+                  class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-oxblood"
+                >
+                  Sent
+                </span>
+                <span
+                  :if={u["Id"] not in @recommend_popover_recipients}
+                  class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted"
+                >
+                  Send
+                </span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
     </Layouts.app>
     """
   end
