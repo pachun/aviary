@@ -409,6 +409,85 @@ const AutoDismissFlash = {
   },
 }
 
+// One-time install hint. Fired exactly once per device when an iOS
+// Safari visitor lands on aviary without having added it to the home
+// screen yet. Plants the seed; doesn't nag. Source of truth for the
+// install steps is the Settings page (rendered via Layouts.install_steps);
+// this toast just points them there.
+//
+// Trigger conditions (ALL must be true):
+//   1. <html data-needs-install="true"> — set synchronously in
+//      root.html.heex by the iOS-detection script.
+//   2. localStorage doesn't carry the "shown" flag yet.
+//
+// The flash group container is in Layouts.flash_group; we insert a
+// hand-rolled card that matches the styling of <.flash> so the toast
+// reads as part of the same family. Auto-dismiss + manual click are
+// both wired to fade-out + persist.
+function maybeShowInstallHint() {
+  if (!document.documentElement.getAttribute("data-needs-install")) return
+  const HINT_KEY = "aviary:install-hint-shown"
+  if (localStorage.getItem(HINT_KEY)) return
+
+  const group = document.getElementById("flash-group")
+  if (!group) return
+
+  const toast = document.createElement("div")
+  toast.id = "flash-install-hint"
+  toast.setAttribute("role", "alert")
+  toast.className = [
+    "w-80 sm:w-96 bg-surface border border-rule shadow-md rounded-sm cursor-pointer",
+    "font-sans text-[0.85rem] text-ink",
+    "transition-all duration-300 ease-out",
+    "opacity-0 translate-y-2",
+  ].join(" ")
+  toast.innerHTML = `
+    <div class="flex items-start gap-3 px-4 py-3">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="size-4 text-muted shrink-0 mt-0.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25" />
+      </svg>
+      <div class="flex-1 min-w-0">
+        <p class="text-muted">Add this app to your home screen for the best experience. Find the steps in Settings.</p>
+      </div>
+      <button type="button" aria-label="close" class="shrink-0 -mr-1 -mt-1 p-1 rounded-sm cursor-pointer">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4 text-muted">
+          <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z" />
+        </svg>
+      </button>
+    </div>
+  `
+
+  const dismiss = () => {
+    localStorage.setItem(HINT_KEY, String(Date.now()))
+    toast.classList.add("opacity-0", "translate-y-2")
+    window.setTimeout(() => toast.remove(), 300)
+  }
+  toast.addEventListener("click", dismiss)
+
+  group.appendChild(toast)
+
+  // Force a frame so the slide-in transition runs from the initial
+  // opacity-0/translate-y-2 to the visible state.
+  requestAnimationFrame(() => {
+    toast.classList.remove("opacity-0", "translate-y-2")
+  })
+
+  // Auto-dismiss. Slightly longer than info flashes (6s vs 4s) so a
+  // distracted user has time to read it.
+  let timer = window.setTimeout(dismiss, 6000)
+  toast.addEventListener("mouseenter", () => {
+    if (timer) { clearTimeout(timer); timer = null }
+  })
+  toast.addEventListener("mouseleave", () => {
+    if (!timer) timer = window.setTimeout(dismiss, 6000)
+  })
+}
+
+// Fire on every full page load (LiveView nav doesn't reload the document,
+// but DOMContentLoaded fires once per real navigation). localStorage gate
+// inside the function prevents repeats.
+window.addEventListener("DOMContentLoaded", maybeShowInstallHint)
+
 // MobileTopBar — controls the iOS-style fade-in of the sticky mobile
 // top bar. The bar starts at opacity-0 (hidden, inert). On mount we
 // look for an element marked `data-mobile-top-bar-trigger` in the

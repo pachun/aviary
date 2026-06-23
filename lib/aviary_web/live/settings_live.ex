@@ -126,6 +126,28 @@ defmodule AviaryWeb.SettingsLive do
               <Layouts.theme_toggle />
             </div>
           </.section_block>
+
+          <%!--
+            Install section: only renders for iOS Safari users who
+            haven't yet added the app to their home screen.
+            root.html.heex sets `data-needs-install="true"` on <html>
+            when that's the case; the CSS rule flips display on.
+            Desktop users + already-installed PWA users never see
+            this block.
+          --%>
+          <div class="pwa-install-section" style="display:none">
+            <.section_block label="Home screen">
+              <div class="flex flex-col gap-4">
+                <p class="hidden sm:block font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted">
+                  Install
+                </p>
+                <p class="font-display italic text-muted text-sm leading-snug">
+                  For the best experience, add this app to your iPhone home screen.
+                </p>
+                <Layouts.install_steps />
+              </div>
+            </.section_block>
+          </div>
         </div>
 
         <%!--

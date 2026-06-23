@@ -456,6 +456,83 @@ defmodule AviaryWeb.Layouts do
   end
 
   @doc """
+  iOS install steps (Liquid Glass Safari). Used by the Settings page
+  install section. Callers wrap this in a container that's conditional
+  on `data-needs-install` — the component itself is plain content with
+  no detection logic.
+  """
+  def install_steps(assigns) do
+    ~H"""
+    <ol class="flex flex-col gap-3">
+      <li class="flex items-start gap-3">
+        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">01</span>
+        <p class="text-ink text-sm leading-snug flex-1">
+          Tap the
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            class="inline-block size-4 align-middle mx-0.5 -mt-0.5 text-ink"
+          >
+            <circle cx="5" cy="12" r="1.5" />
+            <circle cx="12" cy="12" r="1.5" />
+            <circle cx="19" cy="12" r="1.5" />
+          </svg>
+          menu in the bottom-right of Safari.
+        </p>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">02</span>
+        <p class="text-ink text-sm leading-snug flex-1">
+          Tap
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            class="inline-block size-4 align-middle mx-0.5 -mt-0.5 text-ink"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25" />
+          </svg>
+          <strong>Share</strong>.
+        </p>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">03</span>
+        <p class="text-ink text-sm leading-snug flex-1">
+          Tap the
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            class="inline-block size-4 align-middle mx-0.5 -mt-0.5 text-ink"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5v9m0 0 3-3m-3 3-3-3" />
+          </svg>
+          circle (last in the bottom row of icons).
+        </p>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">04</span>
+        <p class="text-ink text-sm leading-snug flex-1">
+          Tap <strong>Add to Home Screen</strong> at the bottom of the modal.
+        </p>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">05</span>
+        <p class="text-ink text-sm leading-snug flex-1">
+          Open the new icon from your home screen to sign in.
+        </p>
+      </li>
+    </ol>
+    """
+  end
+
+  @doc """
   Theme toggle — a small slider switch between light and dark, with
   sun and moon glyphs at either end. Click anywhere on the row to
   flip; the slider knob slides via CSS based on the current

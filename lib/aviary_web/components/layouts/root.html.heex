@@ -148,6 +148,15 @@
         }
       })();
     </script>
+
+    <style>
+      /* Settings page: reveal the install section only when iOS
+         Safari + not standalone (the same gate as the one-time
+         install hint flash). Hidden everywhere else so desktop
+         users + installed-PWA users don't see "install" copy that
+         doesn't apply to them. */
+      html[data-needs-install="true"] .pwa-install-section { display: block !important; }
+    </style>
   </head>
   <body>
     {@inner_content}
