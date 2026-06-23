@@ -898,17 +898,29 @@ defmodule Aviary.Jellyfin do
   in deployed environments) and embeds the user's auth token so the
   request from the user's device is authenticated as them.
   """
+  # The total stream bitrate cap aviary asks Jellyfin to respect.
+  # Jellyfin's server-side RemoteClientBitrateLimit is a hint —
+  # the client (this URL) has to actually request a cap for the
+  # transcode pipeline to fall into a fit-the-bitrate path. Without
+  # MaxStreamingBitrate in the URL, Jellyfin video-copies the source
+  # (25+ Mbps for a 1080p REMUX), which then can't fit through the
+  # household's ~20 Mbps upload when the viewer is reaching aviary
+  # via Cloudflare Tunnel.
+  #
+  # 8 Mbps fits two concurrent streams in 20 Mbps with headroom. All
+  # viewers get this cap currently — a follow-up should detect
+  # LAN/tailnet viewers and skip the cap for them (full quality with
+  # direct play / hardware-fast transcode), reserving the cap for
+  # genuinely-remote viewers arriving through Cloudflare.
+  @max_streaming_bitrate 8_000_000
+
   def hls_url(item_id, auth, _audio_stream_index \\ nil) do
     session_id = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
 
-    # Minimal set — same params the working setup used before recent
-    # transcoding tweaks. Adding MaxStreamingBitrate and
-    # AudioStreamIndex was changing Jellyfin's playback-decision
-    # pipeline in ways that caused the browser to rebuffer constantly,
-    # so they're removed pending a more careful re-introduction (audio
-    # picker should only fire on files that actually have a
-    # description track; bitrate should only override when transcoding
-    # is required).
+    # Video bitrate target — leaves ~500 Kbps headroom for audio
+    # under the total stream cap.
+    video_bitrate = @max_streaming_bitrate - 500_000
+
     params_map = %{
       "api_key" => auth.token,
       "MediaSourceId" => item_id,
@@ -917,6 +929,16 @@ defmodule Aviary.Jellyfin do
       "VideoCodec" => "h264",
       "AudioCodec" => "aac",
       "SegmentContainer" => "ts",
+      # Without Static=false, Jellyfin's HLS endpoint defaults to a
+      # DirectStream path (video copy + audio transcode) and silently
+      # bypasses the bitrate cap. The "FFmpeg.DirectStream-..."
+      # filenames in jellyfin/log/ are the giveaway. Static=false
+      # tells Jellyfin "don't take the copy shortcut"; VideoBitRate
+      # then nails the encoder to a specific output bitrate so the
+      # cap actually bites.
+      "Static" => "false",
+      "VideoBitRate" => Integer.to_string(video_bitrate),
+      "MaxStreamingBitrate" => Integer.to_string(@max_streaming_bitrate),
       # Stereo cap stays at 2 channels. An earlier change bumped this
       # to 6 + added `eac3,ac3` to the codec list to enable household
       # surround for Lovesac/5.1 setups — but Jellyfin's playback
