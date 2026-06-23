@@ -1492,6 +1492,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     audio_index = Aviary.Jellyfin.default_audio_index(audio_streams)
 
     socket
+    |> assign(:in_library, true)
     |> assign(:playing_item, item)
     |> assign(:playing_segments, Aviary.Jellyfin.segments(item.id, user))
     |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(item.id, user))
@@ -1608,8 +1609,12 @@ defmodule AviaryWeb.ShowsDetailLive do
         # Re-fetch immediately so the button reflects the new state on
         # the same tick the user clicked — without waiting up to 5s
         # for the next poll. The periodic poll keeps it fresh after.
+        # `:in_library` is mirrored on the socket too — the DB write
+        # above happened, but without bumping the assign the page
+        # keeps rendering as "not in library" until next mount.
         {:noreply,
          socket
+         |> assign(:in_library, true)
          |> fetch_sonarr_status()
          |> put_flash(:info, flash_text)}
 

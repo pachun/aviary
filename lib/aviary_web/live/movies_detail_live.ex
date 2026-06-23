@@ -252,6 +252,7 @@ defmodule AviaryWeb.MoviesDetailLive do
 
     {:noreply,
      socket
+     |> assign(:in_library, true)
      |> assign(:playing_item, movie)
      |> assign(:playing_segments, Aviary.Jellyfin.segments(movie.id, user))
      |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(movie.id, user))
@@ -274,6 +275,11 @@ defmodule AviaryWeb.MoviesDetailLive do
 
           {:noreply,
            socket
+           # Mirror the DB write on the socket — without this, the
+           # big CTA stays "Add to library" + "Watchable now" after
+           # the download finishes because @in_library never flipped
+           # to true on the LV's local state.
+           |> assign(:in_library, true)
            |> fetch_radarr_status()
            |> put_flash(:info, "Grabbing #{movie.title}…")}
 
@@ -796,8 +802,18 @@ defmodule AviaryWeb.MoviesDetailLive do
   def movie_state(_movie, nil, _seen), do: :ready
   def movie_state(_movie, %{has_file: true}, _seen), do: :imported
 
+  # Download is done — qBit handed the file off and Radarr is mid-
+  # import. Without this clause, the chip sits at "100%" for the
+  # entire import window (file move + Jellyfin scan), which reads
+  # as "something is stuck." Skip straight to `:imported` so the
+  # chip shows "Importing…" instead. Mirrors the shows-side
+  # queue_record_state pattern.
+  def movie_state(_movie, %{queue: %{"size" => size, "sizeleft" => 0}}, _seen)
+      when is_number(size) and size > 0,
+      do: :imported
+
   def movie_state(_movie, %{queue: %{"size" => size, "sizeleft" => left}}, _seen)
-      when is_number(size) and is_number(left) and size > 0 do
+      when is_number(size) and is_number(left) and size > 0 and left > 0 do
     {:downloading, round((size - left) / size * 100)}
   end
 
