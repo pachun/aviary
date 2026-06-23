@@ -66,6 +66,18 @@ defmodule AviaryWeb.CoreComponents do
       shadow. Errors get an oxblood left-edge accent strip so they
       read as serious without going Material-red.
     --%>
+    <%!--
+      Editorial toast: museum-label restraint, no decorative icon.
+      Text is truly centered horizontally (single block + text-center)
+      and the X sits in the upper-right corner so it doesn't pull the
+      visual weight off-axis. Error variant still gets the oxblood
+      left-edge accent — the one chrome we keep to distinguish error
+      from info at a glance, since we no longer have an icon to do
+      that job.
+
+      `relative` on the outer wrapper so the absolutely-positioned X
+      anchors to this card and not the flash_group container.
+    --%>
     <div
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
@@ -73,38 +85,26 @@ defmodule AviaryWeb.CoreComponents do
       phx-hook="AutoDismissFlash"
       role="alert"
       class={[
-        "w-80 sm:w-96 bg-surface border border-rule shadow-md rounded-sm cursor-pointer",
+        "relative w-80 sm:w-96 bg-surface border border-rule shadow-md rounded-sm cursor-pointer",
         "font-sans text-[0.85rem] text-ink",
         @kind == :error && "border-l-2 border-l-oxblood"
       ]}
       {@rest}
     >
-      <div class="flex items-start gap-3 px-4 py-3">
-        <.icon
-          :if={@kind == :info}
-          name="hero-information-circle-mini"
-          class="size-4 text-muted shrink-0 mt-0.5"
-        />
-        <.icon
-          :if={@kind == :error}
-          name="hero-exclamation-circle-mini"
-          class="size-4 text-oxblood shrink-0 mt-0.5"
-        />
-        <div class="flex-1 min-w-0">
-          <p :if={@title} class="font-medium mb-1">{@title}</p>
-          <p class="text-muted">{msg}</p>
-        </div>
-        <button
-          type="button"
-          aria-label="close"
-          class="shrink-0 -mr-1 -mt-1 p-1 rounded-sm cursor-pointer"
-        >
-          <.icon
-            name="hero-x-mark-mini"
-            class="size-4 text-muted hover:text-ink transition-colors"
-          />
-        </button>
+      <div class="px-8 py-3 text-center">
+        <p :if={@title} class="font-medium mb-0.5">{@title}</p>
+        <p class="text-ink leading-snug">{msg}</p>
       </div>
+      <button
+        type="button"
+        aria-label="close"
+        class="absolute top-2 right-2 p-1 rounded-sm cursor-pointer"
+      >
+        <.icon
+          name="hero-x-mark-mini"
+          class="size-4 text-muted hover:text-ink transition-colors"
+        />
+      </button>
     </div>
     """
   end
