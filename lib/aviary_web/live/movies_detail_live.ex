@@ -30,6 +30,10 @@ defmodule AviaryWeb.MoviesDetailLive do
             playing_segments: nil,
             playing_subtitles: [],
             playing_audio_index: nil,
+            subtitles_default:
+              Aviary.Preferences.subtitles_default?(
+                socket.assigns.current_user.id
+              ),
             kicker: kicker(params["from"], params["q"]),
             radarr_status: nil,
             imported_stuck_since: nil,
@@ -227,13 +231,13 @@ defmodule AviaryWeb.MoviesDetailLive do
   # search screen.
   defp kicker("home", _), do: %{label: "Home", path: "/home"}
   defp kicker("discover", _), do: %{label: "Discover", path: "/discover"}
-  defp kicker("library_shows", _), do: %{label: "Library", path: "/library?type=shows"}
+  defp kicker("library_shows", _), do: %{label: "Shows", path: "/library?type=shows"}
 
   defp kicker("search", q) when is_binary(q) and q != "",
     do: %{label: "Search", path: "/search?q=" <> URI.encode_www_form(q)}
 
   defp kicker("search", _), do: %{label: "Search", path: "/search"}
-  defp kicker(_, _), do: %{label: "Library", path: "/library?type=movies"}
+  defp kicker(_, _), do: %{label: "Movies", path: "/library?type=movies"}
 
   def handle_event("play", _, socket) do
     movie = socket.assigns.movie
@@ -257,6 +261,14 @@ defmodule AviaryWeb.MoviesDetailLive do
      |> assign(:playing_segments, Aviary.Jellyfin.segments(movie.id, user))
      |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(movie.id, user))
      |> assign(:playing_audio_index, audio_index)}
+  end
+
+  # A viewer toggling captions from the native player menu updates their
+  # cross-device default. The JS hook pushes whether any track is showing.
+  def handle_event("subtitles_changed", %{"on" => on}, socket)
+      when is_boolean(on) do
+    Aviary.Preferences.set_subtitles_default(socket.assigns.current_user.id, on)
+    {:noreply, assign(socket, :subtitles_default, on)}
   end
 
   def handle_event("watch", _, socket) do
@@ -402,18 +414,13 @@ defmodule AviaryWeb.MoviesDetailLive do
   def handle_event("report_progress", %{"position" => position} = payload, socket) do
     item = socket.assigns.playing_item
     user = socket.assigns.current_user
-    duration = payload["duration"]
 
-    # Past 95% of the runtime = effectively done. mark_played
-    # (canonical endpoint + position zero) keeps Jellyfin's
-    # Resume/NextUp from treating the movie as still in-progress.
-    if is_number(duration) and duration > 0 and position / duration >= 0.95 do
-      Aviary.Jellyfin.mark_played(item.id, user)
-      {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, nil))}
-    else
-      position_ticks = trunc(position * 10_000_000)
-      Aviary.Jellyfin.save_position(item.id, position_ticks, user)
-      {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, position))}
+    case Aviary.Jellyfin.report_progress(item.id, position, payload["duration"], user) do
+      :played ->
+        {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, nil))}
+
+      :in_progress ->
+        {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, position))}
     end
   end
 
@@ -631,6 +638,7 @@ defmodule AviaryWeb.MoviesDetailLive do
         title={@movie.title}
         segments={@playing_segments}
         subtitles={@playing_subtitles}
+        subtitles_default={@subtitles_default}
         audio_stream_index={@playing_audio_index}
       />
 

@@ -100,9 +100,9 @@ defmodule AviaryWeb.HomeLive do
           Upcoming releases. Hidden entirely when nothing is dropping in
           the window — the section appearing/disappearing communicates
           "your week is empty / your week has drops" by its presence.
-          Editorial list, not a grid: most users have 2–4 active shows
-          so a 7×2 calendar would be mostly empty cells; the list
-          contracts and expands with what's actually scheduled.
+          Editorial list ordered by air date — contracts and expands
+          with what's actually scheduled. (The tvOS client renders the
+          same feed as a card shelf; see AviaryWeb.API.HomeController.)
         --%>
         <section :if={@upcoming != []}>
         <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">

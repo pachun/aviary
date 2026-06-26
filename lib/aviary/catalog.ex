@@ -81,7 +81,15 @@ defmodule Aviary.Catalog do
           |> Map.put(:source, :library)
           |> Map.put(:tmdb_id, tmdb_id(item))
           |> Map.put(:poster_url, "/image/#{item["Id"]}")
-          |> Map.put(:rating, Aviary.RottenTomatoes.fetch(item["Name"], :movie))
+          |> Map.put(
+            :rating,
+            Aviary.RottenTomatoes.fetch(
+              item["Name"],
+              :movie,
+              item["ProductionYear"],
+              imdb_id(item)
+            )
+          )
 
         {:ok, movie}
 
@@ -110,7 +118,13 @@ defmodule Aviary.Catalog do
         trailer_url: tmdb_trailer_url(body),
         resume_seconds: nil,
         poster_url: tmdb_poster_url(body["posterPath"]),
-        rating: Aviary.RottenTomatoes.fetch(body["title"], :movie)
+        rating:
+          Aviary.RottenTomatoes.fetch(
+            body["title"],
+            :movie,
+            tmdb_movie_year(body["releaseDate"]),
+            jellyseerr_imdb(body)
+          )
       }
 
       {:ok, movie}
@@ -222,13 +236,49 @@ defmodule Aviary.Catalog do
           |> Map.put(:episodes_by_season, episodes_by_season)
           |> Map.put(:next_up, next_up)
           |> Map.put(:season_count, episodes_by_season |> Enum.map(&elem(&1, 0)) |> Enum.uniq() |> length())
-          |> Map.put(:rating, Aviary.RottenTomatoes.fetch(item["Name"], :tv))
+          |> Map.put(
+            :rating,
+            Aviary.RottenTomatoes.fetch(item["Name"], :tv, nil, imdb_id(item))
+          )
           |> Map.put(:schedule, schedule)
 
         {:ok, show}
 
       :error ->
         :error
+    end
+  end
+
+  @doc """
+  The one "what should I watch next for this series" calculation — the
+  SAME `first_in_progress` derivation the detail page's next-up uses:
+  the most recently played episode, advanced past when it's basically
+  done, otherwise the in-progress episode it happens to be. Returns the
+  target episode map, or nil when there's nothing to continue (caught
+  up / no activity).
+
+  Home's Continue Watching calls this per series so its answer can
+  never disagree with the detail page. There is no separate "resume"
+  source ranked against "next up" — resume is simply the case where the
+  one target episode carries a saved position.
+  """
+  def continue_target(series_id, auth) do
+    episodes_by_season =
+      series_id
+      |> Aviary.Jellyfin.list_episodes(auth)
+      |> group_episodes()
+
+    case first_in_progress(episodes_by_season) do
+      %{caught_up: true} -> nil
+      nil -> jellyfin_next_up_episode(series_id, auth)
+      episode -> episode
+    end
+  end
+
+  defp jellyfin_next_up_episode(series_id, auth) do
+    case Aviary.Jellyfin.next_up(series_id, auth) do
+      {:ok, episode} -> to_episode(episode)
+      _ -> nil
     end
   end
 
@@ -266,7 +316,7 @@ defmodule Aviary.Catalog do
         runtime_minutes: tmdb_show_runtime(body),
         next_up: nil,
         season_count: length(seasons),
-        rating: Aviary.RottenTomatoes.fetch(body["name"], :tv),
+        rating: Aviary.RottenTomatoes.fetch(body["name"], :tv, nil, jellyseerr_imdb(body)),
         schedule: derive_schedule(episodes_by_season, Aviary.LocalTime.today()),
         poster_url: tmdb_poster_url(body["posterPath"])
       }
@@ -381,6 +431,7 @@ defmodule Aviary.Catalog do
       synopsis: ep["overview"],
       season: ep["seasonNumber"],
       episode: ep["episodeNumber"],
+      still_url: tmdb_still_url(ep["stillPath"]),
       runtime_minutes: nil,
       resume_seconds: nil,
       last_played_at: nil,
@@ -453,6 +504,13 @@ defmodule Aviary.Catalog do
   defp tmdb_show_runtime(%{"episodeRunTime" => [n | _]}) when is_integer(n) and n > 0, do: n
   defp tmdb_show_runtime(_), do: 45
 
+  # TMDB episode still (16:9). w300 is the largest fixed still size TMDB
+  # publishes; upscales cleanly on an episode card.
+  defp tmdb_still_url(nil), do: nil
+  defp tmdb_still_url(""), do: nil
+  defp tmdb_still_url("/" <> path), do: "/image/tmdb/w300/" <> path
+  defp tmdb_still_url(path) when is_binary(path), do: "/image/tmdb/w300/" <> path
+
   defp tmdb_poster_url(nil), do: nil
   defp tmdb_poster_url(""), do: nil
   # Routes through aviary's disk-cached proxy (see
@@ -515,6 +573,19 @@ defmodule Aviary.Catalog do
 
   defp tmdb_id(%{"ProviderIds" => %{"Tmdb" => id}}) when is_binary(id) and id != "", do: id
   defp tmdb_id(_), do: nil
+
+  # IMDb id for RT resolution via Wikidata. Library items carry it in
+  # Jellyfin's ProviderIds; discover items get it from Jellyseerr's
+  # (Overseerr) details, either top-level or under externalIds.
+  defp imdb_id(%{"ProviderIds" => %{"Imdb" => id}}) when is_binary(id) and id != "", do: id
+  defp imdb_id(_), do: nil
+
+  defp jellyseerr_imdb(body) do
+    case body["imdbId"] || get_in(body, ["externalIds", "imdbId"]) do
+      id when is_binary(id) and id != "" -> id
+      _ -> nil
+    end
+  end
 
   # Resume from saved position when there is one. We use PlayedPercentage
   # to skip items that are basically finished (>= 95% in) — Jellyfin
@@ -585,9 +656,15 @@ defmodule Aviary.Catalog do
   # done, advance" logic catches it. Order matters: explicit pct wins
   # when present (covers the rewatch-in-progress case where Played has
   # latched from a prior completion but pct is now genuinely partial).
-  defp played_percentage(%{"PlayedPercentage" => p}) when is_number(p), do: p
-  defp played_percentage(%{"Played" => true}), do: 100.0
-  defp played_percentage(_), do: 0.0
+  @doc """
+  Fraction (0–100) of an episode/movie the user has watched, read from
+  a Jellyfin `UserData` map. Public because the home Continue Watching
+  feed draws its resume bar from the same number the detail page's
+  next-up logic branches on — one definition, no drift.
+  """
+  def played_percentage(%{"PlayedPercentage" => p}) when is_number(p), do: p
+  def played_percentage(%{"Played" => true}), do: 100.0
+  def played_percentage(_), do: 0.0
 
   # When the most-recently-watched episode is past this percentage we
   # treat it as "basically done" and advance the continue/play button
@@ -595,6 +672,18 @@ defmodule Aviary.Catalog do
   # credits-came-on close (credits usually start in the last 10% of
   # an episode).
   @done_threshold 90.0
+
+  @doc """
+  True when a Jellyfin `UserData` map represents an episode that's
+  basically finished — past `@done_threshold` of its runtime. This is
+  the single "should we advance past this episode?" test: the detail
+  page's next-up derivation and the home Continue Watching filter both
+  go through it, so they can never disagree about whether an episode
+  still counts as in-progress. Prefer this over the raw `Played` flag,
+  which latches `true` on a completed episode even after a rewatch has
+  left it genuinely mid-way.
+  """
+  def basically_done?(user_data), do: played_percentage(user_data) >= @done_threshold
 
   @epoch ~U[1970-01-01 00:00:00Z]
 

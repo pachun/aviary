@@ -91,6 +91,24 @@ const HlsPlayer = {
     video.addEventListener("pause", reportProgress)
     video.addEventListener("ended", reportProgress)
 
+    // Persist subtitle on/off changes to the viewer's cross-device
+    // default. The native CC menu flips a TextTrack's mode to "showing"
+    // / "disabled"; we push whether any track is showing, deduped so
+    // only real changes report. The server updates the shared
+    // preference, so it follows the viewer to their other devices.
+    const textTracks = video.textTracks
+    if (textTracks) {
+      let reportedSubtitlesOn = null
+      const reportSubtitles = () => {
+        const on = Array.from(textTracks).some((t) => t.mode === "showing")
+        if (on !== reportedSubtitlesOn) {
+          reportedSubtitlesOn = on
+          this.pushEvent("subtitles_changed", {on})
+        }
+      }
+      textTracks.addEventListener("change", reportSubtitles)
+    }
+
     // Auto-hide controls after stillness — mirrors native HTML5 video
     // behavior. Any mouse movement or touch shows controls and
     // restarts the 3s hide timer; while paused, controls stay

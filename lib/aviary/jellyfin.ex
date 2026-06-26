@@ -634,6 +634,28 @@ defmodule Aviary.Jellyfin do
     _ -> :error
   end
 
+  @doc """
+  Records a single progress report from a player. Past 95% of the
+  runtime the item is treated as finished (`mark_played` — the
+  canonical write that moves Jellyfin's NextUp on to the next
+  episode); otherwise the partial position is saved. Returns
+  `:played` or `:in_progress` so callers can update their own view of
+  the item to match.
+
+  Shared by the LiveView web player (`report_progress` event) and the
+  native-client progress API so both branch identically.
+  """
+  def report_progress(item_id, position, duration, auth)
+      when is_number(position) do
+    if is_number(duration) and duration > 0 and position / duration >= 0.95 do
+      mark_played(item_id, auth)
+      :played
+    else
+      save_position(item_id, trunc(position * 10_000_000), auth)
+      :in_progress
+    end
+  end
+
   # Wipe every cached UserData-derived entry for this user after a
   # UserData write (mark_played, mark_unplayed, save_position,
   # reset_item_progress). Without this, the home page mount that
@@ -740,10 +762,16 @@ defmodule Aviary.Jellyfin do
   ## Video stream
 
   @doc """
-  Returns the item's subtitle tracks as `[%{index, lang, label, default}]`,
-  empty list when there are none or on error. Each entry corresponds to
-  a HTML5 `<track>` element the video player can offer via its native
-  CC menu.
+  Returns the item's ENGLISH subtitle tracks as
+  `[%{index, lang, label, default}]`, empty list when there are none or
+  on error. Each entry corresponds to a track a player can offer via
+  its CC menu.
+
+  English-only is a deliberate product policy, applied here so every
+  surface (web player, native API, tvOS) offers the same one language —
+  the household only reads English, and surfacing the source's other
+  language tracks (Chinese, etc.) is exactly the menu clutter we're
+  removing. `english?/1` is the single place that decision lives.
   """
   def subtitle_streams(item_id, auth) do
     case Req.get(base_url() <> "/Items",
@@ -756,6 +784,7 @@ defmodule Aviary.Jellyfin do
       when is_list(streams) ->
         streams
         |> Enum.filter(&(&1["Type"] == "Subtitle"))
+        |> Enum.filter(&english?/1)
         |> Enum.map(&to_subtitle/1)
 
       _ ->
@@ -763,6 +792,22 @@ defmodule Aviary.Jellyfin do
     end
   rescue
     _ -> []
+  end
+
+  # English by language code (eng/en), or — when the source left the
+  # language undetermined — by an "English" mention in the track's
+  # human label. Everything else (Chinese, Polish, …) is filtered out.
+  defp english?(stream) do
+    lang = stream["Language"] |> to_string() |> String.downcase()
+
+    label =
+      [stream["DisplayTitle"], stream["Title"]]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" ")
+      |> String.downcase()
+
+    lang in ["en", "eng"] or
+      (lang in ["", "und"] and String.contains?(label, "english"))
   end
 
   defp to_subtitle(stream) do
@@ -915,17 +960,27 @@ defmodule Aviary.Jellyfin do
   @max_streaming_bitrate 8_000_000
 
   def hls_url(item_id, auth, _audio_stream_index \\ nil) do
+    query = URI.encode_query(transcode_params(item_id, auth, nil))
+    "#{public_url()}/Videos/#{item_id}/master.m3u8?#{query}"
+  end
+
+  # Shared transcode params for both the direct HLS URL (web `<track>`
+  # player) and the rewritten manifest (native players). When
+  # `subtitle_index` is given, Jellyfin includes the item's subtitle
+  # streams as in-manifest HLS renditions (SubtitleMethod=Hls); nil
+  # omits subtitles entirely.
+  defp transcode_params(item_id, auth, subtitle_index) do
     session_id = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
 
     # Video bitrate target — leaves ~500 Kbps headroom for audio
     # under the total stream cap.
     video_bitrate = @max_streaming_bitrate - 500_000
 
-    params_map = %{
+    base = %{
       "api_key" => auth.token,
       "MediaSourceId" => item_id,
       "PlaySessionId" => session_id,
-      "DeviceId" => "aviary-web",
+      "DeviceId" => "aviary",
       "VideoCodec" => "h264",
       "AudioCodec" => "aac",
       "SegmentContainer" => "ts",
@@ -951,7 +1006,109 @@ defmodule Aviary.Jellyfin do
       "TranscodingMaxAudioChannels" => "2"
     }
 
-    "#{public_url()}/Videos/#{item_id}/master.m3u8?#{URI.encode_query(params_map)}"
+    case subtitle_index do
+      nil ->
+        base
+
+      idx ->
+        Map.merge(base, %{
+          "SubtitleStreamIndex" => Integer.to_string(idx),
+          "SubtitleMethod" => "Hls"
+        })
+    end
+  end
+
+  @doc """
+  Returns a rewritten HLS master playlist as a string (or `:error`),
+  carrying the household's subtitle policy the native players honor:
+  English-only. `subtitles_on` is the viewer's saved default: when
+  false the English line is forced `DEFAULT=NO,AUTOSELECT=NO` (present
+  but off until they pick it); when true it keeps Jellyfin's
+  `DEFAULT=YES,AUTOSELECT=YES` so subtitles start on.
+
+  Jellyfin's own master playlist can't express that. Asking for the
+  English track makes Jellyfin emit EVERY subtitle language as a
+  rendition and flag the requested one `DEFAULT=YES` (auto-on). So we
+  fetch it, keep only the English subtitle line, apply the viewer's
+  default, drop the other languages, and rewrite the now-relative
+  variant/subtitle URIs to absolute public Jellyfin URLs — the client
+  still streams segments straight from Jellyfin, so aviary only ever
+  proxies this small text playlist, never the video.
+  """
+  def hls_manifest(item_id, auth, subtitles_on \\ false) do
+    subtitle_index =
+      case subtitle_streams(item_id, auth) do
+        [%{index: idx} | _] -> idx
+        _ -> nil
+      end
+
+    query = URI.encode_query(transcode_params(item_id, auth, subtitle_index))
+    url = "#{base_url()}/Videos/#{item_id}/master.m3u8?#{query}"
+
+    case Req.get(url,
+           headers: [{"x-emby-token", auth.token}],
+           receive_timeout: 10_000,
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
+        {:ok, rewrite_manifest(body, item_id, subtitles_on)}
+
+      _ ->
+        :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  defp rewrite_manifest(body, item_id, subtitles_on) do
+    prefix = "#{public_url()}/Videos/#{item_id}/"
+
+    body
+    |> String.split("\n")
+    |> Enum.flat_map(&rewrite_manifest_line(&1, prefix, subtitles_on))
+    |> Enum.join("\n")
+  end
+
+  # Subtitle rendition lines: keep only the English one, apply the
+  # viewer's default, and absolutize its URI. Every other language is
+  # dropped. Jellyfin flags the English track DEFAULT=YES,AUTOSELECT=YES;
+  # we leave that when the viewer wants subtitles on, or force it off.
+  defp rewrite_manifest_line(
+         "#EXT-X-MEDIA:TYPE=SUBTITLES" <> _ = line,
+         prefix,
+         subtitles_on
+       ) do
+    if String.contains?(line, ~s(LANGUAGE="eng")) do
+      english =
+        if subtitles_on do
+          line
+        else
+          line
+          |> String.replace("DEFAULT=YES", "DEFAULT=NO")
+          |> String.replace("AUTOSELECT=YES", "AUTOSELECT=NO")
+        end
+
+      [absolutize_uri(english, prefix)]
+    else
+      []
+    end
+  end
+
+  # A bare relative line (no leading #) is the variant playlist URI —
+  # make it absolute so the client fetches it straight from Jellyfin.
+  # Everything else (tags, blanks) passes through untouched.
+  defp rewrite_manifest_line(line, prefix, _subtitles_on) do
+    trimmed = String.trim(line)
+
+    cond do
+      trimmed == "" -> [line]
+      String.starts_with?(trimmed, "#") -> [line]
+      true -> [prefix <> trimmed]
+    end
+  end
+
+  defp absolutize_uri(line, prefix) do
+    Regex.replace(~r/URI="([^"]+)"/, line, fn _, uri -> ~s(URI="#{prefix}#{uri}") end)
   end
 
   ## Internals

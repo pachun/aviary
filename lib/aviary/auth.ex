@@ -61,6 +61,47 @@ defmodule Aviary.Auth do
   end
 
   @doc """
+  Resolves a bare access token back to the full user map the context
+  modules expect (`%{id, username, token, primary_image_tag}`).
+
+  The web app carries this map in the session cookie from login
+  onward, but a native client (tvOS) holds only the token — so on each
+  API request the auth plug rebuilds the rest from the token alone.
+  Jellyfin's `/Users/Me` returns the authenticated user for a token,
+  which is exactly that; a 200 doubles as proof the token is still
+  valid, while 401/403 means it's been revoked.
+  """
+  def user_from_token(token) when is_binary(token) do
+    case Req.get(base_url() <> "/Users/Me",
+           headers: [{"x-emby-token", token}],
+           receive_timeout: 5_000,
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: user}} ->
+        {:ok,
+         %{
+           id: user["Id"],
+           username: user["Name"],
+           token: token,
+           primary_image_tag: user["PrimaryImageTag"]
+         }}
+
+      {:ok, %Req.Response{status: status}} when status in [401, 403] ->
+        {:error, :invalid_token}
+
+      {:ok, %Req.Response{status: status}} ->
+        {:error, {:unexpected_status, status}}
+
+      {:error, _} = err ->
+        err
+    end
+  rescue
+    _ -> {:error, :request_failed}
+  end
+
+  def user_from_token(_), do: {:error, :invalid_token}
+
+  @doc """
   Best-effort logout — invalidates the access token on Jellyfin's side
   so it can't be reused. Always returns :ok; if the network call fails
   we just drop the session locally and move on.

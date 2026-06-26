@@ -69,7 +69,7 @@ defmodule Aviary.Upcoming do
 
       case find_next_upcoming(tmdb_id, candidates, jellyfin, today) do
         nil -> nil
-        episode -> build_release(episode, jellyfin, body["name"], today)
+        episode -> build_release(episode, jellyfin, body, today)
       end
     else
       _ -> nil
@@ -119,13 +119,14 @@ defmodule Aviary.Upcoming do
     Date.diff(date, today) <= @window_days
   end
 
-  defp build_release(episode, jellyfin, name_fallback, today) do
+  defp build_release(episode, jellyfin, body, today) do
     %{
       # Prefer the Jellyfin id when the show's in the library so the
       # link lands on the existing show detail page; otherwise the
       # TMDB id routes through the discover-show loader.
       series_id: (jellyfin && jellyfin.id) || to_string(episode["showId"]),
-      series_name: (jellyfin && jellyfin.name) || name_fallback || "Unknown",
+      series_name: (jellyfin && jellyfin.name) || body["name"] || "Unknown",
+      poster_url: poster_url(jellyfin, body["posterPath"]),
       season: episode["seasonNumber"],
       episode: episode["episodeNumber"],
       air_date: episode.parsed_date,
@@ -137,6 +138,18 @@ defmodule Aviary.Upcoming do
       days_away: Date.diff(episode.parsed_date, today)
     }
   end
+
+  # In-library shows serve their poster from Jellyfin by id; shows not in
+  # the library have no Jellyfin item, so they fall back to the TMDB
+  # poster path through the same disk-cached proxy the Discover grid uses.
+  # Nil when neither source has artwork.
+  defp poster_url(%{id: id}, _tmdb_path), do: "/image/#{id}"
+  defp poster_url(nil, "/" <> path), do: "/image/tmdb/w500/#{path}"
+
+  defp poster_url(nil, path) when is_binary(path) and path != "",
+    do: "/image/tmdb/w500/#{path}"
+
+  defp poster_url(nil, _), do: nil
 
   # Fetches the series record AND its episodes in one call per show.
   # Caching the episode list this way means we don't refetch on every

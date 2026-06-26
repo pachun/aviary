@@ -24,7 +24,7 @@ defmodule AviaryWeb.Components.Marquee do
   attr :dismissible, :boolean,
     default: false,
     doc:
-      "When true, renders a hover-revealed X button on each card; click fires phx-click=\"dismiss\" with kind + detail_id (or the value of `dismiss_event` if set). Home uses this to give the user direct control over Continue Watching."
+      "When true, renders an X button on each card — hover-revealed on pointer devices, always visible on touch (no hover to reveal it). Click fires phx-click=\"dismiss\" with kind + detail_id (or the value of `dismiss_event` if set). Home uses this to give the user direct control over Continue Watching."
 
   attr :dismiss_event, :string,
     default: "dismiss",
@@ -284,6 +284,19 @@ defmodule AviaryWeb.Components.Marquee do
           </div>
 
           <%!--
+            Resume bar — a thin oxblood fill pinned to the bottom edge
+            showing how far into the episode/movie the user is. Only
+            Continue Watching items carry :progress; every other row
+            omits the key and renders no bar.
+          --%>
+          <div
+            :if={Map.get(@item, :progress)}
+            class="absolute inset-x-0 bottom-0 h-1 bg-black/40"
+          >
+            <div class="h-full bg-oxblood" style={"width: #{@item.progress}%"}></div>
+          </div>
+
+          <%!--
             Recommender avatar stack — only when this card came from
             a Family Recommended row. Sits ABOVE the title gradient
             (z-10) in the bottom-right. Slight negative right-margin
@@ -332,7 +345,7 @@ defmodule AviaryWeb.Components.Marquee do
         phx-value-kind={dismiss_kind(@item)}
         data-confirm={dismiss_confirm(@dismiss_event)}
         aria-label="Remove"
-        class="absolute top-2 right-2 z-10 size-6 rounded-full bg-black/60 backdrop-blur-sm text-white text-xs leading-none flex items-center justify-center cursor-pointer transition-opacity duration-200 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+        class="absolute top-2 right-2 z-10 size-7 sm:size-6 rounded-full bg-black/60 backdrop-blur-sm text-white text-xs leading-none flex items-center justify-center cursor-pointer transition-opacity duration-200 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 hover:bg-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
         ✕
       </button>
@@ -343,6 +356,15 @@ defmodule AviaryWeb.Components.Marquee do
   # Explicit URL takes precedence — used by the discover page where
   # items come from TMDB and bypass aviary's Jellyfin image proxy.
   defp thumbnail_src(%{thumbnail_url: url}) when is_binary(url), do: url
+
+  # Continue Watching show cards lead with the specific episode still
+  # (its Primary image), falling back to the series backdrop when the
+  # still never backfilled — same treatment the native home feed uses.
+  # Only home items carry play_item_id, so other rows skip this clause.
+  defp thumbnail_src(%{kind: :show, play_item_id: episode_id, thumbnail_item_id: series_id})
+       when is_binary(episode_id) do
+    "/image/#{episode_id}?fallback=#{series_id}"
+  end
 
   defp thumbnail_src(%{thumbnail_item_id: id, thumbnail_kind: :backdrop}) do
     "/image/#{id}?kind=backdrop"

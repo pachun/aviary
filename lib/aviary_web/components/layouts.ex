@@ -67,9 +67,9 @@ defmodule AviaryWeb.Layouts do
     doc: "currently signed-in user; surfaces as a chip in the masthead"
 
   attr :nav_visibility, :map,
-    default: %{discover: true, home: true, library: true, search: true},
+    default: %{discover: true, home: true, shows: true, movies: true, search: true},
     doc:
-      "Which top-level nav links to render — Discover and Search are always true; Home and Library hide when the user has no content for them, so a brand-new user sees only Discover and Search."
+      "Which top-level nav links to render — Discover and Search are always true; Home, Shows, and Movies hide when the user has no content for them, so a brand-new user sees only Discover and Search."
 
   attr :mobile_title, :string,
     default: nil,
@@ -115,7 +115,7 @@ defmodule AviaryWeb.Layouts do
         trigger` and the IntersectionObserver watches it.
 
         Layout: back-with-destination on the LEFT, title CENTERED.
-        The destination-name on the back button (e.g. "Library")
+        The destination-name on the back button (e.g. "Shows")
         prevents "‹ Dutton Ranch" from reading as a back-to-self
         link; the back-button's destination and the title now
         unambiguously label different things.
@@ -161,7 +161,7 @@ defmodule AviaryWeb.Layouts do
             </svg>
             <%!--
               leading-tight (not leading-none) so descenders in
-              labels like "Library" don't clip against the
+              labels like "Movies" don't clip against the
               overflow-hidden of the parent.
             --%>
             <span :if={@mobile_back_label} class="font-sans text-base leading-tight">
@@ -222,11 +222,18 @@ defmodule AviaryWeb.Layouts do
               Home
             </.section_link>
             <.section_link
-              :if={@nav_visibility.library}
-              href={~p"/library"}
-              active={is_nil(@mobile_back_to) && @current_section == "library"}
+              :if={@nav_visibility.shows}
+              href={~p"/library?type=shows"}
+              active={is_nil(@mobile_back_to) && @current_section == "shows"}
             >
-              Library
+              Shows
+            </.section_link>
+            <.section_link
+              :if={@nav_visibility.movies}
+              href={~p"/library?type=movies"}
+              active={is_nil(@mobile_back_to) && @current_section == "movies"}
+            >
+              Movies
             </.section_link>
             <.section_link
               href={~p"/discover"}
@@ -289,8 +296,8 @@ defmodule AviaryWeb.Layouts do
         ====================================================
         Mobile bottom tab bar — primary nav + settings.
         ====================================================
-        Five tabs max: Home / Discover / Search / Library /
-        Settings. Home and Library hide when the user has no
+        Up to six tabs: Home / Shows / Movies / Discover / Search /
+        Settings. Home, Shows, and Movies hide when the user has no
         content for them, so a brand-new user sees 3 tabs.
 
         Each tab: heroicon (outline when inactive, solid when
@@ -319,12 +326,20 @@ defmodule AviaryWeb.Layouts do
             icon_solid="hero-home-solid"
           />
           <.tab_bar_link
-            :if={@nav_visibility.library}
-            href={~p"/library"}
-            active={@current_section == "library"}
-            label="Library"
-            icon_outline="hero-rectangle-stack"
-            icon_solid="hero-rectangle-stack-solid"
+            :if={@nav_visibility.shows}
+            href={~p"/library?type=shows"}
+            active={@current_section == "shows"}
+            label="Shows"
+            icon_outline="hero-tv"
+            icon_solid="hero-tv-solid"
+          />
+          <.tab_bar_link
+            :if={@nav_visibility.movies}
+            href={~p"/library?type=movies"}
+            active={@current_section == "movies"}
+            label="Movies"
+            icon_outline="hero-film"
+            icon_solid="hero-film-solid"
           />
           <.tab_bar_link
             href={~p"/discover"}

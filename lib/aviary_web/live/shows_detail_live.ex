@@ -33,6 +33,10 @@ defmodule AviaryWeb.ShowsDetailLive do
             playing_segments: nil,
             playing_subtitles: [],
             playing_audio_index: nil,
+            subtitles_default:
+              Aviary.Preferences.subtitles_default?(
+                socket.assigns.current_user.id
+              ),
             kicker: kicker(params["from"], params["q"]),
             sonarr_status: nil,
             collapsed_seasons: initial_collapsed_seasons(show),
@@ -294,13 +298,13 @@ defmodule AviaryWeb.ShowsDetailLive do
 
   defp kicker("home", _), do: %{label: "Home", path: "/home"}
   defp kicker("discover", _), do: %{label: "Discover", path: "/discover"}
-  defp kicker("library_movies", _), do: %{label: "Library", path: "/library?type=movies"}
+  defp kicker("library_movies", _), do: %{label: "Movies", path: "/library?type=movies"}
 
   defp kicker("search", q) when is_binary(q) and q != "",
     do: %{label: "Search", path: "/search?q=" <> URI.encode_www_form(q)}
 
   defp kicker("search", _), do: %{label: "Search", path: "/search"}
-  defp kicker(_, _), do: %{label: "Library", path: "/library?type=shows"}
+  defp kicker(_, _), do: %{label: "Shows", path: "/library?type=shows"}
 
   # Three handlers, one routing rule: an episode id with the `tmdb-`
   # prefix means "not in Jellyfin's library yet" and routes to
@@ -326,6 +330,14 @@ defmodule AviaryWeb.ShowsDetailLive do
         ep -> {:noreply, start_playing(socket, ep)}
       end
     end
+  end
+
+  # A viewer toggling captions from the native player menu updates their
+  # cross-device default. The JS hook pushes whether any track is showing.
+  def handle_event("subtitles_changed", %{"on" => on}, socket)
+      when is_boolean(on) do
+    Aviary.Preferences.set_subtitles_default(socket.assigns.current_user.id, on)
+    {:noreply, assign(socket, :subtitles_default, on)}
   end
 
   # Moves the show's watch mark to the clicked episode. The mark is a
@@ -556,24 +568,16 @@ defmodule AviaryWeb.ShowsDetailLive do
 
     if item do
       user = socket.assigns.current_user
-      duration = payload["duration"]
 
-      # Past 95% of the runtime = effectively done. mark_played
-      # (canonical endpoint + position zero) is what makes
-      # Jellyfin's NextUp move on to the next episode; without it
-      # Resume keeps E5 looking in-progress and Continue Watching
-      # surfaces E5 instead of E6.
-      if is_number(duration) and duration > 0 and position / duration >= 0.95 do
-        Aviary.Jellyfin.mark_played(item.id, user)
-        {:noreply, update(socket, :show, &mark_episode_finished(&1, item.id))}
-      else
-        position_ticks = trunc(position * 10_000_000)
-        Aviary.Jellyfin.save_position(item.id, position_ticks, user)
+      case Aviary.Jellyfin.report_progress(item.id, position, payload["duration"], user) do
+        :played ->
+          {:noreply, update(socket, :show, &mark_episode_finished(&1, item.id))}
 
-        # Mirror the in-memory resume_seconds on the corresponding
-        # episode so the Continue button label stays accurate after
-        # closing.
-        {:noreply, update(socket, :show, &update_episode_progress(&1, item.id, position))}
+        :in_progress ->
+          # Mirror the in-memory resume_seconds on the corresponding
+          # episode so the Continue button label stays accurate after
+          # closing.
+          {:noreply, update(socket, :show, &update_episode_progress(&1, item.id, position))}
       end
     else
       {:noreply, socket}
@@ -1241,6 +1245,7 @@ defmodule AviaryWeb.ShowsDetailLive do
         title={@show.title}
         segments={@playing_segments}
         subtitles={@playing_subtitles}
+        subtitles_default={@subtitles_default}
         audio_stream_index={@playing_audio_index}
       />
 
@@ -1367,9 +1372,9 @@ defmodule AviaryWeb.ShowsDetailLive do
   # After discover, caught-up first because it short-circuits the
   # "no resume position" path that would otherwise read as
   # "Continue S X E Y" — confusing for an episode the user already
-  # finished. The button is disabled in this state via
-  # caught_up?/1; the calendar widget on the same page tells them
-  # when the next episode airs.
+  # finished. When a future episode is scheduled the button stays
+  # disabled and the calendar widget says when it airs; with nothing
+  # upcoming it becomes "Watch again" and replays the first episode.
   # The line under the big CTA. Three branches:
   #   * Not in user's library + show source has files on disk →
   #     "Watchable now" (signals that hitting Add to library
@@ -1380,6 +1385,11 @@ defmodule AviaryWeb.ShowsDetailLive do
   #     starts, or download progress once it does).
   #   * In user's library → the existing label.
   defp subtitle_label(%{source: :library}, _status, false), do: "Watchable now"
+
+  # Caught up with nothing upcoming — pairs with the "Watch again" CTA
+  # so the finished state reads as reassurance, not a dead end.
+  defp subtitle_label(%{next_up: %{caught_up: true}, schedule: :none}, _status, _in_library),
+    do: "You're all caught up"
 
   defp subtitle_label(show, status, _in_library) do
     Aviary.WatchProgress.label(
@@ -1415,7 +1425,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     "S#{s} E#{e} " <> waiting_phrase(date)
   end
 
-  defp action_label(%{next_up: %{caught_up: true}}), do: "Caught up"
+  defp action_label(%{next_up: %{caught_up: true}}), do: "Watch again"
 
   defp action_label(%{next_up: nil} = show), do: first_episode_label(show)
 
@@ -1439,20 +1449,28 @@ defmodule AviaryWeb.ShowsDetailLive do
   # catches up.
   defp action_label(%{next_up: %{}} = show), do: first_episode_label(show)
 
-  defp caught_up?(%{next_up: %{caught_up: true}}), do: true
-  defp caught_up?(_), do: false
-
   # Button is inert when:
   #   - the show has no episodes at all (rare; would need a Jellyseerr
   #     miss for a discover show)
   #   - the next-up episode hasn't aired yet (you can't Watch what
   #     hasn't dropped)
-  #   - the user is genuinely caught up — no future episode known
-  # Discover shows are NOT disabled even when caught_up never fired —
-  # clicking them triggers Sonarr at the show scope.
+  #   - caught up AND a future episode is scheduled — nothing to watch
+  #     until it airs
+  # A caught-up show with nothing upcoming stays live: the button reads
+  # "Watch again" and replays from the first episode. Discover shows are
+  # NOT disabled even when caught_up never fired — clicking them triggers
+  # Sonarr at the show scope.
   defp action_disabled?(%{source: :discover}), do: false
   defp action_disabled?(%{next_up: %{aired: false}}), do: true
-  defp action_disabled?(show), do: not has_episodes?(show) or caught_up?(show)
+  # Caught up but a future episode is on the schedule — you can't watch
+  # it yet, so the button stays inert and shows when it airs.
+  defp action_disabled?(%{next_up: %{caught_up: true}, schedule: schedule})
+       when schedule != :none,
+       do: true
+
+  # Caught up with nothing upcoming — the button becomes "Watch again"
+  # and replays from the first episode, so it's live.
+  defp action_disabled?(show), do: not has_episodes?(show)
 
   # Short, tiered phrase for the caught-up button: "later today" /
   # "tomorrow" / day-name / "next [day]" / month-day. Mirrors the
@@ -1511,6 +1529,7 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp pick_continue_episode(show) do
     case show.next_up do
       nil -> first_episode(show)
+      %{caught_up: true} -> first_episode(show)
       ep -> ep
     end
   end

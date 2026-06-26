@@ -21,6 +21,10 @@ defmodule AviaryWeb.Components.VideoPlayer do
     doc:
       "Subtitle tracks `[%{index, lang, label, default}]` — rendered as <track> elements inside <video>; native CC menu picks them up."
 
+  attr :subtitles_default, :boolean,
+    default: false,
+    doc: "The viewer's saved default — when true the English track starts on."
+
   attr :audio_stream_index, :any,
     default: nil,
     doc:
@@ -67,13 +71,21 @@ defmodule AviaryWeb.Components.VideoPlayer do
         x-webkit-airplay="allow"
         class="w-full h-full max-w-screen max-h-screen object-contain"
       >
+        <%!--
+          `default` on the English track follows the viewer's saved
+          preference: on = the browser auto-displays it; off = present
+          but hidden until they pick it. @subtitles is English-only, so
+          the only thing a viewer can turn on is English. iOS/Safari
+          still auto-enables it for anyone with system captions on. Only
+          the first track can carry `default`; more would be invalid.
+        --%>
         <track
-          :for={s <- @subtitles}
+          :for={{s, i} <- Enum.with_index(@subtitles)}
           src={Aviary.Jellyfin.subtitle_url(@item.id, s.index, @current_user)}
           kind="subtitles"
           srclang={s.lang}
           label={s.label}
-          default={s.default}
+          default={@subtitles_default and i == 0}
         />
       </video>
 

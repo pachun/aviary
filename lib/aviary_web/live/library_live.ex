@@ -1,10 +1,10 @@
 defmodule AviaryWeb.LibraryLive do
   @moduledoc """
-  The user's library — collapses Shows + Movies into one section with
-  a sub-toggle. Tab state lives in the URL (`?type=shows|movies`) so
-  switching uses push_patch and stays instant, and links into a
-  specific tab are bookmarkable. Default is Shows when type is missing
-  or unrecognized.
+  The user's library for one media type, chosen by the URL
+  (`?type=shows|movies`). Shows and Movies are separate top-level nav
+  tabs; this page renders whichever the `type` param names — defaulting
+  to Shows when it's missing or unrecognized, and forcing the kind the
+  user actually has when only one is populated.
 
   Detail-page kicker uses `from=library_shows` / `from=library_movies`
   so the back trip restores the correct tab.
@@ -14,7 +14,7 @@ defmodule AviaryWeb.LibraryLive do
   alias AviaryWeb.Components.CatalogGrid
 
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, page_title: "Library")}
+    {:ok, socket}
   end
 
   def handle_params(params, _uri, socket) do
@@ -29,7 +29,7 @@ defmodule AviaryWeb.LibraryLive do
      assign(socket,
        type: type,
        items: items,
-       has_both_libraries: shows != [] and movies != []
+       page_title: if(type == :shows, do: "Shows", else: "Movies")
      )}
   end
 
@@ -50,44 +50,15 @@ defmodule AviaryWeb.LibraryLive do
     ~H"""
     <Layouts.app
       flash={@flash}
-      current_section="library"
+      current_section={Atom.to_string(@type)}
       current_user={@current_user}
       nav_visibility={@nav_visibility}
     >
       <%!--
-        Sub-toggle. Same uppercase tracked Instrument Sans + oxblood
-        active underline as the masthead nav, dropped down a tier
-        (smaller text, tighter tracking) so it reads as a filter
-        under the primary "Library" header rather than competing with
-        it.
-
-        Sticky so it stays reachable when the catalog grid scrolls
-        past viewport.
-          - Mobile: `top-0` — no top chrome (primary nav is the bottom
-            tab bar). Without this the sub-nav sat at 92px below the
-            viewport top, leaving an unmasked 92px band above it
-            where scrolling cards would show through.
-          - Desktop: `top-[108px]` — clears the sticky masthead
-            (~84px high + ~24px breathing).
-        z-10 puts it below the masthead (z-20) so they don't overlap.
-        bg-paper + vertical padding so content scrolls cleanly behind.
-      --%>
-      <%!--
-        pt-2 on the wrapping div matches Home / Discover / Search,
-        whose content opens with the same top breathing. Without
-        this, the sub-toggle's `py-3` + the chip's internal `py-1.5`
-        compounded to drop the visual baseline ~10px below where the
-        other pages' first content lands.
+        pt-2 matches Home / Discover / Search, whose content opens with
+        the same top breathing.
       --%>
       <div class="pt-2">
-        <nav
-          :if={@has_both_libraries}
-          class="sticky top-0 sm:top-[108px] z-10 bg-paper flex items-baseline gap-6 pb-6 font-sans text-[0.7rem] tracking-[0.18em] uppercase"
-        >
-          <.tab patch={~p"/library?type=shows"} active={@type == :shows}>Shows</.tab>
-          <.tab patch={~p"/library?type=movies"} active={@type == :movies}>Movies</.tab>
-        </nav>
-
         <CatalogGrid.grid items={@items}>
           <:empty>
             <%= if @type == :shows do %>
@@ -99,34 +70,6 @@ defmodule AviaryWeb.LibraryLive do
         </CatalogGrid.grid>
       </div>
     </Layouts.app>
-    """
-  end
-
-  attr :patch, :string, required: true
-  attr :active, :boolean, default: false
-  slot :inner_block, required: true
-
-  defp tab(assigns) do
-    ~H"""
-    <%!--
-      Pill treatment makes the toggle read as actionable controls
-      instead of plain text. Mirrors the primary/secondary button
-      vocabulary on the show detail page: active is filled oxblood
-      (like the Play button), inactive is outlined ink/rule (like
-      the kicker). The user gets an immediate "these are clickable"
-      signal without breaking the editorial palette.
-    --%>
-    <.link
-      patch={@patch}
-      class={[
-        "px-4 py-1.5 rounded-sm border font-medium transition-colors duration-200",
-        @active && "bg-oxblood text-white border-oxblood",
-        !@active &&
-          "bg-transparent text-muted border-rule hover:text-ink hover:border-ink"
-      ]}
-    >
-      {render_slot(@inner_block)}
-    </.link>
     """
   end
 end

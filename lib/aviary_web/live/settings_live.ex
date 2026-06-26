@@ -15,6 +15,7 @@ defmodule AviaryWeb.SettingsLive do
   """
   use AviaryWeb, :live_view
 
+  alias Aviary.Preferences
   alias Aviary.Storage
 
   @palette_size 6
@@ -45,8 +46,15 @@ defmodule AviaryWeb.SettingsLive do
        breakdown: breakdown,
        totals: totals,
        your_stats: your_stats,
-       tank_bytes: tank_bytes
+       tank_bytes: tank_bytes,
+       subtitles_default: Preferences.subtitles_default?(current.id)
      )}
+  end
+
+  def handle_event("toggle_subtitles", _params, socket) do
+    on = not socket.assigns.subtitles_default
+    Preferences.set_subtitles_default(socket.assigns.current_user.id, on)
+    {:noreply, assign(socket, :subtitles_default, on)}
   end
 
   def render(assigns) do
@@ -109,6 +117,7 @@ defmodule AviaryWeb.SettingsLive do
                 <input type="hidden" name="_method" value="delete" />
                 <button
                   type="submit"
+                  data-confirm="Sign out of aviary?"
                   class="self-start font-sans text-[0.72rem] tracking-[0.18em] uppercase text-ink hover:text-oxblood underline decoration-1 underline-offset-[6px] decoration-rule hover:decoration-oxblood transition-colors duration-200 cursor-pointer"
                 >
                   Sign out
@@ -124,6 +133,33 @@ defmodule AviaryWeb.SettingsLive do
                 Theme
               </p>
               <Layouts.theme_toggle />
+            </div>
+          </.section_block>
+
+          <.section_block label="Playback">
+            <div class="flex flex-col gap-3">
+              <p class="hidden sm:block font-sans text-[0.7rem] tracking-[0.18em] uppercase text-muted">
+                Subtitles
+              </p>
+              <button
+                type="button"
+                phx-click="toggle_subtitles"
+                role="switch"
+                aria-checked={@subtitles_default}
+                aria-label="Subtitles on by default"
+                class="flex items-center gap-3 cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded"
+              >
+                <span class="relative inline-block w-9 h-5 bg-rule rounded-full shrink-0">
+                  <span class={[
+                    "absolute top-0.5 left-0.5 size-4 rounded-full bg-oxblood transition-transform duration-200",
+                    @subtitles_default && "translate-x-4"
+                  ]}>
+                  </span>
+                </span>
+                <span class="font-sans text-[0.85rem] text-ink">
+                  {if @subtitles_default, do: "On", else: "Off"}
+                </span>
+              </button>
             </div>
           </.section_block>
 
