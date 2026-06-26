@@ -22,6 +22,11 @@ defmodule AviaryWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :api_authed do
+    plug :accepts, ["json"]
+    plug AviaryWeb.APIAuth
+  end
+
   ## Public PWA manifest — fetched by the browser before sign-in, so
   ## it can't sit behind a session/auth pipeline. Served dynamically
   ## (BrandController) so the PWA name tracks the brand config.
@@ -47,6 +52,34 @@ defmodule AviaryWeb.Router do
     pipe_through :api
 
     post "/sonarr/webhook", SonarrWebhookController, :receive
+  end
+
+  ## JSON API for native clients (tvOS). Token-based: POST /sessions to
+  ## exchange Jellyfin credentials for a token, then send it as
+  ## `Authorization: Bearer <token>` on authenticated calls. Lives
+  ## alongside the LiveView app and shares the same context modules.
+  scope "/api/v1", AviaryWeb.API do
+    pipe_through :api
+
+    get "/info", InfoController, :show
+    post "/sessions", SessionController, :create
+  end
+
+  scope "/api/v1", AviaryWeb.API do
+    pipe_through :api_authed
+
+    get "/me", SessionController, :show
+    get "/home/continue-watching", HomeController, :continue_watching
+  end
+
+  ## Image proxy for native clients — reuses the LiveView app's
+  ## ImageController (it authorizes the upstream Jellyfin fetch off
+  ## conn.assigns.current_user, which the bearer-token plug supplies
+  ## just as the browser session does).
+  scope "/api/v1", AviaryWeb do
+    pipe_through :api_authed
+
+    get "/image/:item_id", ImageController, :show
   end
 
   scope "/", AviaryWeb do

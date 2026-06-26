@@ -15,9 +15,10 @@ config :aviary, Aviary.Repo,
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
 config :aviary, AviaryWeb.Endpoint,
-  # Binding to loopback ipv4 address prevents access from other machines.
-  # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}],
+  # Bound to all interfaces so a native client on another LAN device
+  # (the tvOS app in dev) can reach this server at the host's LAN IP.
+  # Use `ip: {127, 0, 0, 1}` to restrict to loopback.
+  http: [ip: {0, 0, 0, 0}],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
