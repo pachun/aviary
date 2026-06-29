@@ -556,7 +556,7 @@ defmodule AviaryWeb.ShowsDetailLive do
       # surfaces E5 instead of E6.
       if is_number(duration) and duration > 0 and position / duration >= 0.95 do
         Aviary.Jellyfin.mark_played(item.id, user)
-        {:noreply, update(socket, :show, &update_episode_progress(&1, item.id, 0.0))}
+        {:noreply, update(socket, :show, &mark_episode_finished(&1, item.id))}
       else
         position_ticks = trunc(position * 10_000_000)
         Aviary.Jellyfin.save_position(item.id, position_ticks, user)
@@ -1525,11 +1525,15 @@ defmodule AviaryWeb.ShowsDetailLive do
   @done_fraction 0.90
 
   defp update_episode_progress(show, episode_id, position) do
+    now = DateTime.utc_now()
+
     updated_episodes_by_season =
       Enum.map(show.episodes_by_season, fn {season, eps} ->
         {season,
          Enum.map(eps, fn ep ->
-           if ep.id == episode_id, do: Map.put(ep, :resume_seconds, position), else: ep
+           if ep.id == episode_id,
+             do: %{ep | resume_seconds: position, last_played_at: now},
+             else: ep
          end)}
       end)
 
@@ -1556,6 +1560,35 @@ defmodule AviaryWeb.ShowsDetailLive do
     show
     |> Map.put(:episodes_by_season, updated_episodes_by_season)
     |> Map.put(:next_up, next_up)
+  end
+
+  # The episode just ran to its end in the player. Snap the in-memory
+  # show so the next render reflects it without a reload: mark this
+  # episode watched (so the marginalia ribbon advances its ✓) and point
+  # next_up at the following episode (so the action button reads
+  # "Continue S1 E6" instead of the credits the user just watched). The
+  # canonical Jellyfin mark_played already fired; this mirrors what a
+  # reconcile would later confirm. last_played_at=now makes watch_mark
+  # land on this episode as the most recent activity.
+  defp mark_episode_finished(show, episode_id) do
+    now = DateTime.utc_now()
+
+    updated_episodes_by_season =
+      Enum.map(show.episodes_by_season, fn {season, eps} ->
+        {season,
+         Enum.map(eps, fn ep ->
+           if ep.id == episode_id,
+             do: %{ep | played_percentage: 100.0, resume_seconds: nil, last_played_at: now},
+             else: ep
+         end)}
+      end)
+
+    flat = Enum.flat_map(updated_episodes_by_season, fn {_, eps} -> eps end)
+    closed_ep = Enum.find(flat, &(&1.id == episode_id))
+
+    show
+    |> Map.put(:episodes_by_season, updated_episodes_by_season)
+    |> Map.put(:next_up, next_after_in(flat, episode_id) || closed_ep)
   end
 
   defp basically_done?(%{runtime_minutes: m}, position)
