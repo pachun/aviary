@@ -118,6 +118,7 @@ defmodule Aviary.Home do
     end)
     |> Enum.reject(&is_nil/1)
     |> Enum.reject(&caught_up?(&1, available_series))
+    |> Enum.reject(&finished_movie?/1)
     |> Enum.filter(&in_user_library?(&1, library_set))
     |> dedupe_by_key()
     |> Enum.sort_by(& &1.sort_at, {:desc, DateTime})
@@ -148,6 +149,14 @@ defmodule Aviary.Home do
 
   defp caught_up?(_, _), do: false
 
+  # A fully-played movie has no "next" to continue — unlike a show,
+  # where caught_up?/2 hands off to the next episode. Jellyfin keeps
+  # listing it under recently-watched (that source drives the show
+  # next-up logic), so drop finished movies here. Matches the detail
+  # screen, which shows "Play" (not "Resume") once a movie is done.
+  defp finished_movie?(%{kind: :movie, played: true}), do: true
+  defp finished_movie?(_), do: false
+
   # Collapses raw Jellyfin items into a uniform shape the home marquee
   # can render without further branching. `dedupe_key` makes the same
   # show appear once even when it's surfaced by multiple endpoints.
@@ -156,6 +165,7 @@ defmodule Aviary.Home do
       dedupe_key: "movie:#{item["Id"]}",
       kind: :movie,
       tmdb_id: nil,
+      played: get_in(item, ["UserData", "Played"]) == true,
       play_item_id: item["Id"],
       detail_id: item["Id"],
       thumbnail_item_id: item["Id"],
