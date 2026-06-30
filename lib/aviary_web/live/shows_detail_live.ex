@@ -294,13 +294,13 @@ defmodule AviaryWeb.ShowsDetailLive do
 
   defp kicker("home", _), do: %{label: "Home", path: "/home"}
   defp kicker("discover", _), do: %{label: "Discover", path: "/discover"}
-  defp kicker("library_movies", _), do: %{label: "Library", path: "/library?type=movies"}
+  defp kicker("library_movies", _), do: %{label: "Movies", path: "/library?type=movies"}
 
   defp kicker("search", q) when is_binary(q) and q != "",
     do: %{label: "Search", path: "/search?q=" <> URI.encode_www_form(q)}
 
   defp kicker("search", _), do: %{label: "Search", path: "/search"}
-  defp kicker(_, _), do: %{label: "Library", path: "/library?type=shows"}
+  defp kicker(_, _), do: %{label: "Shows", path: "/library?type=shows"}
 
   # Three handlers, one routing rule: an episode id with the `tmdb-`
   # prefix means "not in Jellyfin's library yet" and routes to

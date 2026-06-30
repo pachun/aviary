@@ -227,13 +227,13 @@ defmodule AviaryWeb.MoviesDetailLive do
   # search screen.
   defp kicker("home", _), do: %{label: "Home", path: "/home"}
   defp kicker("discover", _), do: %{label: "Discover", path: "/discover"}
-  defp kicker("library_shows", _), do: %{label: "Library", path: "/library?type=shows"}
+  defp kicker("library_shows", _), do: %{label: "Shows", path: "/library?type=shows"}
 
   defp kicker("search", q) when is_binary(q) and q != "",
     do: %{label: "Search", path: "/search?q=" <> URI.encode_www_form(q)}
 
   defp kicker("search", _), do: %{label: "Search", path: "/search"}
-  defp kicker(_, _), do: %{label: "Library", path: "/library?type=movies"}
+  defp kicker(_, _), do: %{label: "Movies", path: "/library?type=movies"}
 
   def handle_event("play", _, socket) do
     movie = socket.assigns.movie
