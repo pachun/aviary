@@ -33,7 +33,17 @@ defmodule Aviary.Home do
   @epoch ~U[1970-01-01 00:00:00Z]
 
   def continue_watching(auth) do
-    resume = Jellyfin.resume_items(auth)
+    # Drop episodes Jellyfin marks Played but still reports a saved
+    # position for. Finishing an episode after only scrubbing part of
+    # it leaves stale PlaybackPositionTicks, and Jellyfin's /Resume
+    # keeps returning it. A played episode isn't resumable, so letting
+    # it stand as the resume target (priority 0) wrongly beats the real
+    # NextUp — pinning Continue Watching to the episode you just
+    # finished instead of advancing to the next one.
+    resume =
+      Jellyfin.resume_items(auth)
+      |> Enum.reject(&(get_in(&1, ["UserData", "Played"]) == true))
+
     next_up = Jellyfin.next_up_across_library(auth)
     latest = Jellyfin.latest_episodes(auth)
     recent = Jellyfin.recently_watched(auth)
