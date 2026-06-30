@@ -30,8 +30,19 @@ defmodule AviaryWeb.API.LibraryController do
       id: item.id,
       kind: to_string(item.type),
       title: item.title,
-      year: item.year,
+      year: year_label(item.year),
       image: "/api/v1/image/#{item.id}"
     }
   end
+
+  # Movies carry a plain production year; shows carry a {start, finish}
+  # range ({start, nil} while continuing). Flatten both to the string
+  # the client renders, mirroring the web's year formatting.
+  defp year_label(year) when is_integer(year), do: Integer.to_string(year)
+  defp year_label({start, nil}) when is_integer(start), do: "#{start} – present"
+
+  defp year_label({start, finish}) when is_integer(start) and is_integer(finish),
+    do: "#{start} – #{finish}"
+
+  defp year_label(_), do: nil
 end

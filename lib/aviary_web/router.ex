@@ -69,6 +69,7 @@ defmodule AviaryWeb.Router do
     pipe_through :api_authed
 
     get "/me", SessionController, :show
+    get "/nav", NavController, :show
     get "/home/continue-watching", HomeController, :continue_watching
     get "/library/shows", LibraryController, :shows
     get "/library/movies", LibraryController, :movies
