@@ -528,18 +528,27 @@ defmodule AviaryWeb.ShowsDetailLive do
   end
 
   def handle_event("add_to_library", _, socket) do
-    user = socket.assigns.current_user
     show = socket.assigns.show
 
-    if show.tmdb_id do
-      Aviary.Library.add(user.id, show.tmdb_id)
-    end
+    cond do
+      # Already searching/downloading for this user — just register the
+      # library row so the ribbon column appears; firing watch_show
+      # again would duplicate the Sonarr command and re-flash.
+      in_progress?(show_state(show, socket.assigns.sonarr_status)) ->
+        add_library_row(socket)
 
-    {:noreply,
-     socket
-     |> assign(:in_library, true)
-     |> Aviary.Nav.refresh_visibility()
-     |> put_flash(:info, "#{show.title} added to your library.")}
+      # Nothing downloaded to play yet, so adding it means "get this for
+      # me." trigger_sonarr saves the library row AND starts the grab in
+      # one step — without this, the button only added the row and the
+      # user had to click a second time to begin downloading.
+      needs_download?(pick_continue_episode(show)) ->
+        trigger_sonarr(socket, :show, nil, nil)
+
+      # Episodes already exist (e.g. another household member grabbed
+      # them): save the row and let the CTA flip to Play.
+      true ->
+        add_library_row(socket)
+    end
   end
 
   def handle_event("report_progress", %{"position" => position} = payload, socket) do
@@ -1648,6 +1657,7 @@ defmodule AviaryWeb.ShowsDetailLive do
         {:noreply,
          socket
          |> assign(:in_library, true)
+         |> Aviary.Nav.refresh_visibility()
          |> fetch_sonarr_status()
          |> put_flash(:info, flash_text)}
 
@@ -1656,6 +1666,25 @@ defmodule AviaryWeb.ShowsDetailLive do
          put_flash(socket, :error, "Couldn't reach Sonarr. Try again in a moment.")}
     end
   end
+
+  defp add_library_row(socket) do
+    user = socket.assigns.current_user
+    show = socket.assigns.show
+
+    if show.tmdb_id do
+      Aviary.Library.add(user.id, show.tmdb_id)
+    end
+
+    {:noreply,
+     socket
+     |> assign(:in_library, true)
+     |> Aviary.Nav.refresh_visibility()
+     |> put_flash(:info, "#{show.title} added to your library.")}
+  end
+
+  defp needs_download?(nil), do: true
+  defp needs_download?(%{id: "tmdb-" <> _}), do: true
+  defp needs_download?(_), do: false
 
   defp in_progress?(:searching), do: true
   defp in_progress?({:downloading, _}), do: true
