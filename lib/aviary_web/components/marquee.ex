@@ -284,6 +284,19 @@ defmodule AviaryWeb.Components.Marquee do
           </div>
 
           <%!--
+            Resume bar — a thin oxblood fill pinned to the bottom edge
+            showing how far into the episode/movie the user is. Only
+            Continue Watching items carry :progress; every other row
+            omits the key and renders no bar.
+          --%>
+          <div
+            :if={Map.get(@item, :progress)}
+            class="absolute inset-x-0 bottom-0 h-1 bg-black/40"
+          >
+            <div class="h-full bg-oxblood" style={"width: #{@item.progress}%"}></div>
+          </div>
+
+          <%!--
             Recommender avatar stack — only when this card came from
             a Family Recommended row. Sits ABOVE the title gradient
             (z-10) in the bottom-right. Slight negative right-margin
@@ -343,6 +356,15 @@ defmodule AviaryWeb.Components.Marquee do
   # Explicit URL takes precedence — used by the discover page where
   # items come from TMDB and bypass aviary's Jellyfin image proxy.
   defp thumbnail_src(%{thumbnail_url: url}) when is_binary(url), do: url
+
+  # Continue Watching show cards lead with the specific episode still
+  # (its Primary image), falling back to the series backdrop when the
+  # still never backfilled — same treatment the native home feed uses.
+  # Only home items carry play_item_id, so other rows skip this clause.
+  defp thumbnail_src(%{kind: :show, play_item_id: episode_id, thumbnail_item_id: series_id})
+       when is_binary(episode_id) do
+    "/image/#{episode_id}?fallback=#{series_id}"
+  end
 
   defp thumbnail_src(%{thumbnail_item_id: id, thumbnail_kind: :backdrop}) do
     "/image/#{id}?kind=backdrop"

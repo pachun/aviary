@@ -585,9 +585,15 @@ defmodule Aviary.Catalog do
   # done, advance" logic catches it. Order matters: explicit pct wins
   # when present (covers the rewatch-in-progress case where Played has
   # latched from a prior completion but pct is now genuinely partial).
-  defp played_percentage(%{"PlayedPercentage" => p}) when is_number(p), do: p
-  defp played_percentage(%{"Played" => true}), do: 100.0
-  defp played_percentage(_), do: 0.0
+  @doc """
+  Fraction (0–100) of an episode/movie the user has watched, read from
+  a Jellyfin `UserData` map. Public because the home Continue Watching
+  feed draws its resume bar from the same number the detail page's
+  next-up logic branches on — one definition, no drift.
+  """
+  def played_percentage(%{"PlayedPercentage" => p}) when is_number(p), do: p
+  def played_percentage(%{"Played" => true}), do: 100.0
+  def played_percentage(_), do: 0.0
 
   # When the most-recently-watched episode is past this percentage we
   # treat it as "basically done" and advance the continue/play button

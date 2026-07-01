@@ -182,6 +182,7 @@ defmodule Aviary.Home do
       kind: :movie,
       tmdb_id: nil,
       played: get_in(item, ["UserData", "Played"]) == true,
+      progress: watch_progress(item["UserData"]),
       play_item_id: item["Id"],
       detail_id: item["Id"],
       thumbnail_item_id: item["Id"],
@@ -207,6 +208,7 @@ defmodule Aviary.Home do
       dedupe_key: "series:#{series_id}",
       kind: :show,
       tmdb_id: Map.get(tmdb_map, series_id),
+      progress: watch_progress(item["UserData"]),
       play_item_id: item["Id"],
       detail_id: series_id,
       # Use the series backdrop, not the episode's own Primary image.
@@ -226,6 +228,17 @@ defmodule Aviary.Home do
           parse_date(item["PremiereDate"]) ||
           @epoch
     }
+  end
+
+  # Fraction watched, for the resume bar on a Continue Watching card.
+  # nil unless the item is genuinely mid-watch: a fresh next-up episode
+  # reads 0% and a finished item reads ~100%, and both should render no
+  # bar. Reads the SAME percentage the detail page's next-up logic uses
+  # (Aviary.Catalog.played_percentage), so the bar and the resume
+  # target can't disagree.
+  defp watch_progress(user_data) do
+    pct = Aviary.Catalog.played_percentage(user_data)
+    if pct > 0 and pct < 100, do: Float.round(pct * 1.0, 1), else: nil
   end
 
   defp episode_subtitle(item) do
