@@ -22,7 +22,16 @@ defmodule AviaryWeb.API.HomeController do
       kind: to_string(item.kind),
       title: item.title,
       subtitle: item.subtitle,
-      image: "/api/v1/image/#{item.thumbnail_item_id}?kind=backdrop"
+      image: image_url(item)
     }
   end
+
+  # Shows use the specific episode still (play_item_id's Primary image),
+  # falling back to the series backdrop when the still is missing. Movies
+  # have no per-episode still, so they stay on the item backdrop.
+  defp image_url(%{kind: :show, play_item_id: episode_id, thumbnail_item_id: series_id}),
+    do: "/api/v1/image/#{episode_id}?fallback=#{series_id}"
+
+  defp image_url(%{thumbnail_item_id: id}),
+    do: "/api/v1/image/#{id}?kind=backdrop"
 end

@@ -21,17 +21,36 @@ defmodule AviaryWeb.ImageController do
 
   def show(conn, %{"item_id" => item_id} = params) do
     fetcher = fetcher_for(params["kind"])
+    user = conn.assigns.current_user
 
-    case fetcher.(item_id, conn.assigns.current_user) do
+    case fetcher.(item_id, user) do
       {:ok, body, content_type} ->
-        conn
-        |> put_resp_header("content-type", content_type)
-        |> put_resp_header("cache-control", "public, max-age=86400, immutable")
-        |> send_resp(200, body)
+        send_image(conn, body, content_type)
 
       :error ->
-        send_resp(conn, 404, "")
+        fall_back(conn, params["fallback"], user)
     end
+  end
+
+  # Episode stills 404 in Jellyfin for episodes whose artwork never
+  # backfilled. When a `fallback` series id is supplied (the native home
+  # feed does this for show episodes), serve that series' backdrop rather
+  # than a broken image. Web callers omit `fallback` and get the plain
+  # 404 as before.
+  defp fall_back(conn, nil, _user), do: send_resp(conn, 404, "")
+
+  defp fall_back(conn, series_id, user) do
+    case Aviary.Jellyfin.fetch_backdrop(series_id, user) do
+      {:ok, body, content_type} -> send_image(conn, body, content_type)
+      :error -> send_resp(conn, 404, "")
+    end
+  end
+
+  defp send_image(conn, body, content_type) do
+    conn
+    |> put_resp_header("content-type", content_type)
+    |> put_resp_header("cache-control", "public, max-age=86400, immutable")
+    |> send_resp(200, body)
   end
 
   def user(conn, %{"user_id" => user_id}) do
