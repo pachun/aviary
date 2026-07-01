@@ -67,6 +67,16 @@ defmodule AviaryWeb.API.LibraryController do
     end
   end
 
+  @doc """
+  Removes a title from the user's library. A per-user curation action —
+  the files and downloads are untouched, so re-adding is instant.
+  """
+  def remove(conn, %{"tmdb_id" => tmdb_id, "kind" => kind})
+      when kind in ["show", "movie"] do
+    Aviary.Library.remove(conn.assigns.current_user.id, tmdb_id, kind)
+    json(conn, %{ok: true})
+  end
+
   defp serialize(item) do
     %{
       id: item.id,

@@ -74,6 +74,9 @@ defmodule AviaryWeb.Router do
     get "/library/shows", LibraryController, :shows
     get "/library/movies", LibraryController, :movies
     post "/library", LibraryController, :add
+    delete "/library/:tmdb_id", LibraryController, :remove
+    get "/household", HouseholdController, :index
+    post "/recommend", HouseholdController, :recommend
     get "/discover", DiscoverController, :index
     get "/search", SearchController, :index
     get "/status/show/:tmdb_id", StatusController, :show
