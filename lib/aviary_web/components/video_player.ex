@@ -67,13 +67,21 @@ defmodule AviaryWeb.Components.VideoPlayer do
         x-webkit-airplay="allow"
         class="w-full h-full max-w-screen max-h-screen object-contain"
       >
+        <%!--
+          No `default` attribute: subtitles start off. The source's
+          IsDefault flag often sits on a foreign track, and marking a
+          <track> default makes the browser auto-display it even with
+          captions "off". @subtitles is already English-only, so the
+          only thing a viewer can turn on is English. iOS/Safari still
+          auto-enables the English track for anyone who has system
+          captions on, so accessibility users are unaffected.
+        --%>
         <track
           :for={s <- @subtitles}
           src={Aviary.Jellyfin.subtitle_url(@item.id, s.index, @current_user)}
           kind="subtitles"
           srclang={s.lang}
           label={s.label}
-          default={s.default}
         />
       </video>
 

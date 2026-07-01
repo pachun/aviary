@@ -762,10 +762,16 @@ defmodule Aviary.Jellyfin do
   ## Video stream
 
   @doc """
-  Returns the item's subtitle tracks as `[%{index, lang, label, default}]`,
-  empty list when there are none or on error. Each entry corresponds to
-  a HTML5 `<track>` element the video player can offer via its native
-  CC menu.
+  Returns the item's ENGLISH subtitle tracks as
+  `[%{index, lang, label, default}]`, empty list when there are none or
+  on error. Each entry corresponds to a track a player can offer via
+  its CC menu.
+
+  English-only is a deliberate product policy, applied here so every
+  surface (web player, native API, tvOS) offers the same one language —
+  the household only reads English, and surfacing the source's other
+  language tracks (Chinese, etc.) is exactly the menu clutter we're
+  removing. `english?/1` is the single place that decision lives.
   """
   def subtitle_streams(item_id, auth) do
     case Req.get(base_url() <> "/Items",
@@ -778,6 +784,7 @@ defmodule Aviary.Jellyfin do
       when is_list(streams) ->
         streams
         |> Enum.filter(&(&1["Type"] == "Subtitle"))
+        |> Enum.filter(&english?/1)
         |> Enum.map(&to_subtitle/1)
 
       _ ->
@@ -785,6 +792,22 @@ defmodule Aviary.Jellyfin do
     end
   rescue
     _ -> []
+  end
+
+  # English by language code (eng/en), or — when the source left the
+  # language undetermined — by an "English" mention in the track's
+  # human label. Everything else (Chinese, Polish, …) is filtered out.
+  defp english?(stream) do
+    lang = stream["Language"] |> to_string() |> String.downcase()
+
+    label =
+      [stream["DisplayTitle"], stream["Title"]]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" ")
+      |> String.downcase()
+
+    lang in ["en", "eng"] or
+      (lang in ["", "und"] and String.contains?(label, "english"))
   end
 
   defp to_subtitle(stream) do
