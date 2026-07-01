@@ -596,6 +596,18 @@ defmodule Aviary.Catalog do
   # an episode).
   @done_threshold 90.0
 
+  @doc """
+  True when a Jellyfin `UserData` map represents an episode that's
+  basically finished — past `@done_threshold` of its runtime. This is
+  the single "should we advance past this episode?" test: the detail
+  page's next-up derivation and the home Continue Watching filter both
+  go through it, so they can never disagree about whether an episode
+  still counts as in-progress. Prefer this over the raw `Played` flag,
+  which latches `true` on a completed episode even after a rewatch has
+  left it genuinely mid-way.
+  """
+  def basically_done?(user_data), do: played_percentage(user_data) >= @done_threshold
+
   @epoch ~U[1970-01-01 00:00:00Z]
 
   # Picks the show's continue/play target. Three cases:

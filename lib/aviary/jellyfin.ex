@@ -634,6 +634,28 @@ defmodule Aviary.Jellyfin do
     _ -> :error
   end
 
+  @doc """
+  Records a single progress report from a player. Past 95% of the
+  runtime the item is treated as finished (`mark_played` — the
+  canonical write that moves Jellyfin's NextUp on to the next
+  episode); otherwise the partial position is saved. Returns
+  `:played` or `:in_progress` so callers can update their own view of
+  the item to match.
+
+  Shared by the LiveView web player (`report_progress` event) and the
+  native-client progress API so both branch identically.
+  """
+  def report_progress(item_id, position, duration, auth)
+      when is_number(position) do
+    if is_number(duration) and duration > 0 and position / duration >= 0.95 do
+      mark_played(item_id, auth)
+      :played
+    else
+      save_position(item_id, trunc(position * 10_000_000), auth)
+      :in_progress
+    end
+  end
+
   # Wipe every cached UserData-derived entry for this user after a
   # UserData write (mark_played, mark_unplayed, save_position,
   # reset_item_progress). Without this, the home page mount that

@@ -556,24 +556,16 @@ defmodule AviaryWeb.ShowsDetailLive do
 
     if item do
       user = socket.assigns.current_user
-      duration = payload["duration"]
 
-      # Past 95% of the runtime = effectively done. mark_played
-      # (canonical endpoint + position zero) is what makes
-      # Jellyfin's NextUp move on to the next episode; without it
-      # Resume keeps E5 looking in-progress and Continue Watching
-      # surfaces E5 instead of E6.
-      if is_number(duration) and duration > 0 and position / duration >= 0.95 do
-        Aviary.Jellyfin.mark_played(item.id, user)
-        {:noreply, update(socket, :show, &mark_episode_finished(&1, item.id))}
-      else
-        position_ticks = trunc(position * 10_000_000)
-        Aviary.Jellyfin.save_position(item.id, position_ticks, user)
+      case Aviary.Jellyfin.report_progress(item.id, position, payload["duration"], user) do
+        :played ->
+          {:noreply, update(socket, :show, &mark_episode_finished(&1, item.id))}
 
-        # Mirror the in-memory resume_seconds on the corresponding
-        # episode so the Continue button label stays accurate after
-        # closing.
-        {:noreply, update(socket, :show, &update_episode_progress(&1, item.id, position))}
+        :in_progress ->
+          # Mirror the in-memory resume_seconds on the corresponding
+          # episode so the Continue button label stays accurate after
+          # closing.
+          {:noreply, update(socket, :show, &update_episode_progress(&1, item.id, position))}
       end
     else
       {:noreply, socket}

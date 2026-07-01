@@ -33,16 +33,22 @@ defmodule Aviary.Home do
   @epoch ~U[1970-01-01 00:00:00Z]
 
   def continue_watching(auth) do
-    # Drop episodes Jellyfin marks Played but still reports a saved
-    # position for. Finishing an episode after only scrubbing part of
-    # it leaves stale PlaybackPositionTicks, and Jellyfin's /Resume
-    # keeps returning it. A played episode isn't resumable, so letting
-    # it stand as the resume target (priority 0) wrongly beats the real
-    # NextUp — pinning Continue Watching to the episode you just
-    # finished instead of advancing to the next one.
+    # Drop episodes that are basically finished but still carry a saved
+    # position. Finishing an episode after only scrubbing part of it
+    # leaves stale PlaybackPositionTicks, and Jellyfin's /Resume keeps
+    # returning it; a finished episode isn't a resume target, and
+    # letting it stand at priority 0 would wrongly beat the real NextUp.
+    #
+    # The test is `Aviary.Catalog.basically_done?` — the SAME
+    # percentage threshold the detail page's next-up derivation uses —
+    # not the raw `Played` flag. The flag latches true on a completed
+    # episode even after a rewatch has left it genuinely mid-way, so
+    # filtering on it made Continue Watching advance to the next
+    # episode while the detail page still (correctly) offered to resume
+    # the one in progress. Sharing the threshold keeps the two in sync.
     resume =
       Jellyfin.resume_items(auth)
-      |> Enum.reject(&(get_in(&1, ["UserData", "Played"]) == true))
+      |> Enum.reject(&Aviary.Catalog.basically_done?(&1["UserData"]))
 
     next_up = Jellyfin.next_up_across_library(auth)
     latest = Jellyfin.latest_episodes(auth)

@@ -402,18 +402,13 @@ defmodule AviaryWeb.MoviesDetailLive do
   def handle_event("report_progress", %{"position" => position} = payload, socket) do
     item = socket.assigns.playing_item
     user = socket.assigns.current_user
-    duration = payload["duration"]
 
-    # Past 95% of the runtime = effectively done. mark_played
-    # (canonical endpoint + position zero) keeps Jellyfin's
-    # Resume/NextUp from treating the movie as still in-progress.
-    if is_number(duration) and duration > 0 and position / duration >= 0.95 do
-      Aviary.Jellyfin.mark_played(item.id, user)
-      {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, nil))}
-    else
-      position_ticks = trunc(position * 10_000_000)
-      Aviary.Jellyfin.save_position(item.id, position_ticks, user)
-      {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, position))}
+    case Aviary.Jellyfin.report_progress(item.id, position, payload["duration"], user) do
+      :played ->
+        {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, nil))}
+
+      :in_progress ->
+        {:noreply, update(socket, :movie, &Map.put(&1, :resume_seconds, position))}
     end
   end
 

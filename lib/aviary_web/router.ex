@@ -75,6 +75,8 @@ defmodule AviaryWeb.Router do
     get "/library/movies", LibraryController, :movies
     get "/shows/:id", ShowController, :show
     get "/movies/:id", MovieController, :show
+    get "/items/:id/playback", PlaybackController, :show
+    post "/items/:id/progress", PlaybackController, :progress
   end
 
   ## Image proxy for native clients — reuses the LiveView app's
