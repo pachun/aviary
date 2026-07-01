@@ -19,6 +19,24 @@ defmodule AviaryWeb.API.SearchController do
 
   def index(conn, _params), do: json(conn, %{items: []})
 
+  @doc "This user's recent committed searches, newest first."
+  def recent(conn, _params) do
+    queries = Aviary.RecentSearches.for_user(conn.assigns.current_user.id)
+    json(conn, %{queries: queries})
+  end
+
+  @doc """
+  Records a committed search — the client calls this when the user
+  clicks through a result, the same signal the web records on the
+  detail page's `from=search` mount. Typing noise never gets here.
+  """
+  def record_recent(conn, %{"q" => q}) when is_binary(q) do
+    Aviary.RecentSearches.record(conn.assigns.current_user.id, q)
+    json(conn, %{ok: true})
+  end
+
+  def record_recent(conn, _params), do: json(conn, %{ok: true})
+
   defp serialize(item) do
     %{
       id: to_string(item.detail_id),

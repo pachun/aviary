@@ -79,6 +79,8 @@ defmodule AviaryWeb.Router do
     post "/recommend", HouseholdController, :recommend
     get "/discover", DiscoverController, :index
     get "/search", SearchController, :index
+    get "/search/recent", SearchController, :recent
+    post "/search/recent", SearchController, :record_recent
     get "/status/show/:tmdb_id", StatusController, :show
     get "/status/movie/:tmdb_id", StatusController, :movie
     get "/storage", StorageController, :show
