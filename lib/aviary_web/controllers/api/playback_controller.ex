@@ -19,12 +19,24 @@ defmodule AviaryWeb.API.PlaybackController do
     audio = Aviary.Jellyfin.audio_streams(id, user)
 
     json(conn, %{
-      streamUrl: Aviary.Jellyfin.hls_url(id, user),
+      streamUrl: "/api/v1/items/#{id}/hls.m3u8",
       intro: intro(Aviary.Jellyfin.segments(id, user)),
       audioTracks: Enum.map(audio, &audio_track/1),
       defaultAudioIndex: Aviary.Jellyfin.default_audio_index(audio),
       subtitles: Enum.map(Aviary.Jellyfin.subtitle_streams(id, user), &subtitle(&1, id, user))
     })
+  end
+
+  def manifest(conn, %{"id" => id}) do
+    case Aviary.Jellyfin.hls_manifest(id, conn.assigns.current_user) do
+      {:ok, playlist} ->
+        conn
+        |> put_resp_content_type("application/vnd.apple.mpegurl")
+        |> send_resp(200, playlist)
+
+      :error ->
+        conn |> put_status(:bad_gateway) |> json(%{error: "manifest_unavailable"})
+    end
   end
 
   def progress(conn, %{"id" => id, "position" => position})

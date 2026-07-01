@@ -960,17 +960,27 @@ defmodule Aviary.Jellyfin do
   @max_streaming_bitrate 8_000_000
 
   def hls_url(item_id, auth, _audio_stream_index \\ nil) do
+    query = URI.encode_query(transcode_params(item_id, auth, nil))
+    "#{public_url()}/Videos/#{item_id}/master.m3u8?#{query}"
+  end
+
+  # Shared transcode params for both the direct HLS URL (web `<track>`
+  # player) and the rewritten manifest (native players). When
+  # `subtitle_index` is given, Jellyfin includes the item's subtitle
+  # streams as in-manifest HLS renditions (SubtitleMethod=Hls); nil
+  # omits subtitles entirely.
+  defp transcode_params(item_id, auth, subtitle_index) do
     session_id = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
 
     # Video bitrate target — leaves ~500 Kbps headroom for audio
     # under the total stream cap.
     video_bitrate = @max_streaming_bitrate - 500_000
 
-    params_map = %{
+    base = %{
       "api_key" => auth.token,
       "MediaSourceId" => item_id,
       "PlaySessionId" => session_id,
-      "DeviceId" => "aviary-web",
+      "DeviceId" => "aviary",
       "VideoCodec" => "h264",
       "AudioCodec" => "aac",
       "SegmentContainer" => "ts",
@@ -996,7 +1006,97 @@ defmodule Aviary.Jellyfin do
       "TranscodingMaxAudioChannels" => "2"
     }
 
-    "#{public_url()}/Videos/#{item_id}/master.m3u8?#{URI.encode_query(params_map)}"
+    case subtitle_index do
+      nil ->
+        base
+
+      idx ->
+        Map.merge(base, %{
+          "SubtitleStreamIndex" => Integer.to_string(idx),
+          "SubtitleMethod" => "Hls"
+        })
+    end
+  end
+
+  @doc """
+  Returns a rewritten HLS master playlist as a string (or `:error`),
+  carrying the household's subtitle policy the native players honor:
+  English-only, off by default.
+
+  Jellyfin's own master playlist can't express that. Asking for the
+  English track makes Jellyfin emit EVERY subtitle language as a
+  rendition and flag the requested one `DEFAULT=YES` (auto-on). So we
+  fetch it, keep only the English subtitle line forced to
+  `DEFAULT=NO,AUTOSELECT=NO` (present but off until the viewer picks
+  it), drop the other languages, and rewrite the now-relative
+  variant/subtitle URIs to absolute public Jellyfin URLs — the client
+  still streams segments straight from Jellyfin, so aviary only ever
+  proxies this small text playlist, never the video.
+  """
+  def hls_manifest(item_id, auth) do
+    subtitle_index =
+      case subtitle_streams(item_id, auth) do
+        [%{index: idx} | _] -> idx
+        _ -> nil
+      end
+
+    query = URI.encode_query(transcode_params(item_id, auth, subtitle_index))
+    url = "#{base_url()}/Videos/#{item_id}/master.m3u8?#{query}"
+
+    case Req.get(url,
+           headers: [{"x-emby-token", auth.token}],
+           receive_timeout: 10_000,
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
+        {:ok, rewrite_manifest(body, item_id)}
+
+      _ ->
+        :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  defp rewrite_manifest(body, item_id) do
+    prefix = "#{public_url()}/Videos/#{item_id}/"
+
+    body
+    |> String.split("\n")
+    |> Enum.flat_map(&rewrite_manifest_line(&1, prefix))
+    |> Enum.join("\n")
+  end
+
+  # Subtitle rendition lines: keep only the English one, force it off by
+  # default, and absolutize its URI. Every other language is dropped.
+  defp rewrite_manifest_line("#EXT-X-MEDIA:TYPE=SUBTITLES" <> _ = line, prefix) do
+    if String.contains?(line, ~s(LANGUAGE="eng")) do
+      forced_off =
+        line
+        |> String.replace("DEFAULT=YES", "DEFAULT=NO")
+        |> String.replace("AUTOSELECT=YES", "AUTOSELECT=NO")
+
+      [absolutize_uri(forced_off, prefix)]
+    else
+      []
+    end
+  end
+
+  # A bare relative line (no leading #) is the variant playlist URI —
+  # make it absolute so the client fetches it straight from Jellyfin.
+  # Everything else (tags, blanks) passes through untouched.
+  defp rewrite_manifest_line(line, prefix) do
+    trimmed = String.trim(line)
+
+    cond do
+      trimmed == "" -> [line]
+      String.starts_with?(trimmed, "#") -> [line]
+      true -> [prefix <> trimmed]
+    end
+  end
+
+  defp absolutize_uri(line, prefix) do
+    Regex.replace(~r/URI="([^"]+)"/, line, fn _, uri -> ~s(URI="#{prefix}#{uri}") end)
   end
 
   ## Internals
