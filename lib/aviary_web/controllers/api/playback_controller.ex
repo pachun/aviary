@@ -28,7 +28,10 @@ defmodule AviaryWeb.API.PlaybackController do
   end
 
   def manifest(conn, %{"id" => id}) do
-    case Aviary.Jellyfin.hls_manifest(id, conn.assigns.current_user) do
+    user = conn.assigns.current_user
+    subtitles_on = Aviary.Preferences.subtitles_default?(user.id)
+
+    case Aviary.Jellyfin.hls_manifest(id, user, subtitles_on) do
       {:ok, playlist} ->
         conn
         |> put_resp_content_type("application/vnd.apple.mpegurl")

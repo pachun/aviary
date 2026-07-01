@@ -84,6 +84,8 @@ defmodule AviaryWeb.Router do
     get "/status/show/:tmdb_id", StatusController, :show
     get "/status/movie/:tmdb_id", StatusController, :movie
     get "/storage", StorageController, :show
+    get "/preferences", PreferencesController, :show
+    put "/preferences", PreferencesController, :update
     get "/shows/:id", ShowController, :show
     get "/movies/:id", MovieController, :show
     get "/items/:id/playback", PlaybackController, :show

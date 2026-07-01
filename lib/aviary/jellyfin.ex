@@ -1021,19 +1021,21 @@ defmodule Aviary.Jellyfin do
   @doc """
   Returns a rewritten HLS master playlist as a string (or `:error`),
   carrying the household's subtitle policy the native players honor:
-  English-only, off by default.
+  English-only. `subtitles_on` is the viewer's saved default: when
+  false the English line is forced `DEFAULT=NO,AUTOSELECT=NO` (present
+  but off until they pick it); when true it keeps Jellyfin's
+  `DEFAULT=YES,AUTOSELECT=YES` so subtitles start on.
 
   Jellyfin's own master playlist can't express that. Asking for the
   English track makes Jellyfin emit EVERY subtitle language as a
   rendition and flag the requested one `DEFAULT=YES` (auto-on). So we
-  fetch it, keep only the English subtitle line forced to
-  `DEFAULT=NO,AUTOSELECT=NO` (present but off until the viewer picks
-  it), drop the other languages, and rewrite the now-relative
+  fetch it, keep only the English subtitle line, apply the viewer's
+  default, drop the other languages, and rewrite the now-relative
   variant/subtitle URIs to absolute public Jellyfin URLs — the client
   still streams segments straight from Jellyfin, so aviary only ever
   proxies this small text playlist, never the video.
   """
-  def hls_manifest(item_id, auth) do
+  def hls_manifest(item_id, auth, subtitles_on \\ false) do
     subtitle_index =
       case subtitle_streams(item_id, auth) do
         [%{index: idx} | _] -> idx
@@ -1049,7 +1051,7 @@ defmodule Aviary.Jellyfin do
            retry: false
          ) do
       {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
-        {:ok, rewrite_manifest(body, item_id)}
+        {:ok, rewrite_manifest(body, item_id, subtitles_on)}
 
       _ ->
         :error
@@ -1058,25 +1060,35 @@ defmodule Aviary.Jellyfin do
     _ -> :error
   end
 
-  defp rewrite_manifest(body, item_id) do
+  defp rewrite_manifest(body, item_id, subtitles_on) do
     prefix = "#{public_url()}/Videos/#{item_id}/"
 
     body
     |> String.split("\n")
-    |> Enum.flat_map(&rewrite_manifest_line(&1, prefix))
+    |> Enum.flat_map(&rewrite_manifest_line(&1, prefix, subtitles_on))
     |> Enum.join("\n")
   end
 
-  # Subtitle rendition lines: keep only the English one, force it off by
-  # default, and absolutize its URI. Every other language is dropped.
-  defp rewrite_manifest_line("#EXT-X-MEDIA:TYPE=SUBTITLES" <> _ = line, prefix) do
+  # Subtitle rendition lines: keep only the English one, apply the
+  # viewer's default, and absolutize its URI. Every other language is
+  # dropped. Jellyfin flags the English track DEFAULT=YES,AUTOSELECT=YES;
+  # we leave that when the viewer wants subtitles on, or force it off.
+  defp rewrite_manifest_line(
+         "#EXT-X-MEDIA:TYPE=SUBTITLES" <> _ = line,
+         prefix,
+         subtitles_on
+       ) do
     if String.contains?(line, ~s(LANGUAGE="eng")) do
-      forced_off =
-        line
-        |> String.replace("DEFAULT=YES", "DEFAULT=NO")
-        |> String.replace("AUTOSELECT=YES", "AUTOSELECT=NO")
+      english =
+        if subtitles_on do
+          line
+        else
+          line
+          |> String.replace("DEFAULT=YES", "DEFAULT=NO")
+          |> String.replace("AUTOSELECT=YES", "AUTOSELECT=NO")
+        end
 
-      [absolutize_uri(forced_off, prefix)]
+      [absolutize_uri(english, prefix)]
     else
       []
     end
@@ -1085,7 +1097,7 @@ defmodule Aviary.Jellyfin do
   # A bare relative line (no leading #) is the variant playlist URI —
   # make it absolute so the client fetches it straight from Jellyfin.
   # Everything else (tags, blanks) passes through untouched.
-  defp rewrite_manifest_line(line, prefix) do
+  defp rewrite_manifest_line(line, prefix, _subtitles_on) do
     trimmed = String.trim(line)
 
     cond do

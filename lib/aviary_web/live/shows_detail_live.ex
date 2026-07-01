@@ -33,6 +33,10 @@ defmodule AviaryWeb.ShowsDetailLive do
             playing_segments: nil,
             playing_subtitles: [],
             playing_audio_index: nil,
+            subtitles_default:
+              Aviary.Preferences.subtitles_default?(
+                socket.assigns.current_user.id
+              ),
             kicker: kicker(params["from"], params["q"]),
             sonarr_status: nil,
             collapsed_seasons: initial_collapsed_seasons(show),
@@ -326,6 +330,14 @@ defmodule AviaryWeb.ShowsDetailLive do
         ep -> {:noreply, start_playing(socket, ep)}
       end
     end
+  end
+
+  # A viewer toggling captions from the native player menu updates their
+  # cross-device default. The JS hook pushes whether any track is showing.
+  def handle_event("subtitles_changed", %{"on" => on}, socket)
+      when is_boolean(on) do
+    Aviary.Preferences.set_subtitles_default(socket.assigns.current_user.id, on)
+    {:noreply, assign(socket, :subtitles_default, on)}
   end
 
   # Moves the show's watch mark to the clicked episode. The mark is a
@@ -1233,6 +1245,7 @@ defmodule AviaryWeb.ShowsDetailLive do
         title={@show.title}
         segments={@playing_segments}
         subtitles={@playing_subtitles}
+        subtitles_default={@subtitles_default}
         audio_stream_index={@playing_audio_index}
       />
 

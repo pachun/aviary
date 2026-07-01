@@ -30,6 +30,10 @@ defmodule AviaryWeb.MoviesDetailLive do
             playing_segments: nil,
             playing_subtitles: [],
             playing_audio_index: nil,
+            subtitles_default:
+              Aviary.Preferences.subtitles_default?(
+                socket.assigns.current_user.id
+              ),
             kicker: kicker(params["from"], params["q"]),
             radarr_status: nil,
             imported_stuck_since: nil,
@@ -257,6 +261,14 @@ defmodule AviaryWeb.MoviesDetailLive do
      |> assign(:playing_segments, Aviary.Jellyfin.segments(movie.id, user))
      |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(movie.id, user))
      |> assign(:playing_audio_index, audio_index)}
+  end
+
+  # A viewer toggling captions from the native player menu updates their
+  # cross-device default. The JS hook pushes whether any track is showing.
+  def handle_event("subtitles_changed", %{"on" => on}, socket)
+      when is_boolean(on) do
+    Aviary.Preferences.set_subtitles_default(socket.assigns.current_user.id, on)
+    {:noreply, assign(socket, :subtitles_default, on)}
   end
 
   def handle_event("watch", _, socket) do
@@ -626,6 +638,7 @@ defmodule AviaryWeb.MoviesDetailLive do
         title={@movie.title}
         segments={@playing_segments}
         subtitles={@playing_subtitles}
+        subtitles_default={@subtitles_default}
         audio_stream_index={@playing_audio_index}
       />
 
