@@ -25,6 +25,48 @@ defmodule AviaryWeb.API.LibraryController do
     json(conn, %{items: items})
   end
 
+  @doc """
+  Adds a discover/search item to the user's library and kicks off the
+  grab — shows via Sonarr, movies via Radarr. `id` is the TMDB id (the
+  detail endpoints expose it as `tmdbId`). Mirrors the web detail
+  page's Watch button so a title added from the tvOS client downloads
+  the same way.
+  """
+  def add(conn, %{"kind" => "show", "id" => id, "season" => season, "episode" => episode})
+      when is_integer(season) and is_integer(episode) do
+    user = conn.assigns.current_user
+    tmdb_id = to_string(id)
+
+    Aviary.Library.add(user.id, tmdb_id)
+
+    case Aviary.Sonarr.watch_episode(tmdb_id, season, episode) do
+      {:ok, _} ->
+        Aviary.SeriesFollowup.after_episode_imports(tmdb_id, season, episode)
+        json(conn, %{ok: true})
+
+      _ ->
+        conn |> put_status(:bad_gateway) |> json(%{error: "downloader_unavailable"})
+    end
+  end
+
+  def add(conn, %{"kind" => kind, "id" => id}) do
+    user = conn.assigns.current_user
+    tmdb_id = to_string(id)
+
+    Aviary.Library.add(user.id, tmdb_id)
+
+    result =
+      case kind do
+        "movie" -> Aviary.Radarr.watch_movie(tmdb_id)
+        _ -> Aviary.Sonarr.watch_show(tmdb_id)
+      end
+
+    case result do
+      {:ok, _} -> json(conn, %{ok: true})
+      _ -> conn |> put_status(:bad_gateway) |> json(%{error: "downloader_unavailable"})
+    end
+  end
+
   defp serialize(item) do
     %{
       id: item.id,

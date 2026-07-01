@@ -38,8 +38,8 @@ defmodule AviaryWeb.API.ShowController do
       genre: show.genre,
       synopsis: show.synopsis,
       runtimeMinutes: show.runtime_minutes,
-      poster: "/api/v1/image/#{show.id}",
-      backdrop: "/api/v1/image/#{show.id}?kind=backdrop",
+      poster: image_path(show.poster_url),
+      backdrop: backdrop(show),
       seasonCount: show.season_count,
       rating: show.rating,
       inLibrary: in_library,
@@ -67,9 +67,23 @@ defmodule AviaryWeb.API.ShowController do
       airDate: ep.air_date,
       aired: ep.aired,
       downloaded: downloaded,
-      image: if(downloaded, do: "/api/v1/image/#{ep.id}", else: nil)
+      image:
+        if(downloaded,
+          do: "/api/v1/image/#{ep.id}",
+          else: image_path(Map.get(ep, :still_url))
+        )
     }
   end
+
+  # Library items carry a Jellyfin backdrop; discover (TMDB) items have
+  # no Jellyfin id to proxy, so fall back to their poster art.
+  defp backdrop(%{source: :discover, poster_url: poster}), do: image_path(poster)
+  defp backdrop(show), do: "/api/v1/image/#{show.id}?kind=backdrop"
+
+  # Catalog image paths are browser-relative ("/image/..."); prefix
+  # them into the token-authed native image proxy. nil passes through.
+  defp image_path(nil), do: nil
+  defp image_path(url), do: "/api/v1" <> url
 
   defp serialize_next_up(nil), do: nil
 

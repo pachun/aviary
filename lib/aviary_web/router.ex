@@ -73,6 +73,11 @@ defmodule AviaryWeb.Router do
     get "/home/continue-watching", HomeController, :continue_watching
     get "/library/shows", LibraryController, :shows
     get "/library/movies", LibraryController, :movies
+    post "/library", LibraryController, :add
+    get "/discover", DiscoverController, :index
+    get "/search", SearchController, :index
+    get "/status/show/:tmdb_id", StatusController, :show
+    get "/status/movie/:tmdb_id", StatusController, :movie
     get "/shows/:id", ShowController, :show
     get "/movies/:id", MovieController, :show
     get "/items/:id/playback", PlaybackController, :show
@@ -87,6 +92,7 @@ defmodule AviaryWeb.Router do
   scope "/api/v1", AviaryWeb do
     pipe_through :api_authed
 
+    get "/image/tmdb/:size/*path", ImageController, :tmdb
     get "/image/:item_id", ImageController, :show
   end
 

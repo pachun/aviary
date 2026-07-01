@@ -232,6 +232,39 @@ defmodule Aviary.Catalog do
     end
   end
 
+  @doc """
+  The one "what should I watch next for this series" calculation — the
+  SAME `first_in_progress` derivation the detail page's next-up uses:
+  the most recently played episode, advanced past when it's basically
+  done, otherwise the in-progress episode it happens to be. Returns the
+  target episode map, or nil when there's nothing to continue (caught
+  up / no activity).
+
+  Home's Continue Watching calls this per series so its answer can
+  never disagree with the detail page. There is no separate "resume"
+  source ranked against "next up" — resume is simply the case where the
+  one target episode carries a saved position.
+  """
+  def continue_target(series_id, auth) do
+    episodes_by_season =
+      series_id
+      |> Aviary.Jellyfin.list_episodes(auth)
+      |> group_episodes()
+
+    case first_in_progress(episodes_by_season) do
+      %{caught_up: true} -> nil
+      nil -> jellyfin_next_up_episode(series_id, auth)
+      episode -> episode
+    end
+  end
+
+  defp jellyfin_next_up_episode(series_id, auth) do
+    case Aviary.Jellyfin.next_up(series_id, auth) do
+      {:ok, episode} -> to_episode(episode)
+      _ -> nil
+    end
+  end
+
   # Build the same show shape from a Jellyseerr TMDB lookup — for shows
   # surfaced via Discover that aren't in the user's library yet. Fields
   # that don't apply (episodes_by_season, next_up, trailer_url) come
@@ -381,6 +414,7 @@ defmodule Aviary.Catalog do
       synopsis: ep["overview"],
       season: ep["seasonNumber"],
       episode: ep["episodeNumber"],
+      still_url: tmdb_still_url(ep["stillPath"]),
       runtime_minutes: nil,
       resume_seconds: nil,
       last_played_at: nil,
@@ -452,6 +486,13 @@ defmodule Aviary.Catalog do
   # estimate entirely felt buggier than showing a close-enough one.
   defp tmdb_show_runtime(%{"episodeRunTime" => [n | _]}) when is_integer(n) and n > 0, do: n
   defp tmdb_show_runtime(_), do: 45
+
+  # TMDB episode still (16:9). w300 is the largest fixed still size TMDB
+  # publishes; upscales cleanly on an episode card.
+  defp tmdb_still_url(nil), do: nil
+  defp tmdb_still_url(""), do: nil
+  defp tmdb_still_url("/" <> path), do: "/image/tmdb/w300/" <> path
+  defp tmdb_still_url(path) when is_binary(path), do: "/image/tmdb/w300/" <> path
 
   defp tmdb_poster_url(nil), do: nil
   defp tmdb_poster_url(""), do: nil

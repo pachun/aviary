@@ -36,11 +36,17 @@ defmodule AviaryWeb.API.MovieController do
       officialRating: movie.official_rating,
       genre: movie.genre,
       synopsis: movie.synopsis,
-      poster: "/api/v1/image/#{movie.id}",
-      backdrop: "/api/v1/image/#{movie.id}?kind=backdrop",
+      poster: image_path(movie.poster_url),
+      backdrop: backdrop(movie),
       rating: movie.rating,
       resumeSeconds: movie.resume_seconds,
       inLibrary: in_library
     }
   end
+
+  defp backdrop(%{source: :discover, poster_url: poster}), do: image_path(poster)
+  defp backdrop(movie), do: "/api/v1/image/#{movie.id}?kind=backdrop"
+
+  defp image_path(nil), do: nil
+  defp image_path(url), do: "/api/v1" <> url
 end
