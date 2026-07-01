@@ -117,6 +117,7 @@ defmodule AviaryWeb.SettingsLive do
                 <input type="hidden" name="_method" value="delete" />
                 <button
                   type="submit"
+                  data-confirm="Sign out of aviary?"
                   class="self-start font-sans text-[0.72rem] tracking-[0.18em] uppercase text-ink hover:text-oxblood underline decoration-1 underline-offset-[6px] decoration-rule hover:decoration-oxblood transition-colors duration-200 cursor-pointer"
                 >
                   Sign out
