@@ -80,6 +80,7 @@ defmodule AviaryWeb.API.LibraryController do
   defp serialize(item) do
     %{
       id: item.id,
+      tmdb_id: to_string(item.tmdb_id),
       kind: to_string(item.type),
       title: item.title,
       year: year_label(item.year),
