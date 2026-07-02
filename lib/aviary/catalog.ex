@@ -81,7 +81,15 @@ defmodule Aviary.Catalog do
           |> Map.put(:source, :library)
           |> Map.put(:tmdb_id, tmdb_id(item))
           |> Map.put(:poster_url, "/image/#{item["Id"]}")
-          |> Map.put(:rating, Aviary.RottenTomatoes.fetch(item["Name"], :movie))
+          |> Map.put(
+            :rating,
+            Aviary.RottenTomatoes.fetch(
+              item["Name"],
+              :movie,
+              item["ProductionYear"],
+              imdb_id(item)
+            )
+          )
 
         {:ok, movie}
 
@@ -110,7 +118,13 @@ defmodule Aviary.Catalog do
         trailer_url: tmdb_trailer_url(body),
         resume_seconds: nil,
         poster_url: tmdb_poster_url(body["posterPath"]),
-        rating: Aviary.RottenTomatoes.fetch(body["title"], :movie)
+        rating:
+          Aviary.RottenTomatoes.fetch(
+            body["title"],
+            :movie,
+            tmdb_movie_year(body["releaseDate"]),
+            jellyseerr_imdb(body)
+          )
       }
 
       {:ok, movie}
@@ -222,7 +236,10 @@ defmodule Aviary.Catalog do
           |> Map.put(:episodes_by_season, episodes_by_season)
           |> Map.put(:next_up, next_up)
           |> Map.put(:season_count, episodes_by_season |> Enum.map(&elem(&1, 0)) |> Enum.uniq() |> length())
-          |> Map.put(:rating, Aviary.RottenTomatoes.fetch(item["Name"], :tv))
+          |> Map.put(
+            :rating,
+            Aviary.RottenTomatoes.fetch(item["Name"], :tv, nil, imdb_id(item))
+          )
           |> Map.put(:schedule, schedule)
 
         {:ok, show}
@@ -299,7 +316,7 @@ defmodule Aviary.Catalog do
         runtime_minutes: tmdb_show_runtime(body),
         next_up: nil,
         season_count: length(seasons),
-        rating: Aviary.RottenTomatoes.fetch(body["name"], :tv),
+        rating: Aviary.RottenTomatoes.fetch(body["name"], :tv, nil, jellyseerr_imdb(body)),
         schedule: derive_schedule(episodes_by_season, Aviary.LocalTime.today()),
         poster_url: tmdb_poster_url(body["posterPath"])
       }
@@ -556,6 +573,19 @@ defmodule Aviary.Catalog do
 
   defp tmdb_id(%{"ProviderIds" => %{"Tmdb" => id}}) when is_binary(id) and id != "", do: id
   defp tmdb_id(_), do: nil
+
+  # IMDb id for RT resolution via Wikidata. Library items carry it in
+  # Jellyfin's ProviderIds; discover items get it from Jellyseerr's
+  # (Overseerr) details, either top-level or under externalIds.
+  defp imdb_id(%{"ProviderIds" => %{"Imdb" => id}}) when is_binary(id) and id != "", do: id
+  defp imdb_id(_), do: nil
+
+  defp jellyseerr_imdb(body) do
+    case body["imdbId"] || get_in(body, ["externalIds", "imdbId"]) do
+      id when is_binary(id) and id != "" -> id
+      _ -> nil
+    end
+  end
 
   # Resume from saved position when there is one. We use PlayedPercentage
   # to skip items that are basically finished (>= 95% in) — Jellyfin
