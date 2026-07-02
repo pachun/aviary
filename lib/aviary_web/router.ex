@@ -71,6 +71,7 @@ defmodule AviaryWeb.Router do
     get "/me", SessionController, :show
     get "/nav", NavController, :show
     get "/home/continue-watching", HomeController, :continue_watching
+    post "/home/continue-watching/dismiss", HomeController, :dismiss
     get "/library/shows", LibraryController, :shows
     get "/library/movies", LibraryController, :movies
     post "/library", LibraryController, :add

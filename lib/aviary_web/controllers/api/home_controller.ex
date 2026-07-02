@@ -16,6 +16,24 @@ defmodule AviaryWeb.API.HomeController do
     json(conn, %{items: items})
   end
 
+  # Drop a title out of Continue Watching by resetting its Jellyfin
+  # watch state — same action as the web home page's hover-X. `id` is
+  # the series id (shows) or item id (movies), which is the unprefixed
+  # `dedupe_key` the client already holds.
+  def dismiss(conn, %{"kind" => "show", "id" => id}) do
+    Aviary.Jellyfin.reset_series_progress(id, conn.assigns.current_user)
+    json(conn, %{ok: true})
+  end
+
+  def dismiss(conn, %{"kind" => "movie", "id" => id}) do
+    Aviary.Jellyfin.reset_item_progress(id, conn.assigns.current_user)
+    json(conn, %{ok: true})
+  end
+
+  def dismiss(conn, _params) do
+    conn |> put_status(:bad_request) |> json(%{error: "bad_request"})
+  end
+
   defp serialize(item) do
     %{
       id: item.dedupe_key,

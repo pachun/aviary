@@ -24,7 +24,7 @@ defmodule AviaryWeb.Components.Marquee do
   attr :dismissible, :boolean,
     default: false,
     doc:
-      "When true, renders a hover-revealed X button on each card; click fires phx-click=\"dismiss\" with kind + detail_id (or the value of `dismiss_event` if set). Home uses this to give the user direct control over Continue Watching."
+      "When true, renders an X button on each card — hover-revealed on pointer devices, always visible on touch (no hover to reveal it). Click fires phx-click=\"dismiss\" with kind + detail_id (or the value of `dismiss_event` if set). Home uses this to give the user direct control over Continue Watching."
 
   attr :dismiss_event, :string,
     default: "dismiss",
@@ -345,7 +345,7 @@ defmodule AviaryWeb.Components.Marquee do
         phx-value-kind={dismiss_kind(@item)}
         data-confirm={dismiss_confirm(@dismiss_event)}
         aria-label="Remove"
-        class="absolute top-2 right-2 z-10 size-6 rounded-full bg-black/60 backdrop-blur-sm text-white text-xs leading-none flex items-center justify-center cursor-pointer transition-opacity duration-200 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+        class="absolute top-2 right-2 z-10 size-7 sm:size-6 rounded-full bg-black/60 backdrop-blur-sm text-white text-xs leading-none flex items-center justify-center cursor-pointer transition-opacity duration-200 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 hover:bg-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
         ✕
       </button>
