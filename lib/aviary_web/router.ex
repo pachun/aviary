@@ -89,6 +89,7 @@ defmodule AviaryWeb.Router do
     put "/preferences", PreferencesController, :update
     get "/shows/:id", ShowController, :show
     get "/movies/:id", MovieController, :show
+    get "/trailer", TrailerController, :show
     get "/items/:id/playback", PlaybackController, :show
     get "/items/:id/hls.m3u8", PlaybackController, :manifest
     post "/items/:id/progress", PlaybackController, :progress

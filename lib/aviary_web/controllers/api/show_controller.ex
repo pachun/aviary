@@ -37,6 +37,7 @@ defmodule AviaryWeb.API.ShowController do
       officialRating: show.official_rating,
       genre: show.genre,
       synopsis: show.synopsis,
+      trailerUrl: show.trailer_url,
       runtimeMinutes: show.runtime_minutes,
       poster: image_path(show.poster_url),
       backdrop: backdrop(show),

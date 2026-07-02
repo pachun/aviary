@@ -71,8 +71,19 @@ RUN mix release
 FROM ${RUNNER_IMAGE} AS final
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses6 locales ca-certificates \
+  && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses6 locales ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
+
+# yt-dlp resolves YouTube trailer URLs to a stream the tvOS client can
+# play in-app (see Aviary.Trailer). The self-contained release binary
+# needs neither Python nor ffmpeg for URL extraction (`-g`).
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+      arm64) YTDLP="yt-dlp_linux_aarch64" ;; \
+      *) YTDLP="yt-dlp_linux" ;; \
+    esac \
+  && curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${YTDLP}" -o /usr/local/bin/yt-dlp \
+  && chmod a+rx /usr/local/bin/yt-dlp
 
 # Set the locale
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen \

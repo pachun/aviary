@@ -36,6 +36,7 @@ defmodule AviaryWeb.API.MovieController do
       officialRating: movie.official_rating,
       genre: movie.genre,
       synopsis: movie.synopsis,
+      trailerUrl: movie.trailer_url,
       poster: image_path(movie.poster_url),
       backdrop: backdrop(movie),
       rating: movie.rating,
