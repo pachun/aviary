@@ -68,7 +68,9 @@ defmodule Aviary.Discover do
   defp enrich_with_ratings(items) do
     items
     |> Task.async_stream(
-      fn item -> Map.put(item, :rating, Aviary.RottenTomatoes.fetch(item.title, :tv)) end,
+      fn item ->
+        Map.put(item, :rating, Aviary.RottenTomatoes.fetch(item.title, :tv, item.year))
+      end,
       max_concurrency: 8,
       timeout: 10_000,
       on_timeout: :kill_task
@@ -93,11 +95,21 @@ defmodule Aviary.Discover do
       kind: :show,
       detail_id: jellyfin_id(result) || result["id"],
       title: result["name"],
+      year: tmdb_year(result["firstAirDate"]),
       subtitle: nil,
       thumbnail_url: backdrop_url(result["backdropPath"]),
       rating: nil
     }
   end
+
+  defp tmdb_year(date) when is_binary(date) do
+    case Integer.parse(String.slice(date, 0, 4)) do
+      {year, _} -> year
+      :error -> nil
+    end
+  end
+
+  defp tmdb_year(_), do: nil
 
   defp jellyfin_id(%{"mediaInfo" => %{"jellyfinMediaId" => id}})
        when is_binary(id) and id != "",
