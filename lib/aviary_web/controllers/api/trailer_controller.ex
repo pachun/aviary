@@ -9,8 +9,8 @@ defmodule AviaryWeb.API.TrailerController do
 
   def show(conn, %{"url" => url}) do
     case Aviary.Trailer.stream_url(url) do
-      {:ok, stream_url} ->
-        json(conn, %{streamUrl: stream_url})
+      {:ok, %{url: stream_url, content_type: content_type}} ->
+        json(conn, %{streamUrl: stream_url, contentType: content_type})
 
       :error ->
         conn
