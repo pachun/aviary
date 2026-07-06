@@ -16,6 +16,37 @@ defmodule AviaryWeb.API.HomeController do
     json(conn, %{items: items})
   end
 
+  # "What of mine is dropping soon" — the same per-user feed as the web
+  # home page's Upcoming list (`Aviary.Upcoming`), flattened for the tvOS
+  # client. Every entry is a show; `seriesId` opens the same detail screen
+  # the continue-watching cards do. `daysAway` (computed against the
+  # user's local today) lets the client group by day without timezone
+  # guesswork.
+  def upcoming(conn, _params) do
+    items =
+      conn.assigns.current_user
+      |> Aviary.Upcoming.releases()
+      |> Enum.map(&serialize_upcoming/1)
+
+    json(conn, %{items: items})
+  end
+
+  defp serialize_upcoming(release) do
+    %{
+      seriesId: release.series_id,
+      title: release.series_name,
+      season: release.season,
+      episode: release.episode,
+      airDate: Date.to_iso8601(release.air_date),
+      daysAway: release.days_away,
+      newSeason: release.kind == :new_season,
+      image: image_path(release.poster_url)
+    }
+  end
+
+  defp image_path(nil), do: nil
+  defp image_path(path), do: "/api/v1" <> path
+
   # Drop a title out of Continue Watching by resetting its Jellyfin
   # watch state — same action as the web home page's hover-X. `id` is
   # the series id (shows) or item id (movies), which is the unprefixed
