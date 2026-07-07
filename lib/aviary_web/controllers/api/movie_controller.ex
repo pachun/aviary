@@ -12,7 +12,10 @@ defmodule AviaryWeb.API.MovieController do
 
     case Aviary.Catalog.get_movie(id, user) do
       {:ok, movie} ->
-        json(conn, serialize(movie, in_library?(movie, user)))
+        json(
+          conn,
+          serialize(movie, in_library?(movie, user), recommended_by(user, movie.tmdb_id, "movie"))
+        )
 
       :error ->
         conn |> put_status(:not_found) |> json(%{error: "not_found"})
@@ -25,7 +28,21 @@ defmodule AviaryWeb.API.MovieController do
 
   defp in_library?(_, _), do: false
 
-  defp serialize(movie, in_library) do
+  # Names of household members who recommended this to the current user,
+  # for the "X thinks you'll like this" note. Skips the Jellyfin user
+  # lookup entirely when there are no recommenders (the common case).
+  defp recommended_by(user, tmdb_id, kind) do
+    case Aviary.Recommendations.recommenders_for(user.id, tmdb_id, kind) do
+      [] ->
+        []
+
+      sender_ids ->
+        names = user |> Aviary.Jellyfin.list_users() |> Map.new(&{&1["Id"], &1["Name"]})
+        sender_ids |> Enum.map(&Map.get(names, &1)) |> Enum.reject(&is_nil/1)
+    end
+  end
+
+  defp serialize(movie, in_library, recommended_by) do
     %{
       id: movie.id,
       tmdbId: movie.tmdb_id,
@@ -41,7 +58,8 @@ defmodule AviaryWeb.API.MovieController do
       backdrop: backdrop(movie),
       rating: movie.rating,
       resumeSeconds: movie.resume_seconds,
-      inLibrary: in_library
+      inLibrary: in_library,
+      recommendedBy: recommended_by
     }
   end
 

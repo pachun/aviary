@@ -13,7 +13,10 @@ defmodule AviaryWeb.API.ShowController do
 
     case Aviary.Catalog.get_show(id, user) do
       {:ok, show} ->
-        json(conn, serialize(show, in_library?(show, user)))
+        json(
+          conn,
+          serialize(show, in_library?(show, user), recommended_by(user, show.tmdb_id, "show"))
+        )
 
       :error ->
         conn |> put_status(:not_found) |> json(%{error: "not_found"})
@@ -26,7 +29,21 @@ defmodule AviaryWeb.API.ShowController do
 
   defp in_library?(_, _), do: false
 
-  defp serialize(show, in_library) do
+  # Names of household members who recommended this to the current user,
+  # for the "X thinks you'll like this" note. Skips the Jellyfin user
+  # lookup entirely when there are no recommenders (the common case).
+  defp recommended_by(user, tmdb_id, kind) do
+    case Aviary.Recommendations.recommenders_for(user.id, tmdb_id, kind) do
+      [] ->
+        []
+
+      sender_ids ->
+        names = user |> Aviary.Jellyfin.list_users() |> Map.new(&{&1["Id"], &1["Name"]})
+        sender_ids |> Enum.map(&Map.get(names, &1)) |> Enum.reject(&is_nil/1)
+    end
+  end
+
+  defp serialize(show, in_library, recommended_by) do
     %{
       id: show.id,
       tmdbId: show.tmdb_id,
@@ -44,6 +61,7 @@ defmodule AviaryWeb.API.ShowController do
       seasonCount: show.season_count,
       rating: show.rating,
       inLibrary: in_library,
+      recommendedBy: recommended_by,
       nextUp: serialize_next_up(show.next_up),
       seasons:
         Enum.map(show.episodes_by_season, fn {season, eps} ->

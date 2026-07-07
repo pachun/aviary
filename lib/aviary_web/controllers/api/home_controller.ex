@@ -44,6 +44,37 @@ defmodule AviaryWeb.API.HomeController do
     }
   end
 
+  # "What household members sent you" — the same feed as the web home
+  # page's Family Recommended row (`Aviary.Recommendations.list_for_marquee`,
+  # which already drops anything the recipient has in their library).
+  # `id`/`kind` open the show/movie detail; each recommender carries a
+  # name and (when they've set a Jellyfin avatar) an image URL to stack
+  # in the corner of the artwork.
+  def recommended(conn, _params) do
+    user = conn.assigns.current_user
+
+    items =
+      user
+      |> Aviary.Recommendations.list_for_marquee(Aviary.Jellyfin.list_users(user))
+      |> Enum.map(&serialize_recommended/1)
+
+    json(conn, %{items: items})
+  end
+
+  defp serialize_recommended(rec) do
+    %{
+      id: rec.detail_id,
+      kind: to_string(rec.kind),
+      title: rec.title,
+      image: image_path(rec.thumbnail_url),
+      recommenders: Enum.map(rec.recommenders, &serialize_recommender/1)
+    }
+  end
+
+  defp serialize_recommender(%{id: id, username: name, primary_image_tag: tag}) do
+    %{name: name, avatar: tag && "/api/v1/user-image/#{id}?tag=#{tag}"}
+  end
+
   defp image_path(nil), do: nil
   defp image_path(path), do: "/api/v1" <> path
 
