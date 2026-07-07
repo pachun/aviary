@@ -24,7 +24,12 @@ defmodule AviaryWeb.API.PlaybackController do
       intro: intro(Aviary.Jellyfin.segments(id, user)),
       audioTracks: Enum.map(audio, &audio_track/1),
       defaultAudioIndex: Aviary.Jellyfin.default_audio_index(audio),
-      subtitles: Enum.map(Aviary.Jellyfin.subtitle_streams(id, user), &subtitle(&1, id, user))
+      subtitles: Enum.map(Aviary.Jellyfin.subtitle_streams(id, user), &subtitle(&1, id, user)),
+      # The manifest's DEFAULT flag can't turn subtitles on for tvOS
+      # AVPlayer (it drives legible selection off device accessibility
+      # settings, not the playlist), so the native client applies the
+      # saved default by selecting the subtitle track itself on load.
+      subtitleDefault: Aviary.Preferences.subtitles_default?(user.id)
     })
   end
 
