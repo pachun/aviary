@@ -54,16 +54,32 @@ defmodule Aviary.Reconcile do
   defp clear_import_blocks do
     case Aviary.Sonarr.queue(pageSize: 300) do
       {:ok, %{"records" => records}} when is_list(records) ->
-        blocked =
-          records
-          |> Enum.filter(&import_blocked?/1)
+        download_counts = Enum.frequencies(Enum.map(records, & &1["downloadId"]))
+        blocked = Enum.filter(records, &import_blocked?/1)
+        {redundant, missing} = Enum.split_with(blocked, &episode_already_imported?/1)
+
+        # A duplicate grab for an episode that already landed a file from
+        # another release: Sonarr can't import over the existing file, so
+        # it sits blocked forever. Drop it — but only when this download
+        # is solely for that one episode, so we never delete a download
+        # another still-missing episode is riding on.
+        redundant
+        |> Enum.filter(fn r -> download_counts[r["downloadId"]] == 1 end)
+        |> tap(fn dups ->
+          if dups != [], do: Logger.info("reconcile: removing #{length(dups)} redundant import-blocked download(s)")
+        end)
+        |> Enum.each(fn r -> Aviary.Sonarr.remove_from_queue(r["id"]) end)
+
+        # A genuine block — the episode has no file yet — gets force-imported.
+        actionable =
+          missing
           |> Enum.map(& &1["downloadId"])
           |> Enum.reject(&is_nil/1)
           |> Enum.uniq()
 
-        if blocked != [] do
-          Logger.info("reconcile: clearing #{length(blocked)} import-blocked download(s)")
-          Enum.each(blocked, &force_import/1)
+        if actionable != [] do
+          Logger.info("reconcile: force-importing #{length(actionable)} import-blocked download(s)")
+          Enum.each(actionable, &force_import/1)
         end
 
         :ok
@@ -71,6 +87,10 @@ defmodule Aviary.Reconcile do
       _ ->
         :error
     end
+  end
+
+  defp episode_already_imported?(record) do
+    record["episodeHasFile"] == true or match?(%{"hasFile" => true}, record["episode"])
   end
 
   defp import_blocked?(record) do

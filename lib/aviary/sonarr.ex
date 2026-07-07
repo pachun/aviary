@@ -196,6 +196,19 @@ defmodule Aviary.Sonarr do
   def manual_import(_), do: :error
 
   @doc """
+  Removes a queue record by its queue id — used to drop a redundant
+  import-blocked download whose episode already landed a file from
+  another release. Deletes the leftover download from the client;
+  doesn't blocklist the release (it may still be a valid future grab).
+  """
+  def remove_from_queue(queue_id) do
+    case delete("/queue/#{queue_id}", removeFromClient: true, blocklist: false) do
+      {:ok, _} -> :ok
+      _ -> :error
+    end
+  end
+
+  @doc """
   Returns a `%{monitored: bool, episodes: map, queue: list}` snapshot
   for a single show. The episodes map is keyed by
   `{season, episode}` so callers can look up state per episode
