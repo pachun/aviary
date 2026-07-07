@@ -16,6 +16,7 @@ defmodule AviaryWeb.API.PlaybackController do
 
   def show(conn, %{"id" => id}) do
     user = conn.assigns.current_user
+    record_engagement(id, user)
     audio = Aviary.Jellyfin.audio_streams(id, user)
 
     json(conn, %{
@@ -25,6 +26,34 @@ defmodule AviaryWeb.API.PlaybackController do
       defaultAudioIndex: Aviary.Jellyfin.default_audio_index(audio),
       subtitles: Enum.map(Aviary.Jellyfin.subtitle_streams(id, user), &subtitle(&1, id, user))
     })
+  end
+
+  # Playing a title is an engagement signal — it belongs in the user's
+  # library so Continue Watching and the Shows / Movies tabs surface it,
+  # the same thing the web detail page does on its Watch button. Native
+  # playback was the only play path not recording this, so a user who
+  # only ever watches through the tvOS client never built a library.
+  # Fire-and-forget: playback must not wait on the lookup.
+  defp record_engagement(item_id, user) do
+    Task.start(fn -> add_to_library(item_id, user) end)
+  end
+
+  defp add_to_library(item_id, user) do
+    case Aviary.Jellyfin.get_item(item_id, user) do
+      {:ok, %{"Type" => "Movie", "ProviderIds" => %{"Tmdb" => tmdb}}}
+      when is_binary(tmdb) and tmdb != "" ->
+        Aviary.Library.add(user.id, tmdb)
+
+      {:ok, %{"Type" => "Episode", "SeriesId" => series_id}}
+      when is_binary(series_id) ->
+        case Map.get(Aviary.Jellyfin.series_tmdb_map([series_id], user), series_id) do
+          tmdb when is_binary(tmdb) and tmdb != "" -> Aviary.Library.add(user.id, tmdb)
+          _ -> :ok
+        end
+
+      _ ->
+        :ok
+    end
   end
 
   def manifest(conn, %{"id" => id}) do

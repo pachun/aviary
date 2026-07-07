@@ -130,7 +130,7 @@ defmodule Aviary.Jellyfin do
         Ids: id,
         userId: auth.id,
         Fields:
-          "Overview,OfficialRating,RunTimeTicks,RemoteTrailers,PremiereDate,EndDate,Status,ProductionYear,Genres,UserData,ProviderIds"
+          "Overview,OfficialRating,RunTimeTicks,RemoteTrailers,PremiereDate,EndDate,Status,ProductionYear,Genres,UserData,ProviderIds,SeriesId"
       )
 
     case result["Items"] do
