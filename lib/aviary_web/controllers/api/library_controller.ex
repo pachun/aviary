@@ -49,19 +49,44 @@ defmodule AviaryWeb.API.LibraryController do
     end
   end
 
-  def add(conn, %{"kind" => kind, "id" => id}) do
+  # "Add to library" on a show with no episode chosen. Grab the first
+  # aired episode first and let SeriesFollowup broaden to the rest once
+  # it lands — the same two-stage flow tapping a single episode uses, so
+  # the show is watchable in minutes instead of burying episode one
+  # behind a whole-series download. Falls back to the whole series if we
+  # can't resolve a first episode (e.g. nothing has aired yet).
+  def add(conn, %{"kind" => "show", "id" => id}) do
     user = conn.assigns.current_user
     tmdb_id = to_string(id)
 
     Aviary.Library.add(user.id, tmdb_id)
 
-    result =
-      case kind do
-        "movie" -> Aviary.Radarr.watch_movie(tmdb_id)
-        _ -> Aviary.Sonarr.watch_show(tmdb_id)
-      end
+    case Aviary.Sonarr.first_episode(tmdb_id) do
+      {:ok, season, episode} ->
+        case Aviary.Sonarr.watch_episode(tmdb_id, season, episode) do
+          {:ok, _} ->
+            Aviary.SeriesFollowup.after_episode_imports(tmdb_id, season, episode)
+            json(conn, %{ok: true})
 
-    case result do
+          _ ->
+            conn |> put_status(:bad_gateway) |> json(%{error: "downloader_unavailable"})
+        end
+
+      :error ->
+        case Aviary.Sonarr.watch_show(tmdb_id) do
+          {:ok, _} -> json(conn, %{ok: true})
+          _ -> conn |> put_status(:bad_gateway) |> json(%{error: "downloader_unavailable"})
+        end
+    end
+  end
+
+  def add(conn, %{"kind" => "movie", "id" => id}) do
+    user = conn.assigns.current_user
+    tmdb_id = to_string(id)
+
+    Aviary.Library.add(user.id, tmdb_id)
+
+    case Aviary.Radarr.watch_movie(tmdb_id) do
       {:ok, _} -> json(conn, %{ok: true})
       _ -> conn |> put_status(:bad_gateway) |> json(%{error: "downloader_unavailable"})
     end

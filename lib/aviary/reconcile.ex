@@ -39,6 +39,87 @@ defmodule Aviary.Reconcile do
   end
 
   defp do_run do
+    clear_import_blocks()
+    refire_missing_searches()
+  end
+
+  # Sonarr won't auto-import a completed download when it can only
+  # match it to the series by the grab-history id (parse-by-name
+  # fails — e.g. the release names the show without the year Sonarr's
+  # title carries, and the series has no bare-name alias). The files
+  # are fine; Sonarr is just being cautious. Left alone these sit at
+  # 100%-downloaded-never-imported forever, so we clear them: find the
+  # blocked downloads, keep only files that parse cleanly to a series
+  # + episodes with no rejections, and fire Sonarr's own ManualImport.
+  defp clear_import_blocks do
+    case Aviary.Sonarr.queue(pageSize: 300) do
+      {:ok, %{"records" => records}} when is_list(records) ->
+        blocked =
+          records
+          |> Enum.filter(&import_blocked?/1)
+          |> Enum.map(& &1["downloadId"])
+          |> Enum.reject(&is_nil/1)
+          |> Enum.uniq()
+
+        if blocked != [] do
+          Logger.info("reconcile: clearing #{length(blocked)} import-blocked download(s)")
+          Enum.each(blocked, &force_import/1)
+        end
+
+        :ok
+
+      _ ->
+        :error
+    end
+  end
+
+  defp import_blocked?(record) do
+    record["trackedDownloadState"] == "importBlocked" or
+      (record["trackedDownloadStatus"] == "warning" and
+         Enum.any?(record["statusMessages"] || [], fn m ->
+           Enum.any?(m["messages"] || [], &String.contains?(&1, "matched to series by ID"))
+         end))
+  end
+
+  defp force_import(download_id) do
+    with {:ok, candidates} <- Aviary.Sonarr.manual_import_candidates(download_id) do
+      files =
+        candidates
+        |> Enum.filter(&importable?/1)
+        |> Enum.map(&to_import_file(&1, download_id))
+
+      case files do
+        [] ->
+          Logger.info("reconcile: import-blocked #{download_id} has no clean files, leaving it")
+          :ok
+
+        _ ->
+          Logger.info("reconcile: force-importing #{download_id} (#{length(files)} file(s))")
+          Aviary.Sonarr.manual_import(files)
+      end
+    end
+  end
+
+  defp importable?(file) do
+    (file["rejections"] || []) == [] and is_map(file["series"]) and
+      file["series"]["id"] != nil and is_list(file["episodes"]) and file["episodes"] != []
+  end
+
+  defp to_import_file(file, download_id) do
+    %{
+      id: file["id"],
+      path: file["path"],
+      folderName: file["folderName"],
+      seriesId: file["series"]["id"],
+      episodeIds: Enum.map(file["episodes"], & &1["id"]),
+      quality: file["quality"],
+      languages: file["languages"],
+      releaseGroup: file["releaseGroup"],
+      downloadId: file["downloadId"] || download_id
+    }
+  end
+
+  defp refire_missing_searches do
     queued_episode_ids = fetch_queued_episode_ids()
 
     case fetch_missing() do

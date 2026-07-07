@@ -2,12 +2,18 @@ defmodule AviaryWeb.SonarrWebhookController do
   @moduledoc """
   Receives Sonarr Connect webhook events and reacts.
 
-  Right now the only event we care about is "Health Restored" — fires
-  when a previously-unhealthy Sonarr state (e.g. qBittorrent
-  unreachable) becomes healthy again. That's the edge where any grabs
-  Sonarr tried while qBit was down can now succeed if we re-fire
-  them, so we kick `Aviary.Reconcile` to walk Sonarr's
-  /wanted/missing and re-search anything aired-but-not-grabbed.
+  Every reaction kicks `Aviary.Reconcile`, which both clears
+  import-blocked downloads and re-searches aired-but-not-grabbed
+  episodes. The events that trigger it:
+
+    - "Health Restored" — a previously-unhealthy Sonarr state (e.g.
+      qBittorrent unreachable) recovered; grabs it tried while down
+      can now succeed if we re-fire them.
+    - "Application Update" — Sonarr restarted; anything dropped
+      mid-grab is worth re-firing.
+    - "Manual Interaction Required" — a completed download Sonarr
+      won't auto-import (e.g. it could only match the series by id);
+      the reconcile clears it if the files parse cleanly.
 
   Authentication: a shared secret in the `x-aviary-secret` header,
   matched against `:aviary, :sonarr_webhook_secret` from runtime
@@ -45,7 +51,7 @@ defmodule AviaryWeb.SonarrWebhookController do
   end
 
   defp handle_event(%{"eventType" => evt} = params)
-       when evt in ["HealthRestored", "ApplicationUpdate"] do
+       when evt in ["HealthRestored", "ApplicationUpdate", "ManualInteractionRequired"] do
     Logger.info("sonarr_webhook eventType=#{evt} — kicking Reconcile")
 
     # Run async — Sonarr expects a quick 200 from the webhook, and

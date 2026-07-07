@@ -70,6 +70,34 @@ defmodule Aviary.Sonarr do
   end
 
   @doc """
+  Resolves the first aired episode (lowest real season, earliest episode)
+  so "add the whole show" can grab that one first and broaden to the rest
+  afterward — the same two-stage flow tapping a single episode uses.
+  Returns `{:ok, season, episode}` or `:error` (e.g. nothing aired yet,
+  or Sonarr unreachable).
+  """
+  def first_episode(tmdb_id) do
+    with {:ok, series} <- ensure_series(tmdb_id, monitor: "none", search: false) do
+      today = Aviary.LocalTime.today()
+
+      series["id"]
+      |> wait_for_episodes()
+      |> Enum.filter(fn ep -> (ep["seasonNumber"] || 0) > 0 and aired?(ep, today) end)
+      |> Enum.sort_by(fn ep -> {ep["seasonNumber"], ep["episodeNumber"]} end)
+      |> List.first()
+      |> case do
+        %{"seasonNumber" => season, "episodeNumber" => episode} ->
+          {:ok, season, episode}
+
+        _ ->
+          :error
+      end
+    else
+      _ -> :error
+    end
+  end
+
+  @doc """
   "Watch one episode" — ensures the series exists (monitor=none),
   monitors the specific episode, fires an EpisodeSearch. Doesn't
   touch season-level monitoring, so this stays a low-commitment
@@ -140,6 +168,32 @@ defmodule Aviary.Sonarr do
       _ -> :error
     end
   end
+
+  @doc """
+  Lists Sonarr's manual-import candidates for a completed download —
+  each parsed file with its matched series/episodes/quality and any
+  rejections. `Aviary.Reconcile` uses this to auto-clear downloads
+  Sonarr flags as "matched to series by ID" (import-blocked but with
+  clean, unambiguous files).
+  """
+  def manual_import_candidates(download_id) do
+    case get("/manualimport", downloadId: download_id, filterExistingFiles: false) do
+      {:ok, files} when is_list(files) -> {:ok, files}
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Force-imports already-prepared files via Sonarr's ManualImport
+  command. `files` are candidate rows from `manual_import_candidates/1`
+  shaped into the command's expected form. `importMode: "auto"` lets
+  Sonarr hardlink/copy per its own download-client settings.
+  """
+  def manual_import(files) when is_list(files) and files != [] do
+    command("ManualImport", %{importMode: "auto", files: files})
+  end
+
+  def manual_import(_), do: :error
 
   @doc """
   Returns a `%{monitored: bool, episodes: map, queue: list}` snapshot
