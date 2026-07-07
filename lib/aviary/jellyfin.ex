@@ -1079,13 +1079,18 @@ defmodule Aviary.Jellyfin do
          subtitles_on
        ) do
     if String.contains?(line, ~s(LANGUAGE="eng")) do
+      # Only toggle DEFAULT (subtitles auto-on vs off). Leave
+      # AUTOSELECT=YES: tvOS AVPlayer treats an AUTOSELECT=NO subtitle
+      # rendition as ineligible for its automatic media selection, so on
+      # the next re-evaluation (a seek or segment boundary) it drops the
+      # track the viewer turned on by hand — subtitles won't "stay on."
+      # AUTOSELECT=YES keeps a manual selection sticking for the rest of
+      # playback; DEFAULT=NO still means off-by-default.
       english =
         if subtitles_on do
           line
         else
-          line
-          |> String.replace("DEFAULT=YES", "DEFAULT=NO")
-          |> String.replace("AUTOSELECT=YES", "AUTOSELECT=NO")
+          String.replace(line, "DEFAULT=YES", "DEFAULT=NO")
         end
 
       [absolutize_uri(english, prefix)]
