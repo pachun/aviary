@@ -76,6 +76,77 @@ defmodule AviaryWeb.API.PlaybackController do
     end
   end
 
+  # Subtitle rendition, proxied through aviary so a Jellyfin extraction
+  # failure degrades to a caption that says so instead of a 404 that
+  # freezes the tvOS player.
+  def subtitle_playlist(conn, %{"id" => id, "index" => index, "token" => token}) do
+    playlist =
+      case Aviary.Jellyfin.subtitle_playlist(id, index, token) do
+        {:ok, body} -> body
+        :error -> fallback_playlist()
+      end
+
+    conn
+    |> put_resp_content_type("application/vnd.apple.mpegurl")
+    |> send_resp(200, playlist)
+  end
+
+  def subtitle_segment(conn, %{"id" => id, "index" => index} = params) do
+    forward = Map.drop(params, ["id", "index"])
+
+    vtt =
+      case Aviary.Jellyfin.subtitle_segment(id, index, forward) do
+        {:ok, body} -> body
+        :error -> unavailable_vtt(params["StartPositionTicks"])
+      end
+
+    conn
+    |> put_resp_content_type("text/vtt")
+    |> send_resp(200, vtt)
+  end
+
+  # Minimal one-segment playlist for the rare case Jellyfin can't even
+  # serve the subtitle playlist — the single segment resolves to the
+  # proxy above, which answers with the unavailable caption.
+  defp fallback_playlist do
+    """
+    #EXTM3U
+    #EXT-X-TARGETDURATION:30
+    #EXT-X-VERSION:3
+    #EXT-X-MEDIA-SEQUENCE:0
+    #EXT-X-PLAYLIST-TYPE:VOD
+    #EXTINF:30,
+    stream.vtt
+    #EXT-X-ENDLIST
+    """
+  end
+
+  # A valid WebVTT carrying the "unavailable" caption, time-mapped to
+  # this segment's position so it shows across the whole episode (every
+  # failed segment repeats it). The MPEGTS base of 900000 (a 10s 90kHz
+  # offset) matches what Jellyfin emits for a working track.
+  defp unavailable_vtt(start_ticks) do
+    start_seconds = div(parse_ticks(start_ticks), 10_000_000)
+    mpegts = 900_000 + start_seconds * 90_000
+
+    """
+    WEBVTT
+    X-TIMESTAMP-MAP=MPEGTS:#{mpegts},LOCAL:00:00:00.000
+
+    00:00:00.000 --> 00:00:30.000
+    Subtitles unavailable for this episode
+    """
+  end
+
+  defp parse_ticks(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {ticks, _} -> ticks
+      :error -> 0
+    end
+  end
+
+  defp parse_ticks(_), do: 0
+
   def progress(conn, %{"id" => id, "position" => position})
       when is_number(position) do
     user = conn.assigns.current_user

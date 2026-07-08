@@ -1051,7 +1051,7 @@ defmodule Aviary.Jellyfin do
            retry: false
          ) do
       {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
-        {:ok, rewrite_manifest(body, item_id, subtitles_on)}
+        {:ok, rewrite_manifest(body, item_id, auth.token, subtitles_on)}
 
       _ ->
         :error
@@ -1060,12 +1060,12 @@ defmodule Aviary.Jellyfin do
     _ -> :error
   end
 
-  defp rewrite_manifest(body, item_id, subtitles_on) do
+  defp rewrite_manifest(body, item_id, token, subtitles_on) do
     prefix = "#{public_url()}/Videos/#{item_id}/"
 
     body
     |> String.split("\n")
-    |> Enum.flat_map(&rewrite_manifest_line(&1, prefix, subtitles_on))
+    |> Enum.flat_map(&rewrite_manifest_line(&1, prefix, item_id, token, subtitles_on))
     |> Enum.join("\n")
   end
 
@@ -1075,7 +1075,9 @@ defmodule Aviary.Jellyfin do
   # we leave that when the viewer wants subtitles on, or force it off.
   defp rewrite_manifest_line(
          "#EXT-X-MEDIA:TYPE=SUBTITLES" <> _ = line,
-         prefix,
+         _prefix,
+         item_id,
+         token,
          subtitles_on
        ) do
     if String.contains?(line, ~s(LANGUAGE="eng")) do
@@ -1093,7 +1095,7 @@ defmodule Aviary.Jellyfin do
           String.replace(line, "DEFAULT=YES", "DEFAULT=NO")
         end
 
-      [absolutize_uri(english, prefix)]
+      [aviary_subtitle_uri(english, item_id, token)]
     else
       []
     end
@@ -1102,7 +1104,7 @@ defmodule Aviary.Jellyfin do
   # A bare relative line (no leading #) is the variant playlist URI —
   # make it absolute so the client fetches it straight from Jellyfin.
   # Everything else (tags, blanks) passes through untouched.
-  defp rewrite_manifest_line(line, prefix, _subtitles_on) do
+  defp rewrite_manifest_line(line, prefix, _item_id, _token, _subtitles_on) do
     trimmed = String.trim(line)
 
     cond do
@@ -1112,8 +1114,63 @@ defmodule Aviary.Jellyfin do
     end
   end
 
-  defp absolutize_uri(line, prefix) do
-    Regex.replace(~r/URI="([^"]+)"/, line, fn _, uri -> ~s(URI="#{prefix}#{uri}") end)
+  # Point the subtitle rendition at aviary instead of straight at
+  # Jellyfin. aviary proxies the playlist and segments, and when
+  # Jellyfin can't extract the subtitle (a corrupt track ffmpeg chokes
+  # on), returns a valid "unavailable" caption instead of a 404 — a 404
+  # here hard-freezes tvOS AVPlayer, which waits forever for a rendition
+  # that never comes. The token rides in the URL (as Jellyfin's own
+  # media URLs do) rather than an Authorization header, so it doesn't
+  # depend on AVPlayer propagating headers to HLS sub-requests.
+  defp aviary_subtitle_uri(line, item_id, token) do
+    Regex.replace(~r/URI="([^"]+)"/, line, fn _, uri ->
+      index =
+        case Regex.run(~r|Subtitles/(\d+)/|, uri) do
+          [_, idx] -> idx
+          _ -> "0"
+        end
+
+      ~s(URI="/api/v1/items/#{item_id}/subtitles/#{index}/playlist.m3u8?token=#{token}")
+    end)
+  end
+
+  @doc """
+  Fetches Jellyfin's segmented WebVTT playlist for a subtitle track.
+  Passing the token as `ApiKey` makes Jellyfin echo it into each
+  segment's relative `stream.vtt?...` URL, so — served from an aviary
+  route — the segments resolve back to aviary's proxy already carrying
+  the credential.
+  """
+  def subtitle_playlist(item_id, index, token) do
+    url = "#{base_url()}/Videos/#{item_id}/#{item_id}/Subtitles/#{index}/subtitles.m3u8"
+
+    case Req.get(url,
+           params: [SegmentLength: 30, ApiKey: token],
+           receive_timeout: 10_000,
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) -> {:ok, body}
+      _ -> :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  @doc """
+  Fetches one WebVTT segment, forwarding the playlist's positioning +
+  auth params straight through to Jellyfin. Returns `:error` when
+  Jellyfin can't produce it (the caller substitutes an "unavailable"
+  caption).
+  """
+  def subtitle_segment(item_id, index, params) do
+    url = "#{base_url()}/Videos/#{item_id}/#{item_id}/Subtitles/#{index}/stream.vtt"
+
+    case Req.get(url, params: params, receive_timeout: 10_000, retry: false) do
+      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) -> {:ok, body}
+      _ -> :error
+    end
+  rescue
+    _ -> :error
   end
 
   ## Internals

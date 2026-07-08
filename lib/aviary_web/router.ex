@@ -63,6 +63,14 @@ defmodule AviaryWeb.Router do
 
     get "/info", InfoController, :show
     post "/sessions", SessionController, :create
+
+    # Subtitle rendition proxy. Self-authenticating via the token baked
+    # into the URL (as Jellyfin's own media URLs are), so it doesn't
+    # depend on AVPlayer forwarding the Authorization header to HLS
+    # sub-requests. See PlaybackController for the unavailable-caption
+    # fallback that keeps a broken subtitle from freezing playback.
+    get "/items/:id/subtitles/:index/playlist.m3u8", PlaybackController, :subtitle_playlist
+    get "/items/:id/subtitles/:index/stream.vtt", PlaybackController, :subtitle_segment
   end
 
   scope "/api/v1", AviaryWeb.API do
