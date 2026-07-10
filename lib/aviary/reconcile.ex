@@ -12,6 +12,10 @@ defmodule Aviary.Reconcile do
   when health is restored, but also safe to invoke directly for ad-
   hoc catch-up.
 
+  Also clears the two states an *arr will sit in forever on its own: a
+  completed download it refuses to import, and a release it grabbed for
+  a protocol it has no download client for.
+
   Throttled so a flurry of events (qBit flapping, multiple health
   issues clearing in sequence) doesn't pile up dozens of identical
   re-searches against the indexer. One reconcile per minute is plenty
@@ -22,6 +26,11 @@ defmodule Aviary.Reconcile do
 
   @throttle_ms 60_000
   @throttle_key :aviary_reconcile
+
+  # A download client that blipped during the hand-off is usually back
+  # within a minute or two, and Radarr picks the grab up on its own. Only
+  # step in once it clearly hasn't.
+  @orphan_grace_seconds 900
 
   @doc """
   Runs the reconcile pass. Returns `:ok` if it actually ran, or
@@ -40,7 +49,65 @@ defmodule Aviary.Reconcile do
 
   defp do_run do
     clear_import_blocks()
+    clear_orphaned_grabs()
     refire_missing_searches()
+  end
+
+  # Radarr will happily accept a grab for a protocol it has no download
+  # client for. The release parks in the queue as
+  # `downloadClientUnavailable` at 0% and stays there: nothing retries
+  # it, and no health check fires, because Radarr counts itself healthy
+  # as long as *some* client is enabled. Re-drive the ones a client
+  # could now take, and say so about the ones it can't — re-searching
+  # those would only grab into the same void.
+  defp clear_orphaned_grabs do
+    with {:ok, %{"records" => records}} when is_list(records) <-
+           Aviary.Radarr.queue(pageSize: 100),
+         {:ok, protocols} <- Aviary.Radarr.enabled_download_protocols() do
+      {recoverable, stranded} =
+        records
+        |> Enum.filter(&orphaned_grab?/1)
+        |> Enum.split_with(&MapSet.member?(protocols, &1["protocol"]))
+
+      Enum.each(stranded, fn record ->
+        Logger.warning(
+          "reconcile: #{describe(record)} was grabbed as #{record["protocol"]} but no #{record["protocol"]} download client is enabled — leaving it parked"
+        )
+      end)
+
+      if recoverable != [] do
+        Logger.info("reconcile: re-driving #{length(recoverable)} orphaned grab(s)")
+      end
+
+      Enum.each(recoverable, fn record ->
+        with :ok <- Aviary.Radarr.remove_from_queue(record["id"]),
+             movie_id when is_integer(movie_id) <- record["movieId"] do
+          Logger.info("reconcile: re-searching #{describe(record)}")
+          Aviary.Radarr.movie_search([movie_id])
+        end
+      end)
+
+      :ok
+    else
+      _ -> :error
+    end
+  end
+
+  defp orphaned_grab?(record) do
+    record["status"] == "downloadClientUnavailable" and settled?(record["added"])
+  end
+
+  defp settled?(added) when is_binary(added) do
+    case DateTime.from_iso8601(added) do
+      {:ok, at, _} -> DateTime.diff(DateTime.utc_now(), at) >= @orphan_grace_seconds
+      _ -> false
+    end
+  end
+
+  defp settled?(_), do: false
+
+  defp describe(record) do
+    get_in(record, ["movie", "title"]) || record["title"] || "queue record #{record["id"]}"
   end
 
   # Sonarr won't auto-import a completed download when it can only

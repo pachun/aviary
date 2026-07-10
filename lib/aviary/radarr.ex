@@ -69,6 +69,56 @@ defmodule Aviary.Radarr do
   end
 
   @doc """
+  The full queue, newest grabs included. `includeMovie` so callers can
+  name the movie in a log line without a second round trip.
+  """
+  def queue(opts \\ []) do
+    page_size = Keyword.get(opts, :pageSize, 100)
+
+    case get("/queue", pageSize: page_size, includeMovie: true) do
+      {:ok, body} when is_map(body) -> {:ok, body}
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Drops a queue record. `removeFromClient: false` because the records
+  this is called for never reached a client; asking Radarr to reach into
+  one it doesn't have would fail the whole delete.
+  """
+  def remove_from_queue(queue_id) do
+    case delete("/queue/#{queue_id}", removeFromClient: false, blocklist: false) do
+      {:ok, _} -> :ok
+      _ -> :error
+    end
+  end
+
+  def movie_search(radarr_movie_ids) when is_list(radarr_movie_ids) do
+    command("MoviesSearch", %{movieIds: radarr_movie_ids})
+  end
+
+  @doc """
+  The protocols Radarr can actually download right now — `"usenet"`,
+  `"torrent"`, or both. A grab for a protocol absent from this set has
+  nowhere to go, and no amount of re-searching will change that.
+  """
+  def enabled_download_protocols do
+    case get("/downloadclient", []) do
+      {:ok, clients} when is_list(clients) ->
+        protocols =
+          clients
+          |> Enum.filter(&(&1["enable"] == true))
+          |> Enum.map(& &1["protocol"])
+          |> MapSet.new()
+
+        {:ok, protocols}
+
+      _ ->
+        :error
+    end
+  end
+
+  @doc """
   Returns a `%{radarr_movie_id, monitored, has_file, path, queue}`
   snapshot for a single movie, keyed by TMDB id. Returns `:not_found`
   when the movie isn't in Radarr — callers treat that as "user
