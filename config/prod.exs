@@ -15,7 +15,12 @@ config :aviary, AviaryWeb.Endpoint,
     rewrite_on: [:x_forwarded_proto],
     exclude: [
       # paths: ["/health"],
-      hosts: ["localhost", "127.0.0.1"]
+      # Sonarr posts to /api/sonarr/webhook over the docker bridge as
+      # plain HTTP with a `host.docker.internal` Host header. Without
+      # the exclusion, Plug.SSL 307s it to PHX_HOST and the webhook
+      # never reaches the router — Reconcile stops running and blocked
+      # imports sit forever. Silent when it breaks; drop with care.
+      hosts: ["localhost", "127.0.0.1", "host.docker.internal"]
     ]
   ]
 
