@@ -784,6 +784,7 @@ defmodule Aviary.Jellyfin do
       when is_list(streams) ->
         streams
         |> Enum.filter(&(&1["Type"] == "Subtitle"))
+        |> Enum.filter(&text_based?/1)
         |> Enum.filter(&english?/1)
         |> Enum.map(&to_subtitle/1)
 
@@ -797,6 +798,13 @@ defmodule Aviary.Jellyfin do
   # English by language code (eng/en), or — when the source left the
   # language undetermined — by an "English" mention in the track's
   # human label. Everything else (Chinese, Polish, …) is filtered out.
+  # Jellyfin can only deliver a subtitle as an HLS WebVTT rendition (or
+  # a Stream.vtt) when the track is text. Bitmap tracks (PGS, VOBSUB)
+  # would have to be burned into the video, and asking for one in the
+  # master playlist makes Jellyfin silently leave it out of the
+  # subtitle group while the variant still references that group.
+  defp text_based?(stream), do: stream["IsTextSubtitleStream"] == true
+
   defp english?(stream) do
     lang = stream["Language"] |> to_string() |> String.downcase()
 
@@ -1060,13 +1068,31 @@ defmodule Aviary.Jellyfin do
     _ -> :error
   end
 
-  defp rewrite_manifest(body, item_id, token, subtitles_on) do
+  @doc false
+  def rewrite_manifest(body, item_id, token, subtitles_on) do
     prefix = "#{public_url()}/Videos/#{item_id}/"
 
     body
     |> String.split("\n")
     |> Enum.flat_map(&rewrite_manifest_line(&1, prefix, item_id, token, subtitles_on))
+    |> drop_dangling_subtitle_group()
     |> Enum.join("\n")
+  end
+
+  # A variant that names a SUBTITLES group with no matching EXT-X-MEDIA
+  # line is an invalid master playlist: tvOS AVPlayer refuses it with
+  # CoreMediaErrorDomain -12642. That happens whenever the English
+  # rendition is gone (only non-English text tracks survived Jellyfin,
+  # or none at all), so strip the group reference in that case.
+  defp drop_dangling_subtitle_group(lines) do
+    subtitle_rendition? =
+      Enum.any?(lines, &String.starts_with?(&1, "#EXT-X-MEDIA:TYPE=SUBTITLES"))
+
+    if subtitle_rendition? do
+      lines
+    else
+      Enum.map(lines, &String.replace(&1, ~r/,SUBTITLES="[^"]*"/, ""))
+    end
   end
 
   # Subtitle rendition lines: keep only the English one, apply the
