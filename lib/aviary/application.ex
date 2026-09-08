@@ -20,6 +20,10 @@ defmodule Aviary.Application do
       # See Aviary.Deletions for the lifecycle, Aviary.Deletions.Scheduler
       # for the cadence.
       Aviary.Deletions.Scheduler,
+      # Re-fires searches for monitored episodes that have no file once
+      # a day, so a grab that failed while an indexer was down gets
+      # retried without a tap. See Aviary.Reconcile.Scheduler.
+      Aviary.Reconcile.Scheduler,
       # Start to serve requests, typically the last entry
       AviaryWeb.Endpoint
     ]
