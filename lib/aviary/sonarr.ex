@@ -347,6 +347,7 @@ defmodule Aviary.Sonarr do
 
     sonarr_series_id
     |> wait_for_episodes()
+    |> Enum.reject(&special?/1)
     |> Enum.filter(fn ep ->
       ep["monitored"] == true and
         ep["hasFile"] != true and
@@ -385,6 +386,8 @@ defmodule Aviary.Sonarr do
 
   defp aired?(_, _), do: false
 
+  defp special?(episode), do: (episode["seasonNumber"] || 0) == 0
+
   defp ensure_series(tmdb_id, opts) do
     case find_series_by_tmdb(tmdb_id) do
       {:ok, series} ->
@@ -409,6 +412,7 @@ defmodule Aviary.Sonarr do
           unmonitored_ids =
             series["id"]
             |> list_episodes()
+            |> Enum.reject(&special?/1)
             |> Enum.reject(&(&1["monitored"] == true))
             |> Enum.map(& &1["id"])
 
