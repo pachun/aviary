@@ -57,7 +57,7 @@ defmodule Aviary.DownloadState do
   def episode_state(s, e, status) do
     case Map.get(status.episodes, {s, e}) do
       %{has_file: true} -> :imported
-      %{id: id, monitored: true} -> queue_state(status.queue, id)
+      %{monitored: true} = episode -> queue_state(status.queue, episode)
       _ -> :ready
     end
   end
@@ -130,9 +130,9 @@ defmodule Aviary.DownloadState do
     end
   end
 
-  defp overlay_state(%{id: id, has_file: has_file, monitored: monitored}, queue) do
-    case find_record(queue, id) do
-      nil -> if not has_file and monitored, do: :searching, else: nil
+  defp overlay_state(%{has_file: has_file, monitored: monitored} = episode, queue) do
+    case find_record(queue, episode.id) do
+      nil -> if not has_file and monitored and aired?(episode), do: :searching, else: nil
       record -> queue_record_state(record)
     end
   end
@@ -145,13 +145,24 @@ defmodule Aviary.DownloadState do
   def serialize(state) when is_atom(state), do: %{kind: to_string(state)}
 
   # A monitored episode with no queue record is still being searched
-  # for; that's :searching, not "in queue."
-  defp queue_state(queue, id) do
-    case find_record(queue, id) do
-      nil -> :searching
+  # for; that's :searching, not "in queue." Unless it hasn't aired yet:
+  # Sonarr has nothing to look for until the broadcast, so that one is
+  # waiting, not searching.
+  defp queue_state(queue, episode) do
+    case find_record(queue, episode.id) do
+      nil -> if aired?(episode), do: :searching, else: :ready
       record -> queue_record_state(record)
     end
   end
+
+  defp aired?(%{air_date: air_date}) when is_binary(air_date) do
+    case Date.from_iso8601(String.slice(air_date, 0, 10)) do
+      {:ok, date} -> Date.compare(date, Aviary.LocalTime.today()) == :lt
+      _ -> true
+    end
+  end
+
+  defp aired?(_), do: true
 
   defp find_record(queue, id) do
     Enum.find(queue, &(&1["episodeId"] == id or &1["movieId"] == id))
