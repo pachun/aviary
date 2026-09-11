@@ -190,63 +190,85 @@ defmodule Aviary.Catalog do
   defp get_library_show(id, auth) do
     case Aviary.Jellyfin.get_item(id, auth) do
       {:ok, item} ->
-        episodes = Aviary.Jellyfin.list_episodes(id, auth)
-
-        jellyfin_by_season = group_episodes(episodes)
-
-        # Augment with TMDB-known episodes the library doesn't yet have
-        # (future air dates, unfetched gaps). Without this the episode
-        # list ended abruptly at the last downloaded episode and the
-        # user couldn't see what was coming. After augment, library
-        # shows render the same full timeline as discover shows; the
-        # only difference is which entries carry Jellyfin ids vs.
-        # `tmdb-` ids — and that's the same routing the action chips
-        # already understand.
-        episodes_by_season = augment_with_tmdb(jellyfin_by_season, tmdb_id(item))
-
-        # Prefer the in-progress episode (one with a saved resume
-        # position) over Jellyfin's NextUp response. NextUp's logic
-        # can disagree with what the home page surfaces when there
-        # are mid-watch episodes in earlier seasons — the user
-        # expects "Continue Watching" on the detail page to point at
-        # the same episode the home marquee does.
-        next_up =
-          first_in_progress(episodes_by_season) ||
-            case Aviary.Jellyfin.next_up(id, auth) do
-              {:ok, ep} -> to_episode(ep)
-              :none -> nil
-            end
-
-        # Derive the next-episode schedule from episodes_by_season we
-        # just assembled. TMDB's nextEpisodeToAir convenience pointer
-        # lags its own per-episode airDate data by hours after each
-        # drop — long enough that the calendar would surface an
-        # episode the user already has in their library. The local
-        # derivation is authoritative: skip anything already
-        # downloaded, take the first remaining unaired or today-airing
-        # episode.
-        schedule = derive_schedule(episodes_by_season, Aviary.LocalTime.today())
-
-        show =
-          item
-          |> to_show_detail()
-          |> Map.put(:source, :library)
-          |> Map.put(:tmdb_id, tmdb_id(item))
-          |> Map.put(:poster_url, "/image/#{item["Id"]}")
-          |> Map.put(:episodes_by_season, episodes_by_season)
-          |> Map.put(:next_up, next_up)
-          |> Map.put(:season_count, episodes_by_season |> Enum.map(&elem(&1, 0)) |> Enum.uniq() |> length())
-          |> Map.put(
-            :rating,
-            Aviary.RottenTomatoes.fetch(item["Name"], :tv, nil, imdb_id(item))
-          )
-          |> Map.put(:schedule, schedule)
-
-        {:ok, show}
+        case Aviary.Jellyfin.list_episodes(id, auth) do
+          [] -> get_show_while_jellyfin_indexes(item, auth)
+          episodes -> {:ok, library_show(item, episodes, auth)}
+        end
 
       :error ->
         :error
     end
+  end
+
+  # For the first ~20s after a new series lands, Jellyfin's automatic
+  # series grouping re-keys the series once TVDB metadata arrives, and
+  # `/Shows/{id}/Episodes` + `/Shows/NextUp` return nothing until the
+  # episodes are re-saved under the new key. Rendering that as a library
+  # show made perch declare the user "caught up" on a show with zero
+  # episodes; serve the discover shape instead so clients keep showing
+  # download status until the episodes are really queryable.
+  defp get_show_while_jellyfin_indexes(item, auth) do
+    with tmdb when is_binary(tmdb) <- tmdb_id(item),
+         {:ok, show} <- get_discover_show(tmdb) do
+      {:ok, show}
+    else
+      _ -> {:ok, library_show(item, [], auth)}
+    end
+  end
+
+  defp library_show(item, episodes, auth) do
+    id = item["Id"]
+    jellyfin_by_season = group_episodes(episodes)
+
+    # Augment with TMDB-known episodes the library doesn't yet have
+    # (future air dates, unfetched gaps). Without this the episode
+    # list ended abruptly at the last downloaded episode and the
+    # user couldn't see what was coming. After augment, library
+    # shows render the same full timeline as discover shows; the
+    # only difference is which entries carry Jellyfin ids vs.
+    # `tmdb-` ids — and that's the same routing the action chips
+    # already understand.
+    episodes_by_season = augment_with_tmdb(jellyfin_by_season, tmdb_id(item))
+
+    # Prefer the in-progress episode (one with a saved resume
+    # position) over Jellyfin's NextUp response. NextUp's logic
+    # can disagree with what the home page surfaces when there
+    # are mid-watch episodes in earlier seasons — the user
+    # expects "Continue Watching" on the detail page to point at
+    # the same episode the home marquee does.
+    next_up =
+      first_in_progress(episodes_by_season) ||
+        case Aviary.Jellyfin.next_up(id, auth) do
+          {:ok, ep} -> to_episode(ep)
+          :none -> nil
+        end
+
+    # Derive the next-episode schedule from episodes_by_season we
+    # just assembled. TMDB's nextEpisodeToAir convenience pointer
+    # lags its own per-episode airDate data by hours after each
+    # drop — long enough that the calendar would surface an
+    # episode the user already has in their library. The local
+    # derivation is authoritative: skip anything already
+    # downloaded, take the first remaining unaired or today-airing
+    # episode.
+    schedule = derive_schedule(episodes_by_season, Aviary.LocalTime.today())
+
+    item
+    |> to_show_detail()
+    |> Map.put(:source, :library)
+    |> Map.put(:tmdb_id, tmdb_id(item))
+    |> Map.put(:poster_url, "/image/#{item["Id"]}")
+    |> Map.put(:episodes_by_season, episodes_by_season)
+    |> Map.put(:next_up, next_up)
+    |> Map.put(
+      :season_count,
+      episodes_by_season |> Enum.map(&elem(&1, 0)) |> Enum.uniq() |> length()
+    )
+    |> Map.put(
+      :rating,
+      Aviary.RottenTomatoes.fetch(item["Name"], :tv, nil, imdb_id(item))
+    )
+    |> Map.put(:schedule, schedule)
   end
 
   @doc """
