@@ -786,6 +786,7 @@ defmodule Aviary.Jellyfin do
         |> Enum.filter(&(&1["Type"] == "Subtitle"))
         |> Enum.filter(&text_based?/1)
         |> Enum.filter(&english?/1)
+        |> prefer_full_dialogue()
         |> Enum.map(&to_subtitle/1)
 
       _ ->
@@ -805,17 +806,40 @@ defmodule Aviary.Jellyfin do
   # subtitle group while the variant still references that group.
   defp text_based?(stream), do: stream["IsTextSubtitleStream"] == true
 
+  @doc """
+  Orders English subtitle tracks so the first one is the one a viewer
+  means when they turn subtitles on. Forced tracks are dropped: they
+  caption only the foreign-language lines, so with one selected the
+  captions look broken for most of the runtime (Amazon and Blu-ray
+  sources list the forced track first, and both the manifest default
+  and the tvOS client follow list order). Of the rest, the plain
+  dialogue track ranks above SDH, which adds sound descriptions.
+  """
+  def prefer_full_dialogue(streams) do
+    streams
+    |> Enum.reject(&forced?/1)
+    |> Enum.sort_by(&sdh?/1)
+  end
+
+  defp forced?(stream), do: stream["IsForced"] == true
+
+  defp sdh?(stream) do
+    stream["IsHearingImpaired"] == true or
+      String.contains?(track_label(stream), ["sdh", "hearing"])
+  end
+
+  defp track_label(stream) do
+    [stream["DisplayTitle"], stream["Title"]]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" ")
+    |> String.downcase()
+  end
+
   defp english?(stream) do
     lang = stream["Language"] |> to_string() |> String.downcase()
 
-    label =
-      [stream["DisplayTitle"], stream["Title"]]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.join(" ")
-      |> String.downcase()
-
     lang in ["en", "eng"] or
-      (lang in ["", "und"] and String.contains?(label, "english"))
+      (lang in ["", "und"] and String.contains?(track_label(stream), "english"))
   end
 
   defp to_subtitle(stream) do
@@ -1074,10 +1098,35 @@ defmodule Aviary.Jellyfin do
 
     body
     |> String.split("\n")
+    |> list_default_subtitle_rendition_first()
     |> Enum.flat_map(&rewrite_manifest_line(&1, prefix, item_id, token, subtitles_on))
     |> drop_dangling_subtitle_group()
     |> Enum.join("\n")
   end
+
+  # Jellyfin lists renditions in stream order and flags the one we
+  # asked for DEFAULT=YES. The tvOS client turns subtitles on by
+  # selecting the first rendition it sees, so the flagged one moves to
+  # the front before the DEFAULT flag is rewritten below.
+  defp list_default_subtitle_rendition_first(lines) do
+    case Enum.find_index(lines, &subtitle_rendition?/1) do
+      nil ->
+        lines
+
+      first_rendition ->
+        renditions =
+          lines
+          |> Enum.filter(&subtitle_rendition?/1)
+          |> Enum.sort_by(&(not String.contains?(&1, "DEFAULT=YES")))
+
+        {before, after_renditions} =
+          lines |> Enum.reject(&subtitle_rendition?/1) |> Enum.split(first_rendition)
+
+        before ++ renditions ++ after_renditions
+    end
+  end
+
+  defp subtitle_rendition?(line), do: String.starts_with?(line, "#EXT-X-MEDIA:TYPE=SUBTITLES")
 
   # A variant that names a SUBTITLES group with no matching EXT-X-MEDIA
   # line is an invalid master playlist: tvOS AVPlayer refuses it with
@@ -1095,10 +1144,11 @@ defmodule Aviary.Jellyfin do
     end
   end
 
-  # Subtitle rendition lines: keep only the English one, apply the
-  # viewer's default, and absolutize its URI. Every other language is
-  # dropped. Jellyfin flags the English track DEFAULT=YES,AUTOSELECT=YES;
-  # we leave that when the viewer wants subtitles on, or force it off.
+  # Subtitle rendition lines: keep only the English ones, apply the
+  # viewer's default, and absolutize the URI. Every other language is
+  # dropped, as is any forced track (see prefer_full_dialogue/1).
+  # Jellyfin flags the requested track DEFAULT=YES,AUTOSELECT=YES; we
+  # leave that when the viewer wants subtitles on, or force it off.
   defp rewrite_manifest_line(
          "#EXT-X-MEDIA:TYPE=SUBTITLES" <> _ = line,
          _prefix,
@@ -1106,7 +1156,7 @@ defmodule Aviary.Jellyfin do
          token,
          subtitles_on
        ) do
-    if String.contains?(line, ~s(LANGUAGE="eng")) do
+    if String.contains?(line, ~s(LANGUAGE="eng")) and not String.contains?(line, "FORCED=YES") do
       # Only toggle DEFAULT (subtitles auto-on vs off). Leave
       # AUTOSELECT=YES: tvOS AVPlayer treats an AUTOSELECT=NO subtitle
       # rendition as ineligible for its automatic media selection, so on

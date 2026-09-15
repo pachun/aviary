@@ -60,4 +60,38 @@ defmodule Aviary.JellyfinManifestTest do
     assert rewritten =~ "DEFAULT=NO"
     assert rewritten =~ "/api/v1/items/#{@item}/subtitles/2/playlist.m3u8?token=#{@token}"
   end
+
+  test "drops forced English renditions and lists the default one first" do
+    amazon_style =
+      Enum.join(
+        [
+          "#EXTM3U",
+          ~s(#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Forced - English",DEFAULT=NO,FORCED=YES,AUTOSELECT=YES,URI="#{@item}/Subtitles/2/subtitles.m3u8",LANGUAGE="eng"),
+          ~s(#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="SDH - English",DEFAULT=NO,FORCED=NO,AUTOSELECT=YES,URI="#{@item}/Subtitles/4/subtitles.m3u8",LANGUAGE="eng"),
+          ~s(#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,FORCED=NO,AUTOSELECT=YES,URI="#{@item}/Subtitles/3/subtitles.m3u8",LANGUAGE="eng"),
+          @variant,
+          "main.m3u8?api_key=#{@token}"
+        ],
+        "\n"
+      )
+
+    rewritten = Aviary.Jellyfin.rewrite_manifest(amazon_style, @item, @token, true)
+    renditions = rewritten |> String.split("\n") |> Enum.filter(&String.contains?(&1, "TYPE=SUBTITLES"))
+
+    assert length(renditions) == 2
+    assert hd(renditions) =~ ~s(NAME="English",DEFAULT=YES)
+    refute rewritten =~ "FORCED=YES"
+    assert rewritten =~ "/subtitles/3/playlist.m3u8"
+    assert rewritten =~ "/subtitles/4/playlist.m3u8"
+    refute rewritten =~ "/subtitles/2/playlist.m3u8"
+  end
+
+  test "prefer_full_dialogue drops forced tracks and ranks plain dialogue above SDH" do
+    forced = %{"Index" => 2, "IsForced" => true, "DisplayTitle" => "Forced - English"}
+    sdh = %{"Index" => 3, "IsForced" => false, "DisplayTitle" => "SDH - English - Hearing Impaired"}
+    plain = %{"Index" => 4, "IsForced" => false, "DisplayTitle" => "English"}
+    flagged_sdh = %{"Index" => 5, "IsForced" => false, "IsHearingImpaired" => true, "DisplayTitle" => "English"}
+
+    assert Aviary.Jellyfin.prefer_full_dialogue([forced, sdh, flagged_sdh, plain]) == [plain, sdh, flagged_sdh]
+  end
 end
