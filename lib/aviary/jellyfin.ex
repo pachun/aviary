@@ -1192,11 +1192,24 @@ defmodule Aviary.Jellyfin do
     url = "#{base_url()}/Videos/#{item_id}/#{item_id}/Subtitles/#{index}/stream.vtt"
 
     case Req.get(url, params: params, receive_timeout: 10_000, retry: false) do
-      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) -> {:ok, body}
-      _ -> :error
+      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
+        {:ok, strip_ass_override_tags(body)}
+
+      _ ->
+        :error
     end
   rescue
     _ -> :error
+  end
+
+  @doc """
+  Removes SubStation Alpha override tags (`{\\an8}`, `{\\i1}`, ...) that
+  ride along inside SubRip tracks embedded in WEB releases. Jellyfin
+  copies them verbatim into its WebVTT output, and AVPlayer renders
+  them as literal text at the start of the caption.
+  """
+  def strip_ass_override_tags(vtt) do
+    Regex.replace(~r/\{\\[^}]*\}/, vtt, "")
   end
 
   ## Internals
