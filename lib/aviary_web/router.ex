@@ -71,6 +71,7 @@ defmodule AviaryWeb.Router do
     # fallback that keeps a broken subtitle from freezing playback.
     get "/items/:id/subtitles/:index/playlist.m3u8", PlaybackController, :subtitle_playlist
     get "/items/:id/subtitles/:index/stream.vtt", PlaybackController, :subtitle_segment
+    get "/nhl/games/:id/feeds/:feed/playlist.m3u8", NhlController, :playlist
   end
 
   scope "/api/v1", AviaryWeb.API do
@@ -100,6 +101,8 @@ defmodule AviaryWeb.Router do
     get "/shows/:id", ShowController, :show
     get "/movies/:id", MovieController, :show
     get "/trailer", TrailerController, :show
+    get "/nhl/games", NhlController, :games
+    get "/nhl/games/:id/feeds/:feed", NhlController, :stream
     get "/items/:id/playback", PlaybackController, :show
     get "/items/:id/hls.m3u8", PlaybackController, :manifest
     post "/items/:id/progress", PlaybackController, :progress

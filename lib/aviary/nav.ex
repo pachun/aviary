@@ -24,7 +24,7 @@ defmodule Aviary.Nav do
   points.
   """
   def visibility(user) do
-    [home_items, upcoming, shows, movies, recs] =
+    [home_items, upcoming, shows, movies, recs, games] =
       Task.await_many(
         [
           Task.async(fn -> Home.continue_watching(user) end),
@@ -41,7 +41,8 @@ defmodule Aviary.Nav do
           # has (those would be hidden from the row anyway).
           Task.async(fn ->
             Aviary.Recommendations.list_active_for_user_excluding_library(user.id)
-          end)
+          end),
+          Task.async(fn -> Aviary.Nhl.games() end)
         ],
         15_000
       )
@@ -49,7 +50,7 @@ defmodule Aviary.Nav do
     %{
       discover: true,
       search: true,
-      home: home_items != [] or upcoming != [] or recs != [],
+      home: home_items != [] or upcoming != [] or recs != [] or games != [],
       shows: shows != [],
       movies: movies != []
     }

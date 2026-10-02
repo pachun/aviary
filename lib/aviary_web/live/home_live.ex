@@ -11,6 +11,7 @@ defmodule AviaryWeb.HomeLive do
        page_title: "Home",
        items: Aviary.Home.continue_watching(user),
        upcoming: Aviary.Upcoming.releases(user),
+       games: Aviary.Nhl.games(),
        recommendations:
          Aviary.Recommendations.list_for_marquee(
            user,
@@ -57,6 +58,7 @@ defmodule AviaryWeb.HomeLive do
     socket
     |> assign(:items, Aviary.Home.continue_watching(user))
     |> assign(:upcoming, Aviary.Upcoming.releases(user))
+    |> assign(:games, Aviary.Nhl.games())
     |> assign(
       :recommendations,
       Aviary.Recommendations.list_for_marquee(user, Aviary.Jellyfin.list_users(user))
@@ -140,6 +142,39 @@ defmodule AviaryWeb.HomeLive do
             </.link>
           </li>
         </ul>
+        </section>
+
+        <section :if={@games != []}>
+          <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
+            NHL Today
+          </h2>
+          <ul class="border-t border-rule">
+            <li
+              :for={game <- @games}
+              class="grid grid-cols-[140px_1fr_auto] items-baseline gap-4 py-3 px-2 border-b border-rule"
+            >
+              <span class="font-sans uppercase tracking-[0.18em] text-[0.7rem] text-muted">
+                {game.time}
+              </span>
+              <span
+                class="font-display text-ink text-lg leading-tight truncate"
+                style="font-variation-settings: 'opsz' 14;"
+              >
+                {game.away_team} <span class="text-muted">at</span> {game.home_team}
+              </span>
+              <span class="flex gap-3 font-sans uppercase tracking-[0.18em] text-[0.7rem] whitespace-nowrap">
+                <a
+                  :for={feed <- game.feeds}
+                  href={"https://slapstreams.com/stream/#{feed.id}.html"}
+                  target="_blank"
+                  rel="noopener"
+                  class="text-oxblood hover:underline"
+                >
+                  {feed.label}
+                </a>
+              </span>
+            </li>
+          </ul>
         </section>
 
         <%!--

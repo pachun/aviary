@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="//cdn.jsdelivr.net/npm/@clappr/player@0.8/dist/clappr.min.js"></script>
+<script src="//cdn.jsdelivr.net/npm/@swarmcloud/hls/p2p-engine.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body,html{background:#000;overflow:hidden;height:100%}
+#player-wrap{width:100%;height:100vh;position:relative}
+#player{width:100%;height:100%}
+.player-error-screen{display:none!important}
+</style>
+</head>
+<body>
+<div id="player-wrap"><div id="player"></div></div>
+<script>
+var p2pConfig={
+    live:true,
+    trackerZone:'us',
+    token:"5uTCOWnSg",
+    channelId:"8b3ccfe67ff0528e",
+    useHttpRange:true,
+    startFromSegmentOffset:2,
+    sharePlaylist:false,
+    insertTimeOffsetTag:false
+  };
+(function(){
+  var _d=[178,'1790976342','d704dccd6b0eef7c'];
+  var player=null,p2pEng=null,lastFetch=0,refetching=false,backoffMs=0,backoffTimer=null;
+
+  function fetchUrl(){
+    return fetch('check_stream.php?id='+_d[0]+'&ts='+_d[1]+'&pt='+_d[2])
+      .then(function(r){
+        if(r.status===429){
+          var err=new Error('rate_limited');
+          err.code=429;
+          throw err;
+        }
+        return r.json();
+      })
+      .then(function(data){
+        backoffMs=0;
+        lastFetch=Date.now();
+        return data&&data.url?data.url:null;
+      });
+  }
+
+  function attachP2p(){
+    try{
+      var hls=player&&player.core&&player.core.getCurrentPlayback&&player.core.getCurrentPlayback()._hls;
+      if(!hls) return;
+      p2pConfig.hlsjsInstance=hls;
+      if(!p2pEng){ p2pEng=new P2PEngineHls(p2pConfig); }
+      if(!hls._wcErrHook && typeof Hls!=='undefined' && Hls.Events){
+        hls._wcErrHook=true;
+        hls.on(Hls.Events.ERROR,function(_,data){
+          if(data&&data.fatal){ refetchAndLoad(); }
+        });
+      }
+    }catch(e){}
+  }
+
+  function loadSource(url){
+    if(!url||!player) return;
+    player.load({source:url});
+    setTimeout(attachP2p,150);
+  }
+
+  function scheduleRetry(){
+    if(backoffTimer) return;
+    if(backoffMs<2000) backoffMs=2000;
+    else if(backoffMs<8000) backoffMs=Math.min(backoffMs*2,15000);
+    else backoffMs=15000;
+    var wait=backoffMs;
+    backoffTimer=setTimeout(function(){
+      backoffTimer=null;
+      refetching=false;
+      refetchAndLoad();
+    }, wait);
+  }
+
+  function refetchAndLoad(){
+    if(refetching||backoffTimer) return;
+    refetching=true;
+    fetchUrl().then(function(url){
+      if(url) loadSource(url);
+      refetching=false;
+    }).catch(function(e){
+      if(e&&e.code===429){ scheduleRetry(); }
+      else { refetching=false; }
+    });
+  }
+
+  fetchUrl().then(function(url){
+    if(!url) return;
+    player=new Clappr.Player({
+      parentId:'#player',
+      height:'100%',
+      width:'100%',
+      autoPlay:false,
+      playInline:true,
+      plugins:[],
+      shakaConfiguration:{preferredAudioLanguage:'pt-BR',streaming:{rebufferingGoal:15}}
+    });
+    player.on(Clappr.Events.PLAYER_ERROR,function(){ refetchAndLoad(); });
+    player.on(Clappr.Events.PLAYER_PLAY,function(){
+      if(Date.now()-lastFetch>60000){ refetchAndLoad(); }
+    });
+    loadSource(url);
+  }).catch(function(e){
+    if(e&&e.code===429){ scheduleRetry(); }
+  });
+})();
+</script>
+
+</body>
+</html>

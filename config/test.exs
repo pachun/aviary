@@ -20,3 +20,6 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Route the NHL scraper through Req.Test so specs stub slapstreams.com
+config :aviary, :nhl_req_options, plug: {Req.Test, Aviary.Nhl}
