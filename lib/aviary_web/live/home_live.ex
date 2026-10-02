@@ -242,6 +242,7 @@ defmodule AviaryWeb.HomeLive do
         :if={@watching_game}
         item={@watching_game}
         src={@watching_game.src}
+        referrer_policy="no-referrer"
         current_user={@current_user}
         title={@watching_game.title}
       />

@@ -16,6 +16,11 @@ defmodule AviaryWeb.Components.VideoPlayer do
     doc:
       "Plays this HLS URL instead of the item's Jellyfin stream. Used for live NHL feeds, which aviary serves from its own playlist proxy."
 
+  attr :referrer_policy, :string,
+    default: nil,
+    doc:
+      "Referrer policy the page adopts while this player is open, e.g. \"no-referrer\" for live NHL feeds whose segment host rejects a foreign Referer."
+
   attr :segments, :any,
     default: nil,
     doc:
@@ -66,6 +71,7 @@ defmodule AviaryWeb.Components.VideoPlayer do
         phx-hook="HlsPlayer"
         data-src={@src || Aviary.Jellyfin.hls_url(@item.id, @current_user, @audio_stream_index)}
         data-resume-at={@item.resume_seconds || 0}
+        data-referrer-policy={@referrer_policy}
         data-intro-start={@intro && @intro.start}
         data-intro-end={@intro && @intro.end}
         controls

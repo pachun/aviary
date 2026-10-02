@@ -48,6 +48,19 @@ const HlsPlayer = {
     const src = video.dataset.src
     const resumeAt = parseFloat(video.dataset.resumeAt || "0")
 
+    // A referrer policy requested by the source applies to the whole
+    // document while the player is mounted (a <meta name="referrer">
+    // takes effect as soon as it's inserted). Live NHL segments come
+    // from a host that answers 403 to any Referer but the stream site's
+    // own, and nothing in HLS.js can drop the header per request.
+    const referrerPolicy = video.dataset.referrerPolicy
+    if (referrerPolicy) {
+      this.referrerMeta = document.createElement("meta")
+      this.referrerMeta.name = "referrer"
+      this.referrerMeta.content = referrerPolicy
+      document.head.appendChild(this.referrerMeta)
+    }
+
     if (this.isAppleBrowser() && video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = src
     } else if (window.Hls && window.Hls.isSupported()) {
@@ -185,6 +198,7 @@ const HlsPlayer = {
     if (this.progressInterval) clearInterval(this.progressInterval)
     if (this.controlsHideTimer) clearTimeout(this.controlsHideTimer)
     if (this.hls) this.hls.destroy()
+    if (this.referrerMeta) this.referrerMeta.remove()
   },
 
   isIOS() {
