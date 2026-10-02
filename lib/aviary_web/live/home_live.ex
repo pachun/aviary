@@ -2,6 +2,7 @@ defmodule AviaryWeb.HomeLive do
   use AviaryWeb, :live_view
 
   alias AviaryWeb.Components.Marquee
+  alias AviaryWeb.Components.VideoPlayer
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
@@ -12,6 +13,7 @@ defmodule AviaryWeb.HomeLive do
        items: Aviary.Home.continue_watching(user),
        upcoming: Aviary.Upcoming.releases(user),
        games: Aviary.Nhl.games(),
+       watching_game: nil,
        recommendations:
          Aviary.Recommendations.list_for_marquee(
            user,
@@ -45,6 +47,34 @@ defmodule AviaryWeb.HomeLive do
       when kind in ["show", "movie"] do
     Aviary.Recommendations.dismiss(socket.assigns.current_user.id, tmdb_id, kind)
     {:noreply, refresh_continue_watching(socket)}
+  end
+
+  def handle_event("watch_game", %{"game" => game_id, "feed" => feed_id}, socket) do
+    watching_game =
+      with %{feeds: feeds} = game <- Enum.find(socket.assigns.games, &(&1.id == game_id)),
+           %{} = feed <- Enum.find(feeds, &(&1.id == feed_id)) do
+        %{
+          id: "nhl-#{game.id}-#{feed.id}",
+          resume_seconds: 0,
+          title: "#{game.away_team} at #{game.home_team} (#{feed.label})",
+          src: live_playlist_path(game.id, feed.id, socket.assigns.current_user.token)
+        }
+      else
+        _ -> nil
+      end
+
+    {:noreply, assign(socket, :watching_game, watching_game)}
+  end
+
+  def handle_event("close_player", _, socket) do
+    {:noreply, assign(socket, :watching_game, nil)}
+  end
+
+  def handle_event("report_progress", _, socket), do: {:noreply, socket}
+
+  defp live_playlist_path(game_id, feed_id, token) do
+    "/api/v1/nhl/games/#{game_id}/feeds/#{feed_id}/playlist.m3u8?" <>
+      URI.encode_query(token: token)
   end
 
   # After a dismiss the user's home state may have changed enough to
@@ -163,15 +193,16 @@ defmodule AviaryWeb.HomeLive do
                 {game.away_team} <span class="text-muted">at</span> {game.home_team}
               </span>
               <span class="flex gap-3 font-sans uppercase tracking-[0.18em] text-[0.7rem] whitespace-nowrap">
-                <a
+                <button
                   :for={feed <- game.feeds}
-                  href={"https://slapstreams.com/stream/#{feed.id}.html"}
-                  target="_blank"
-                  rel="noopener"
-                  class="text-oxblood hover:underline"
+                  type="button"
+                  phx-click="watch_game"
+                  phx-value-game={game.id}
+                  phx-value-feed={feed.id}
+                  class="text-oxblood hover:underline cursor-pointer"
                 >
                   {feed.label}
-                </a>
+                </button>
               </span>
             </li>
           </ul>
@@ -206,6 +237,14 @@ defmodule AviaryWeb.HomeLive do
           </Marquee.row>
         </section>
       </div>
+
+      <VideoPlayer.overlay
+        :if={@watching_game}
+        item={@watching_game}
+        src={@watching_game.src}
+        current_user={@current_user}
+        title={@watching_game.title}
+      />
     </Layouts.app>
     """
   end

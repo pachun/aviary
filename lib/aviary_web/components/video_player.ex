@@ -11,6 +11,11 @@ defmodule AviaryWeb.Components.VideoPlayer do
   attr :current_user, :map, required: true
   attr :title, :string, required: true, doc: "label for the iframe title attr"
 
+  attr :src, :string,
+    default: nil,
+    doc:
+      "Plays this HLS URL instead of the item's Jellyfin stream. Used for live NHL feeds, which aviary serves from its own playlist proxy."
+
   attr :segments, :any,
     default: nil,
     doc:
@@ -59,7 +64,7 @@ defmodule AviaryWeb.Components.VideoPlayer do
       <video
         id={"player-#{@item.id}"}
         phx-hook="HlsPlayer"
-        data-src={Aviary.Jellyfin.hls_url(@item.id, @current_user, @audio_stream_index)}
+        data-src={@src || Aviary.Jellyfin.hls_url(@item.id, @current_user, @audio_stream_index)}
         data-resume-at={@item.resume_seconds || 0}
         data-intro-start={@intro && @intro.start}
         data-intro-end={@intro && @intro.end}
