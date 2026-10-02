@@ -45,8 +45,10 @@ defmodule AviaryWeb.API.NhlController do
 
   def playlist(conn, _params), do: send_resp(conn, 401, "")
 
-  def logo(conn, %{"team" => team_id}) do
-    case Aviary.Nhl.logo(team_id) do
+  def logo(conn, %{"team" => team_id} = params) do
+    background = if params["background"] == "dark", do: :dark, else: :light
+
+    case Aviary.Nhl.logo(team_id, background) do
       {:ok, png} ->
         conn
         |> put_resp_content_type("image/png")
@@ -77,7 +79,7 @@ defmodule AviaryWeb.API.NhlController do
     %{
       name: team.name,
       nickname: team.nickname,
-      logo: "/api/v1/nhl/logos/#{team.id}"
+      logo: "/api/v1/nhl/logos/#{team.id}?background=dark"
     }
   end
 end

@@ -111,6 +111,12 @@ defmodule Aviary.NhlTest do
       refute_received {:requested, "/i/teamlogos/nhl/500/nyr.png", _}
     end
 
+    test "serves the dark-background set when asked" do
+      stub_site(%{"/i/teamlogos/nhl/500-dark/wsh.png" => {200, "PNG red capitals"}})
+
+      assert Nhl.logo("washington-capitals", :dark) == {:ok, "PNG red capitals"}
+    end
+
     test "is an error for a slug that isn't a team" do
       stub_site(%{})
 

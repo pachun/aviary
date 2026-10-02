@@ -31,7 +31,10 @@ defmodule Aviary.Nhl do
   @feeds_stale_ms :timer.hours(6)
   @media_url_ttl_ms :timer.hours(6)
   @logo_ttl_ms :timer.hours(24)
-  @logo_cdn "https://a.espncdn.com/i/teamlogos/nhl/500"
+  @logo_cdn_sets %{
+    light: "https://a.espncdn.com/i/teamlogos/nhl/500",
+    dark: "https://a.espncdn.com/i/teamlogos/nhl/500-dark"
+  }
   @logo_cdn_abbreviations %{
     "anaheim-ducks" => "ana",
     "boston-bruins" => "bos",
@@ -81,18 +84,17 @@ defmodule Aviary.Nhl do
 
   @doc """
   A team's PNG logo as `{:ok, png}`, fetched from ESPN's CDN and kept for
-  a day. `:error` for a slug that isn't an NHL team or when the CDN
-  doesn't answer.
+  a day. `background` picks the set drawn for a light or a dark surface;
+  the dark set swaps navy wordmarks like the Capitals' for ones that
+  read on a dark screen. `:error` for a slug that isn't an NHL team or
+  when the CDN doesn't answer.
   """
-  def logo(team_id) do
-    case Map.fetch(@logo_cdn_abbreviations, team_id) do
-      {:ok, abbreviation} ->
-        Cache.fetch({:nhl, :logo, team_id}, @logo_ttl_ms, fn ->
-          get_body("#{@logo_cdn}/#{abbreviation}.png")
-        end)
-
-      :error ->
-        :error
+  def logo(team_id, background \\ :light) do
+    with {:ok, abbreviation} <- Map.fetch(@logo_cdn_abbreviations, team_id),
+         {:ok, cdn} <- Map.fetch(@logo_cdn_sets, background) do
+      Cache.fetch({:nhl, :logo, background, team_id}, @logo_ttl_ms, fn ->
+        get_body("#{cdn}/#{abbreviation}.png")
+      end)
     end
   end
 
