@@ -103,6 +103,7 @@ defmodule AviaryWeb.Router do
     get "/trailer", TrailerController, :show
     get "/nhl/games", NhlController, :games
     get "/nhl/games/:id/feeds/:feed", NhlController, :stream
+    get "/nhl/logos/:team", NhlController, :logo
     get "/items/:id/playback", PlaybackController, :show
     get "/items/:id/hls.m3u8", PlaybackController, :manifest
     post "/items/:id/progress", PlaybackController, :progress

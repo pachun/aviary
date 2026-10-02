@@ -17,8 +17,18 @@ defmodule Aviary.Nhl.PageTest do
                id: "detroit-red-wings",
                time: "6:30",
                date: ~D[2026-10-02],
-               away_team: "New York Rangers",
-               home_team: "Detroit Red Wings"
+               away_team: %{
+                 id: "new-york-rangers",
+                 name: "New York Rangers",
+                 nickname: "Rangers",
+                 logo: "https://slapstreams.com/wp-content/uploads/2021/04/New-York-Rangers.svg"
+               },
+               home_team: %{
+                 id: "detroit-red-wings",
+                 name: "Detroit Red Wings",
+                 nickname: "Red Wings",
+                 logo: "https://slapstreams.com/wp-content/uploads/2021/04/Detroit-Red-Wings.svg"
+               }
              }
 
       assert Enum.map(games, & &1.id) == [
@@ -38,14 +48,19 @@ defmodule Aviary.Nhl.PageTest do
       row = """
       <tr class="singele_match_date ">
       <td class="matchtime">7:00</td>
-      <td class="teamlogo"><a class="team" href="https://slapstreams.com/st-louis-blues-live/"><img></a></td>
-      <td class="teamlogo"><a class="team" href="https://slapstreams.com/utah-hockey-club-live/"><img></a></td>
+      <td class="teamlogo"><a class="team" href="https://slapstreams.com/st-louis-blues-live/"><img src="/blues.svg"></a></td>
+      <td class="teamlogo"><a class="team" href="https://slapstreams.com/utah-hockey-club-live/"><img src="/utah.svg"></a></td>
       <td class="teamvs"><span class="mtdate">Tonight</span></td>
       </tr>
       """
 
-      assert [%{date: nil, away_team: "St. Louis Blues", home_team: "Utah Hockey Club"}] =
-               Page.games(row)
+      assert [
+               %{
+                 date: nil,
+                 away_team: %{name: "St. Louis Blues", nickname: "Blues", logo: "/blues.svg"},
+                 home_team: %{name: "Utah Hockey Club", nickname: "Hockey Club"}
+               }
+             ] = Page.games(row)
     end
   end
 

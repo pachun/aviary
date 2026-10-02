@@ -94,6 +94,27 @@ defmodule Aviary.NhlTest do
     end
   end
 
+  describe "logo/1" do
+    test "serves a team's logo from the schedule and keeps it" do
+      stub_site(%{
+        "/" => {200, undated_schedule()},
+        "/logos/rangers.svg" => {200, "<svg>rangers</svg>"}
+      })
+
+      assert Nhl.logo("new-york-rangers") == {:ok, "<svg>rangers</svg>"}
+      assert_received {:requested, "/logos/rangers.svg", _}
+
+      assert Nhl.logo("new-york-rangers") == {:ok, "<svg>rangers</svg>"}
+      refute_received {:requested, "/logos/rangers.svg", _}
+    end
+
+    test "is an error for a team not playing today" do
+      stub_site(%{"/" => {200, undated_schedule()}})
+
+      assert Nhl.logo("seattle-kraken") == :error
+    end
+  end
+
   describe "playlist/2" do
     setup do
       stub_site(%{"/" => {200, undated_schedule()}})
@@ -169,8 +190,8 @@ defmodule Aviary.NhlTest do
     """
     <tr class="singele_match_date ">
     <td class="matchtime">6:30</td>
-    <td class="teamlogo"><a class="team" href="https://slapstreams.com/new-york-rangers-live/"><img></a></td>
-    <td class="teamlogo"><a class="team" href="https://slapstreams.com/detroit-red-wings-live/"><img></a></td>
+    <td class="teamlogo"><a class="team" href="https://slapstreams.com/new-york-rangers-live/"><img src="https://slapstreams.com/logos/rangers.svg"></a></td>
+    <td class="teamlogo"><a class="team" href="https://slapstreams.com/detroit-red-wings-live/"><img src="https://slapstreams.com/logos/wings.svg"></a></td>
     </tr>
     """
   end

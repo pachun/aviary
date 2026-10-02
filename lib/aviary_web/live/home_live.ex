@@ -56,7 +56,7 @@ defmodule AviaryWeb.HomeLive do
         %{
           id: "nhl-#{game.id}-#{feed.id}",
           resume_seconds: 0,
-          title: "#{game.away_team} at #{game.home_team} (#{feed.label})",
+          title: "#{game.away_team.name} at #{game.home_team.name} (#{feed.label})",
           src: live_playlist_path(game.id, feed.id, socket.assigns.current_user.token)
         }
       else
@@ -190,7 +190,7 @@ defmodule AviaryWeb.HomeLive do
                 class="font-display text-ink text-lg leading-tight truncate"
                 style="font-variation-settings: 'opsz' 14;"
               >
-                {game.away_team} <span class="text-muted">at</span> {game.home_team}
+                {game.away_team.name} <span class="text-muted">at</span> {game.home_team.name}
               </span>
               <span class="flex gap-3 font-sans uppercase tracking-[0.18em] text-[0.7rem] whitespace-nowrap">
                 <button

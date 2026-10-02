@@ -45,6 +45,19 @@ defmodule AviaryWeb.API.NhlController do
 
   def playlist(conn, _params), do: send_resp(conn, 401, "")
 
+  def logo(conn, %{"team" => team_id}) do
+    case Aviary.Nhl.logo(team_id) do
+      {:ok, svg} ->
+        conn
+        |> put_resp_content_type("image/svg+xml")
+        |> put_resp_header("cache-control", "private, max-age=86400")
+        |> send_resp(200, svg)
+
+      :error ->
+        send_resp(conn, 404, "")
+    end
+  end
+
   defp playlist_path(game_id, feed_id, token) do
     "/api/v1/nhl/games/#{game_id}/feeds/#{feed_id}/playlist.m3u8?" <>
       URI.encode_query(token: token)
@@ -54,9 +67,17 @@ defmodule AviaryWeb.API.NhlController do
     %{
       id: game.id,
       time: game.time,
-      awayTeam: game.away_team,
-      homeTeam: game.home_team,
+      awayTeam: serialize_team(game.away_team),
+      homeTeam: serialize_team(game.home_team),
       feeds: Enum.map(game.feeds, &%{id: &1.id, label: &1.label})
+    }
+  end
+
+  defp serialize_team(team) do
+    %{
+      name: team.name,
+      nickname: team.nickname,
+      logo: "/api/v1/nhl/logos/#{team.id}"
     }
   end
 end

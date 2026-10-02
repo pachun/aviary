@@ -30,17 +30,32 @@ defmodule Aviary.Nhl do
   @feeds_fresh_ms :timer.minutes(10)
   @feeds_stale_ms :timer.hours(6)
   @media_url_ttl_ms :timer.hours(6)
+  @logo_ttl_ms :timer.hours(24)
   @feed_id ~r{^[a-z0-9_-]+$}
   @quoted_uri ~r{URI="([^"]+)"}
 
   @doc """
   Today's games in schedule order, each with its feeds:
-  `%{id, time, away_team, home_team, feeds: [%{id, label}]}`. Empty on
-  any failure.
+  `%{id, time, away_team, home_team, feeds: [%{id, label}]}`, where each
+  team is `%{id, name, nickname, logo}`. Empty on any failure.
   """
   def games do
     Cache.swr({:nhl, :games}, @schedule_fresh_ms, @schedule_stale_ms, &fetch_games/0)
   end
+
+  @doc """
+  The SVG logo of a team playing today, as `{:ok, svg}`, kept for a day
+  once fetched. `:error` for a team not on today's schedule or when the
+  site doesn't answer.
+  """
+  def logo(team_id) do
+    case Enum.find(teams_playing_today(), &(&1.id == team_id)) do
+      %{logo: url} -> Cache.fetch({:nhl, :logo, team_id}, @logo_ttl_ms, fn -> get_body(url) end)
+      nil -> :error
+    end
+  end
+
+  defp teams_playing_today, do: Enum.flat_map(games(), &[&1.away_team, &1.home_team])
 
   @doc """
   The current media playlist for one feed of one game, with every
