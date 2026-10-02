@@ -169,7 +169,9 @@ defmodule Aviary.Nhl do
       html
       |> Page.games()
       |> Enum.filter(&scheduled_today?/1)
-      |> Task.async_stream(&Map.put(&1, :feeds, feeds(&1.id)), timeout: @request_timeout_ms * 2)
+      |> Task.async_stream(&Map.put(&1, :feeds, named_feeds(&1)),
+        timeout: @request_timeout_ms * 2
+      )
       |> Enum.flat_map(fn
         {:ok, game} -> [Map.delete(game, :date)]
         _ -> []
@@ -181,6 +183,24 @@ defmodule Aviary.Nhl do
 
   defp scheduled_today?(%{date: nil}), do: true
   defp scheduled_today?(%{date: date}), do: Date.compare(date, Aviary.LocalTime.today()) == :eq
+
+  # The site labels feeds by broadcaster side (HOME, AWAY) and then
+  # LINK 3, LINK 4. Viewers pick by team, so the two sides take the
+  # teams' nicknames, away first to match "Rangers @ Red Wings", and the
+  # rest become backups.
+  defp named_feeds(game) do
+    feeds = feeds(game.id)
+    away = Enum.filter(feeds, &(&1.label == "AWAY"))
+    home = Enum.filter(feeds, &(&1.label == "HOME"))
+    backups = feeds -- (away ++ home)
+
+    Enum.map(away, &%{&1 | label: game.away_team.nickname}) ++
+      Enum.map(home, &%{&1 | label: game.home_team.nickname}) ++
+      Enum.with_index(backups, fn feed, index -> %{feed | label: backup_label(index)} end)
+  end
+
+  defp backup_label(0), do: "Backup"
+  defp backup_label(index), do: "Backup #{index + 1}"
 
   defp feeds(game_id) do
     Cache.swr({:nhl, :feeds, game_id}, @feeds_fresh_ms, @feeds_stale_ms, fn ->

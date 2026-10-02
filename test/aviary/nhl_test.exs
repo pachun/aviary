@@ -69,7 +69,13 @@ defmodule Aviary.NhlTest do
 
       assert length(games) == 5
       assert [%{id: "detroit-red-wings", time: "6:30", feeds: feeds} | _] = games
-      assert Enum.map(feeds, & &1.label) == ["HOME", "AWAY", "LINK 3", "LINK 4"]
+
+      assert feeds == [
+               %{id: "rangers", label: "Rangers"},
+               %{id: "wings", label: "Red Wings"},
+               %{id: "wings2", label: "Backup"},
+               %{id: "wings3", label: "Backup 2"}
+             ]
     end
 
     test "leaves out games scheduled for another day" do
