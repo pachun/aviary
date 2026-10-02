@@ -17,17 +17,11 @@ defmodule Aviary.Nhl.PageTest do
                id: "detroit-red-wings",
                time: "6:30",
                date: ~D[2026-10-02],
-               away_team: %{
-                 id: "new-york-rangers",
-                 name: "New York Rangers",
-                 nickname: "Rangers",
-                 logo: "https://slapstreams.com/wp-content/uploads/2021/04/New-York-Rangers.svg"
-               },
+               away_team: %{id: "new-york-rangers", name: "New York Rangers", nickname: "Rangers"},
                home_team: %{
                  id: "detroit-red-wings",
                  name: "Detroit Red Wings",
-                 nickname: "Red Wings",
-                 logo: "https://slapstreams.com/wp-content/uploads/2021/04/Detroit-Red-Wings.svg"
+                 nickname: "Red Wings"
                }
              }
 
@@ -57,7 +51,7 @@ defmodule Aviary.Nhl.PageTest do
       assert [
                %{
                  date: nil,
-                 away_team: %{name: "St. Louis Blues", nickname: "Blues", logo: "/blues.svg"},
+                 away_team: %{name: "St. Louis Blues", nickname: "Blues"},
                  home_team: %{name: "Utah Hockey Club", nickname: "Hockey Club"}
                }
              ] = Page.games(row)

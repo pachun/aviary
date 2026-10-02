@@ -12,7 +12,7 @@ defmodule Aviary.Nhl.Page do
 
   @game_row ~r{<tr class="singele_match_date[^"]*">(.*?)</tr>}s
   @time ~r{class="matchtime"[^>]*>\s*([^<\s]+)}
-  @team_links ~r{<a class="team" href="https://slapstreams\.com/([a-z0-9-]+)-live/"><img src="([^"]*)"}
+  @team_links ~r{<a class="team" href="https://slapstreams\.com/([a-z0-9-]+)-live/">}
   @game_date ~r{<span class="mtdate">([^<]+)</span>}
   @feed_button ~r{<a[^>]+href="https://slapstreams\.com/stream/([a-z0-9_-]+)\.html"[^>]*>(.*?)</a>}s
   @tag ~r{<[^>]+>}
@@ -39,8 +39,7 @@ defmodule Aviary.Nhl.Page do
   @doc """
   Every game row on the schedule page, in page order. Rows without two
   team links (the date header row) are skipped. `date` is nil when the
-  row's date text doesn't parse. Each team is
-  `%{id, name, nickname, logo}`, the logo being the site's SVG URL.
+  row's date text doesn't parse. Each team is `%{id, name, nickname}`.
   """
   def games(schedule_html) do
     @game_row
@@ -49,15 +48,14 @@ defmodule Aviary.Nhl.Page do
   end
 
   defp game(row) do
-    with [[away_slug, away_logo], [home_slug, home_logo]] <-
-           Regex.scan(@team_links, row, capture: :all_but_first) do
+    with [[away_slug], [home_slug]] <- Regex.scan(@team_links, row, capture: :all_but_first) do
       [
         %{
           id: home_slug,
           time: first_capture(@time, row),
           date: @game_date |> first_capture(row) |> parse_date(),
-          away_team: team(away_slug, away_logo),
-          home_team: team(home_slug, home_logo)
+          away_team: team(away_slug),
+          home_team: team(home_slug)
         }
       ]
     else
@@ -65,9 +63,7 @@ defmodule Aviary.Nhl.Page do
     end
   end
 
-  defp team(slug, logo) do
-    %{id: slug, name: team_name(slug), nickname: nickname(slug), logo: logo}
-  end
+  defp team(slug), do: %{id: slug, name: team_name(slug), nickname: nickname(slug)}
 
   defp nickname(slug) do
     city = Enum.find(@two_word_cities, &String.starts_with?(slug, &1 <> "-"))

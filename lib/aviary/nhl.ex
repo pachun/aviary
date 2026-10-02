@@ -31,6 +31,42 @@ defmodule Aviary.Nhl do
   @feeds_stale_ms :timer.hours(6)
   @media_url_ttl_ms :timer.hours(6)
   @logo_ttl_ms :timer.hours(24)
+  @logo_cdn "https://a.espncdn.com/i/teamlogos/nhl/500"
+  @logo_cdn_abbreviations %{
+    "anaheim-ducks" => "ana",
+    "boston-bruins" => "bos",
+    "buffalo-sabres" => "buf",
+    "calgary-flames" => "cgy",
+    "carolina-hurricanes" => "car",
+    "chicago-blackhawks" => "chi",
+    "colorado-avalanche" => "col",
+    "columbus-blue-jackets" => "cbj",
+    "dallas-stars" => "dal",
+    "detroit-red-wings" => "det",
+    "edmonton-oilers" => "edm",
+    "florida-panthers" => "fla",
+    "los-angeles-kings" => "la",
+    "minnesota-wild" => "min",
+    "montreal-canadiens" => "mtl",
+    "nashville-predators" => "nsh",
+    "new-jersey-devils" => "nj",
+    "new-york-islanders" => "nyi",
+    "new-york-rangers" => "nyr",
+    "ottawa-senators" => "ott",
+    "philadelphia-flyers" => "phi",
+    "pittsburgh-penguins" => "pit",
+    "san-jose-sharks" => "sj",
+    "seattle-kraken" => "sea",
+    "st-louis-blues" => "stl",
+    "tampa-bay-lightning" => "tb",
+    "toronto-maple-leafs" => "tor",
+    "utah-hockey-club" => "utah",
+    "utah-mammoth" => "utah",
+    "vancouver-canucks" => "van",
+    "vegas-golden-knights" => "vgk",
+    "washington-capitals" => "wsh",
+    "winnipeg-jets" => "wpg"
+  }
   @feed_id ~r{^[a-z0-9_-]+$}
   @quoted_uri ~r{URI="([^"]+)"}
 
@@ -44,18 +80,21 @@ defmodule Aviary.Nhl do
   end
 
   @doc """
-  The SVG logo of a team playing today, as `{:ok, svg}`, kept for a day
-  once fetched. `:error` for a team not on today's schedule or when the
-  site doesn't answer.
+  A team's PNG logo as `{:ok, png}`, fetched from ESPN's CDN and kept for
+  a day. `:error` for a slug that isn't an NHL team or when the CDN
+  doesn't answer.
   """
   def logo(team_id) do
-    case Enum.find(teams_playing_today(), &(&1.id == team_id)) do
-      %{logo: url} -> Cache.fetch({:nhl, :logo, team_id}, @logo_ttl_ms, fn -> get_body(url) end)
-      nil -> :error
+    case Map.fetch(@logo_cdn_abbreviations, team_id) do
+      {:ok, abbreviation} ->
+        Cache.fetch({:nhl, :logo, team_id}, @logo_ttl_ms, fn ->
+          get_body("#{@logo_cdn}/#{abbreviation}.png")
+        end)
+
+      :error ->
+        :error
     end
   end
-
-  defp teams_playing_today, do: Enum.flat_map(games(), &[&1.away_team, &1.home_team])
 
   @doc """
   The current media playlist for one feed of one game, with every

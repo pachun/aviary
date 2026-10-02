@@ -47,11 +47,11 @@ defmodule AviaryWeb.API.NhlController do
 
   def logo(conn, %{"team" => team_id}) do
     case Aviary.Nhl.logo(team_id) do
-      {:ok, svg} ->
+      {:ok, png} ->
         conn
-        |> put_resp_content_type("image/svg+xml")
+        |> put_resp_content_type("image/png")
         |> put_resp_header("cache-control", "private, max-age=86400")
-        |> send_resp(200, svg)
+        |> send_resp(200, png)
 
       :error ->
         send_resp(conn, 404, "")

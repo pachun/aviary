@@ -95,23 +95,20 @@ defmodule Aviary.NhlTest do
   end
 
   describe "logo/1" do
-    test "serves a team's logo from the schedule and keeps it" do
-      stub_site(%{
-        "/" => {200, undated_schedule()},
-        "/logos/rangers.svg" => {200, "<svg>rangers</svg>"}
-      })
+    test "serves a team's logo from the CDN and keeps it" do
+      stub_site(%{"/i/teamlogos/nhl/500/nyr.png" => {200, "PNG rangers"}})
 
-      assert Nhl.logo("new-york-rangers") == {:ok, "<svg>rangers</svg>"}
-      assert_received {:requested, "/logos/rangers.svg", _}
+      assert Nhl.logo("new-york-rangers") == {:ok, "PNG rangers"}
+      assert_received {:requested, "/i/teamlogos/nhl/500/nyr.png", _}
 
-      assert Nhl.logo("new-york-rangers") == {:ok, "<svg>rangers</svg>"}
-      refute_received {:requested, "/logos/rangers.svg", _}
+      assert Nhl.logo("new-york-rangers") == {:ok, "PNG rangers"}
+      refute_received {:requested, "/i/teamlogos/nhl/500/nyr.png", _}
     end
 
-    test "is an error for a team not playing today" do
-      stub_site(%{"/" => {200, undated_schedule()}})
+    test "is an error for a slug that isn't a team" do
+      stub_site(%{})
 
-      assert Nhl.logo("seattle-kraken") == :error
+      assert Nhl.logo("../etc/passwd") == :error
     end
   end
 
@@ -190,8 +187,8 @@ defmodule Aviary.NhlTest do
     """
     <tr class="singele_match_date ">
     <td class="matchtime">6:30</td>
-    <td class="teamlogo"><a class="team" href="https://slapstreams.com/new-york-rangers-live/"><img src="https://slapstreams.com/logos/rangers.svg"></a></td>
-    <td class="teamlogo"><a class="team" href="https://slapstreams.com/detroit-red-wings-live/"><img src="https://slapstreams.com/logos/wings.svg"></a></td>
+    <td class="teamlogo"><a class="team" href="https://slapstreams.com/new-york-rangers-live/"><img></a></td>
+    <td class="teamlogo"><a class="team" href="https://slapstreams.com/detroit-red-wings-live/"><img></a></td>
     </tr>
     """
   end
