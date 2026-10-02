@@ -48,7 +48,7 @@ const HlsPlayer = {
     const src = video.dataset.src
     const resumeAt = parseFloat(video.dataset.resumeAt || "0")
 
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    if (this.isAppleBrowser() && video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = src
     } else if (window.Hls && window.Hls.isSupported()) {
       const hls = new window.Hls()
@@ -190,6 +190,14 @@ const HlsPlayer = {
   isIOS() {
     return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  },
+
+  // Only Safari genuinely plays HLS through <video>. Chromium builds that
+  // ship ffmpeg's HLS demuxer (Arch's, for one) still answer "maybe" to
+  // canPlayType for it and then never load a frame, so everything that
+  // isn't Safari goes through HLS.js.
+  isAppleBrowser() {
+    return this.isIOS() || /Apple/.test(navigator.vendor)
   },
 }
 
