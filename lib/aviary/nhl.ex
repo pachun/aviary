@@ -276,12 +276,27 @@ defmodule Aviary.Nhl do
       retry: false,
       decode_body: false
     ]
+    |> Keyword.merge(proxy_options(url))
     |> Keyword.merge(options)
     |> Keyword.merge(Application.get_env(:aviary, :nhl_req_options, []))
     |> Req.new()
     |> Req.request()
   rescue
     error -> {:error, error}
+  end
+
+  # Only the stream site itself goes through the proxy. The CDN and the
+  # media host hand out tokens the Apple TV then uses from the
+  # household's own address, so those requests leave from the same
+  # address the TV will.
+  defp proxy_options(url) do
+    with true <- String.starts_with?(url, @site),
+         proxy_url when is_binary(proxy_url) <- Application.get_env(:aviary, :nhl_proxy_url),
+         %URI{host: host, port: port} when is_binary(host) <- URI.parse(proxy_url) do
+      [connect_options: [proxy: {:http, host, port, []}]]
+    else
+      _ -> []
+    end
   end
 
   defp watch_page_url(game_id), do: "#{@site}/#{game_id}-live/"

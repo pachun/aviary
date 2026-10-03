@@ -43,8 +43,7 @@ config :aviary,
   # One-line site description for the <meta name="description"> tag and
   # the Open Graph / Twitter share card — the rich preview iMessage,
   # Slack, etc. render when someone shares the link.
-  site_description:
-    System.get_env("SITE_DESCRIPTION", "A private movie and TV library."),
+  site_description: System.get_env("SITE_DESCRIPTION", "A private movie and TV library."),
   # Absolute URL for the share-preview image (og:image / twitter:image).
   # Optional: when unset, Layouts.og_image_url/0 derives it from the
   # endpoint host (…/images/og-image.png), which is correct per deploy
@@ -60,14 +59,17 @@ config :aviary,
   # internal host.docker.internal but the browser still needs the
   # Tailscale URL, so JELLYFIN_PUBLIC_URL is set separately by
   # depot's configure.sh. Falls back to JELLYFIN_URL when unset.
-  jellyfin_public_url:
-    System.get_env("JELLYFIN_PUBLIC_URL") || System.get_env("JELLYFIN_URL"),
+  jellyfin_public_url: System.get_env("JELLYFIN_PUBLIC_URL") || System.get_env("JELLYFIN_URL"),
   # Jellyseerr feeds the release-calendar widget — next-episode air
   # dates pulled via Jellyseerr's TMDB sync. Optional; when unset,
   # the show detail page falls back to the trailer treatment in all
   # cases.
   jellyseerr_url: System.get_env("JELLYSEERR_URL"),
   jellyseerr_api_key: System.get_env("JELLYSEERR_API_KEY"),
+  # HTTP proxy the NHL schedule scrape goes through, e.g. gluetun's
+  # proxy on the VPN, so the stream site sees the VPN's address rather
+  # than the household's. Unset means requests go out directly.
+  nhl_proxy_url: System.get_env("NHL_PROXY_URL"),
   # Sonarr is what makes the Watch buttons actually do anything — it
   # accepts the "add this series / monitor this season / search this
   # episode" intents from aviary and runs the download. Without it,
