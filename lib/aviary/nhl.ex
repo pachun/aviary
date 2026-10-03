@@ -166,18 +166,17 @@ defmodule Aviary.Nhl do
 
   defp absolute(uri, base_url), do: base_url |> URI.merge(uri) |> URI.to_string()
 
+  # Team pages are fetched one at a time on purpose. The site runs
+  # behind LiteSpeed, which answers a burst of simultaneous connections
+  # from one address with a reCAPTCHA page for everything that follows,
+  # and a cold start used to open a dozen at once.
   defp fetch_games do
     with {:ok, html} <- get_body(@site <> "/") do
       html
       |> Page.games()
       |> Enum.filter(&scheduled_today?/1)
-      |> Task.async_stream(&Map.put(&1, :feeds, named_feeds(&1)),
-        timeout: @request_timeout_ms * 2
-      )
-      |> Enum.flat_map(fn
-        {:ok, game} -> [Map.delete(game, :date)]
-        _ -> []
-      end)
+      |> Enum.map(&Map.put(&1, :feeds, named_feeds(&1)))
+      |> Enum.map(&Map.delete(&1, :date))
     else
       _ -> []
     end
