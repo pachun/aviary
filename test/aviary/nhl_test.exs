@@ -159,6 +159,20 @@ defmodule Aviary.NhlTest do
                        "id=178&ts=1790976342&pt=d704dccd6b0eef7c"}
     end
 
+    test "rewrites every media url through the given function" do
+      assert {:ok, playlist} =
+               Nhl.playlist(
+                 "detroit-red-wings",
+                 "wings",
+                 &("/relay?url=" <> URI.encode_www_form(&1))
+               )
+
+      assert playlist =~ ~s(URI="/relay?url=https%3A%2F%2Fmedia.example.test%2Fkeys%2F178.key")
+
+      assert playlist =~
+               "\n/relay?url=https%3A%2F%2Fmedia.example.test%2Fhls%2F178_0.ts%3Ftoken%3Dseg0\n"
+    end
+
     test "reuses the resolved media playlist instead of looking the stream up again" do
       assert {:ok, _} = Nhl.playlist("detroit-red-wings", "wings")
       assert_received {:requested, "/stream/check_stream.php", _}
@@ -195,6 +209,37 @@ defmodule Aviary.NhlTest do
       stub_site(%{"/" => {200, undated_schedule()}, "/stream/check_stream.php" => {200, "{}"}})
 
       assert Nhl.playlist("detroit-red-wings", "wings") == {:error, :unavailable}
+    end
+  end
+
+  describe "segment/3" do
+    setup do
+      stub_site(%{
+        "/" => {200, undated_schedule()},
+        "/hls/178_0.ts" => {200, "MPEGTS bytes", [{"content-type", "video/mp2t"}]}
+      })
+
+      :ok
+    end
+
+    test "relays a media file from the feed's own host without a referer" do
+      assert Nhl.segment(
+               "detroit-red-wings",
+               "wings",
+               "https://media.example.test/hls/178_0.ts?token=seg0"
+             ) ==
+               {:ok, %{body: "MPEGTS bytes", content_type: "video/mp2t"}}
+    end
+
+    test "refuses a url on any other host" do
+      assert Nhl.segment(
+               "detroit-red-wings",
+               "wings",
+               "https://elsewhere.example.test/hls/178_0.ts"
+             ) ==
+               :error
+
+      refute_received {:requested, "/hls/178_0.ts", _}
     end
   end
 

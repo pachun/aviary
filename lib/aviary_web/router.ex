@@ -72,6 +72,7 @@ defmodule AviaryWeb.Router do
     get "/items/:id/subtitles/:index/playlist.m3u8", PlaybackController, :subtitle_playlist
     get "/items/:id/subtitles/:index/stream.vtt", PlaybackController, :subtitle_segment
     get "/nhl/games/:id/feeds/:feed/playlist.m3u8", NhlController, :playlist
+    get "/nhl/games/:id/feeds/:feed/segment", NhlController, :segment
   end
 
   scope "/api/v1", AviaryWeb.API do

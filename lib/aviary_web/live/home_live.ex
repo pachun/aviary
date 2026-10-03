@@ -57,7 +57,11 @@ defmodule AviaryWeb.HomeLive do
           id: "nhl-#{game.id}-#{feed.id}",
           resume_seconds: 0,
           title: "#{game.away_team.name} at #{game.home_team.name} (#{feed.label})",
-          src: live_playlist_path(game.id, feed.id, socket.assigns.current_user.token)
+          src: live_playlist_path(game.id, feed.id, socket.assigns.current_user.token),
+          native_src:
+            live_playlist_path(game.id, feed.id, socket.assigns.current_user.token,
+              segments: "relayed"
+            )
         }
       else
         _ -> nil
@@ -76,9 +80,9 @@ defmodule AviaryWeb.HomeLive do
   def handle_event("report_progress", _, socket), do: {:noreply, socket}
   def handle_event("subtitles_changed", _, socket), do: {:noreply, socket}
 
-  defp live_playlist_path(game_id, feed_id, token) do
+  defp live_playlist_path(game_id, feed_id, token, query \\ []) do
     "/api/v1/nhl/games/#{game_id}/feeds/#{feed_id}/playlist.m3u8?" <>
-      URI.encode_query(token: token)
+      URI.encode_query([token: token] ++ query)
   end
 
   # After a dismiss the user's home state may have changed enough to
@@ -246,6 +250,7 @@ defmodule AviaryWeb.HomeLive do
         :if={@watching_game}
         item={@watching_game}
         src={@watching_game.src}
+        native_src={@watching_game.native_src}
         referrer_policy="no-referrer"
         current_user={@current_user}
         title={@watching_game.title}

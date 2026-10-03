@@ -62,7 +62,7 @@ const HlsPlayer = {
     }
 
     if (this.isAppleBrowser() && video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = src
+      video.src = video.dataset.nativeSrc || src
     } else if (window.Hls && window.Hls.isSupported()) {
       const hls = new window.Hls()
       // Attaching the media source cancels the play() the autoplay

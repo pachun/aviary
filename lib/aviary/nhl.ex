@@ -106,21 +106,59 @@ defmodule Aviary.Nhl do
   started broadcasting, or `{:error, :unavailable}` for an unknown game
   or feed, or a site failure.
   """
-  def playlist(game_id, feed_id) do
-    if Regex.match?(@feed_id, feed_id) and feed_id in feed_ids(game_id) do
-      playlist_from_media_url(game_id, feed_id, _retries_left = 1)
+  def playlist(game_id, feed_id, rewrite_media_url \\ &Function.identity/1) do
+    if known_feed?(game_id, feed_id) do
+      playlist_from_media_url(game_id, feed_id, rewrite_media_url, _retries_left = 1)
     else
       {:error, :unavailable}
     end
   end
 
-  defp playlist_from_media_url(game_id, feed_id, retries_left) do
+  @doc """
+  Fetches one media file (a segment or a key) of a feed on the viewer's
+  behalf, for players that can't reach the media host themselves: iOS
+  Safari's native player sends the page as Referer, which the host
+  rejects. Only URLs on the feed's own media host are relayed, so this
+  can't be used as a general proxy. `{:ok, %{body, content_type}}` or
+  `:error`.
+  """
+  def segment(game_id, feed_id, url) do
+    with true <- known_feed?(game_id, feed_id),
+         {:ok, media_url} <- cached_media_url(game_id, feed_id),
+         true <- same_host?(url, media_url),
+         {:ok, %Req.Response{status: 200, body: body} = response} when is_binary(body) <-
+           request(url, referer: nil) do
+      {:ok, %{body: body, content_type: content_type(response)}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp known_feed?(game_id, feed_id) do
+    Regex.match?(@feed_id, feed_id) and feed_id in feed_ids(game_id)
+  end
+
+  defp same_host?(url, other_url), do: URI.parse(url).host == URI.parse(other_url).host
+
+  defp content_type(%Req.Response{} = response) do
+    case Req.Response.get_header(response, "content-type") do
+      [type | _] -> type
+      [] -> "application/octet-stream"
+    end
+  end
+
+  defp cached_media_url(game_id, feed_id) do
+    Cache.fetch({:nhl, :media_url, feed_id}, @media_url_ttl_ms, fn ->
+      resolve_media_url(game_id, feed_id)
+    end)
+  end
+
+  defp playlist_from_media_url(game_id, feed_id, rewrite_media_url, retries_left) do
     key = {:nhl, :media_url, feed_id}
 
-    with {:ok, url} <-
-           Cache.fetch(key, @media_url_ttl_ms, fn -> resolve_media_url(game_id, feed_id) end),
+    with {:ok, url} <- cached_media_url(game_id, feed_id),
          {:ok, body} when body != "" <- get_body(url) do
-      {:ok, absolutize(body, url)}
+      {:ok, absolutize(body, url, rewrite_media_url)}
     else
       {:error, :not_live} ->
         Cache.invalidate(key)
@@ -128,7 +166,7 @@ defmodule Aviary.Nhl do
 
       _ when retries_left > 0 ->
         Cache.invalidate(key)
-        playlist_from_media_url(game_id, feed_id, retries_left - 1)
+        playlist_from_media_url(game_id, feed_id, rewrite_media_url, retries_left - 1)
 
       _ ->
         Cache.invalidate(key)
@@ -151,18 +189,20 @@ defmodule Aviary.Nhl do
     end
   end
 
-  defp absolutize(playlist, base_url) do
+  defp absolutize(playlist, base_url, rewrite_media_url) do
+    resolve = fn uri -> uri |> absolute(base_url) |> rewrite_media_url.() end
+
     playlist
     |> String.split("\n")
     |> Enum.map_join("\n", fn
       "#" <> _ = tag ->
-        Regex.replace(@quoted_uri, tag, fn _, uri -> ~s(URI="#{absolute(uri, base_url)}") end)
+        Regex.replace(@quoted_uri, tag, fn _, uri -> ~s(URI="#{resolve.(uri)}") end)
 
       "" ->
         ""
 
       uri ->
-        absolute(String.trim(uri), base_url)
+        resolve.(String.trim(uri))
     end)
   end
 
@@ -268,10 +308,11 @@ defmodule Aviary.Nhl do
 
   defp request(url, options) do
     {referer, options} = Keyword.pop(options, :referer, @site <> "/")
+    referer_header = if referer, do: [{"referer", referer}], else: []
 
     [
       url: url,
-      headers: [{"user-agent", @browser_user_agent}, {"referer", referer}],
+      headers: [{"user-agent", @browser_user_agent} | referer_header],
       receive_timeout: @request_timeout_ms,
       retry: false,
       decode_body: false
