@@ -90,6 +90,17 @@ defmodule Aviary.NhlTest do
       assert Nhl.games() == []
     end
 
+    test "leaves the site alone for a while after it bans us" do
+      stub_site(%{"/" => {403, "Forbidden"}})
+      assert Nhl.games() == []
+      assert_received {:requested, "/", _}
+
+      Aviary.Cache.invalidate({:nhl, :games})
+      stub_site(%{"/" => {200, undated_schedule()}})
+      assert Nhl.games() == []
+      refute_received {:requested, "/", _}
+    end
+
     test "serves the cached schedule without asking the site again" do
       stub_site(%{"/" => {200, undated_schedule()}})
       assert [%{id: "detroit-red-wings"}] = Nhl.games()

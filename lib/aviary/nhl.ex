@@ -31,6 +31,7 @@ defmodule Aviary.Nhl do
   @feeds_stale_ms :timer.hours(6)
   @media_url_ttl_ms :timer.hours(6)
   @logo_ttl_ms :timer.hours(24)
+  @ban_hold_off_ms :timer.minutes(20)
   @logo_cdn_sets %{
     light: "https://a.espncdn.com/i/teamlogos/nhl/500",
     dark: "https://a.espncdn.com/i/teamlogos/nhl/500-dark"
@@ -136,7 +137,8 @@ defmodule Aviary.Nhl do
   end
 
   defp resolve_media_url(game_id, feed_id) do
-    with {:ok, frame_html} <- get_body(frame_url(feed_id), referer: watch_page_url(game_id)),
+    with false <- site_banned_us?(),
+         {:ok, frame_html} <- get_body(frame_url(feed_id), referer: watch_page_url(game_id)),
          {:ok, params} <- Page.lookup_params(frame_html),
          {:ok, signed_url} <- lookup_signed_url(params, feed_id),
          {:ok, response} <- request(signed_url, redirect: false) do
@@ -171,7 +173,8 @@ defmodule Aviary.Nhl do
   # from one address with a reCAPTCHA page for everything that follows,
   # and a cold start used to open a dozen at once.
   defp fetch_games do
-    with {:ok, html} <- get_body(@site <> "/") do
+    with false <- site_banned_us?(),
+         {:ok, html} <- get_body(@site <> "/") do
       html
       |> Page.games()
       |> Enum.filter(&scheduled_today?/1)
@@ -235,9 +238,27 @@ defmodule Aviary.Nhl do
 
   defp get_body(url, options \\ []) do
     case request(url, options) do
-      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) -> {:ok, body}
-      other -> log_failure(url, other)
+      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
+        {:ok, body}
+
+      {:ok, %Req.Response{status: 403}} = refusal ->
+        if String.starts_with?(url, @site), do: remember_ban()
+        log_failure(url, refusal)
+
+      other ->
+        log_failure(url, other)
     end
+  end
+
+  # LiteSpeed bans an address that keeps connecting while banned, and
+  # the ban lasts longer each time, so once the site answers 403 nothing
+  # touches it again for a while. Playlists already resolved keep
+  # playing; they don't go through the site.
+  defp site_banned_us?, do: Cache.fetch({:nhl, :banned}, @ban_hold_off_ms, fn -> false end)
+
+  defp remember_ban do
+    Cache.invalidate({:nhl, :banned})
+    Cache.fetch({:nhl, :banned}, @ban_hold_off_ms, fn -> true end)
   end
 
   defp log_failure(what, outcome) do
