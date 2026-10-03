@@ -70,7 +70,11 @@ defmodule AviaryWeb.HomeLive do
     {:noreply, assign(socket, :watching_game, nil)}
   end
 
+  # The player hook reports progress and subtitle toggles for library
+  # titles. A live game has neither to remember, so both are accepted and
+  # ignored rather than crashing the page mid-game.
   def handle_event("report_progress", _, socket), do: {:noreply, socket}
+  def handle_event("subtitles_changed", _, socket), do: {:noreply, socket}
 
   defp live_playlist_path(game_id, feed_id, token) do
     "/api/v1/nhl/games/#{game_id}/feeds/#{feed_id}/playlist.m3u8?" <>
