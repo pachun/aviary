@@ -65,6 +65,13 @@ const HlsPlayer = {
       video.src = src
     } else if (window.Hls && window.Hls.isSupported()) {
       const hls = new window.Hls()
+      // Attaching the media source cancels the play() the autoplay
+      // attribute already started, so start again once the manifest is
+      // in. Library titles recovered on their own; live feeds stayed
+      // paused behind the spinner until the viewer pressed play.
+      hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {})
+      })
       hls.loadSource(src)
       hls.attachMedia(video)
       this.hls = hls
