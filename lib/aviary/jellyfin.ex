@@ -447,9 +447,60 @@ defmodule Aviary.Jellyfin do
   concurrent triggers.
   """
   def refresh_library(auth) do
-    Req.post(base_url() <> "/Library/Refresh",
+    if library_scan_running?(auth) do
+      :already_running
+    else
+      case Req.post(base_url() <> "/Library/Refresh",
+             headers: [{"x-emby-token", auth.token}],
+             receive_timeout: 5_000,
+             retry: false
+           ) do
+        {:ok, %Req.Response{status: status}} when status in 200..299 -> :ok
+        _ -> :error
+      end
+    end
+  rescue
+    _ -> :error
+  end
+
+  # Jellyfin restarts the "Scan Media Library" task when it is asked for
+  # a scan while one is running, so a caller polling faster than a scan
+  # takes would never let one finish.
+  defp library_scan_running?(auth) do
+    case Req.get(base_url() <> "/ScheduledTasks",
+           headers: [{"x-emby-token", auth.token}],
+           receive_timeout: 5_000,
+           retry: false
+         ) do
+      {:ok, %Req.Response{status: 200, body: tasks}} when is_list(tasks) ->
+        Enum.any?(tasks, &(&1["Key"] == "RefreshLibrary" and &1["State"] != "Idle"))
+
+      _ ->
+        false
+    end
+  rescue
+    _ -> false
+  end
+
+  @doc """
+  Refreshes one series and everything under it, keeping the metadata
+  Jellyfin already has. Re-saves the episodes, which is what a newly
+  created series needs: Jellyfin re-keys the series once its metadata
+  arrives and the episodes stay invisible under the old key until
+  they're saved again.
+  """
+  def refresh_series(series_id, auth) do
+    Req.post(base_url() <> "/Items/" <> series_id <> "/Refresh",
+      params: [
+        Recursive: true,
+        MetadataRefreshMode: "Default",
+        ImageRefreshMode: "Default",
+        ReplaceAllMetadata: false,
+        ReplaceAllImages: false
+      ],
       headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 5_000
+      receive_timeout: 10_000,
+      retry: false
     )
 
     :ok

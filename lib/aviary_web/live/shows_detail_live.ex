@@ -93,14 +93,9 @@ defmodule AviaryWeb.ShowsDetailLive do
   #     90 s after qBit finishes.
   #
   #   * Any episode :imported (Sonarr has the file, Jellyfin doesn't
-  #     yet) → ask Jellyfin to scan the series folder via
-  #     /Library/Media/Updated. Without it the chip can sit on
-  #     "Importing…" for hours waiting on Jellyfin's scheduled scan.
-  #     Path comes from Sonarr (it owns the on-disk layout); the
-  #     scan endpoint expects the path Sonarr/Jellyfin agree on.
-  #     Discover shows skip the scan because we have no path to
-  #     hand to Jellyfin until Sonarr resolves the series, but
-  #     Sonarr-side already does refresh them.
+  #     yet) → Aviary.ImportNudge gets Jellyfin to notice it. Without
+  #     that the chip can sit on "Importing…" for hours waiting on
+  #     Jellyfin's scheduled scan.
   #
   # Both side-effects are throttled per-show via the cache so a
   # multi-second poll cadence doesn't pile up requests on Sonarr or
@@ -135,18 +130,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
 
     if has_imported? do
-      # Library-wide refresh, throttled globally — depot's compose
-      # files mount the shows directory at different paths inside
-      # Sonarr's and Jellyfin's containers (Sonarr: /shows,
-      # Jellyfin: /media/shows), so a path-targeted scan needs
-      # translation we don't currently do. The library-wide scan
-      # works regardless and Jellyfin dedupes concurrent triggers.
-      # 5s throttle matches our Sonarr poll cadence — while a chip is
-      # in "Importing…" we want Jellyfin re-scanning continuously,
-      # not stuck behind a 15s lull.
-      throttle(:jellyfin_library_refresh, 5_000, fn ->
-        Aviary.Jellyfin.refresh_library(user)
-      end)
+      Aviary.ImportNudge.imported_show(show.tmdb_id, user)
 
       socket = auto_escalate_if_stuck(socket, show, user)
 
@@ -164,8 +148,7 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
-  # The light /Library/Refresh fires every 15s while any episode is
-  # `:imported`. That usually unsticks things within a poll or two.
+  # The nudge above usually unsticks things within a poll or two.
   # If it hasn't — i.e. the show has been in :imported state for
   # more than 2 minutes — Jellyfin's scanner has likely cached a
   # "skip this series" decision that only a full refresh + replace

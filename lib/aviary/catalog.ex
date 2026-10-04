@@ -167,7 +167,7 @@ defmodule Aviary.Catalog do
       jellyfin_id?(id) ->
         {:library, id}
 
-      jellyfin_id = lookup_jellyfin_id_for_tmdb(id, auth) ->
+      jellyfin_id = jellyfin_series_id(id, auth) ->
         {:library, jellyfin_id}
 
       true ->
@@ -175,7 +175,8 @@ defmodule Aviary.Catalog do
     end
   end
 
-  defp lookup_jellyfin_id_for_tmdb(tmdb_id, auth) do
+  @doc "The Jellyfin series id for a TMDB id, or nil when Jellyfin doesn't list the series yet."
+  def jellyfin_series_id(tmdb_id, auth) do
     Aviary.Jellyfin.list_shows(auth)
     |> Enum.find(&(get_in(&1, ["ProviderIds", "Tmdb"]) == tmdb_id))
     |> case do

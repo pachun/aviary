@@ -27,7 +27,8 @@ defmodule AviaryWeb.API.StatusController do
     overall = DownloadState.show_overall(status)
     overlays = DownloadState.episode_overlays(status)
 
-    nudge_downloads(user, :sonarr, Enum.map(Map.values(overlays), & &1.kind))
+    kinds = Enum.map(Map.values(overlays), & &1.kind)
+    nudge_downloads(:sonarr, kinds, fn -> Aviary.ImportNudge.imported_show(tmdb_id, user) end)
 
     json(conn, %{
       overall: DownloadState.serialize(overall),
@@ -47,7 +48,8 @@ defmodule AviaryWeb.API.StatusController do
 
     state = DownloadState.movie_state(status)
 
-    nudge_downloads(user, :radarr, [DownloadState.serialize(state).kind])
+    kinds = [DownloadState.serialize(state).kind]
+    nudge_downloads(:radarr, kinds, fn -> Aviary.ImportNudge.library(user) end)
 
     json(conn, %{
       overall: DownloadState.serialize(state),
@@ -58,18 +60,14 @@ defmodule AviaryWeb.API.StatusController do
   # Same side-effects the web detail page fires while a download is in
   # flight, so the native client's Importing → Play transition doesn't
   # wait on Jellyfin's scheduled scan. A live download nudges the
-  # downloader to refresh its queue; an import nudges Jellyfin to rescan
-  # so the finished file appears promptly. Throttled globally (5s) via
-  # the cache, matching the poll cadence; Jellyfin dedupes concurrent
-  # scans.
-  defp nudge_downloads(user, downloader, kinds) do
+  # downloader to refresh its queue; an import hands off to
+  # Aviary.ImportNudge, which paces its own requests to Jellyfin.
+  defp nudge_downloads(downloader, kinds, nudge_jellyfin) do
     if "downloading" in kinds do
       throttle({:dl_refresh, downloader}, 5_000, fn -> refresh_downloader(downloader) end)
     end
 
-    if "imported" in kinds do
-      throttle(:jellyfin_library_refresh, 5_000, fn -> Aviary.Jellyfin.refresh_library(user) end)
-    end
+    if "imported" in kinds, do: nudge_jellyfin.()
 
     :ok
   end
