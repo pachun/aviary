@@ -23,7 +23,12 @@ defmodule Aviary.Nhl do
   alias Aviary.Nhl.Page
 
   @site "https://slapstreams.com"
-  @browser_user_agent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+  # The site's bot check challenges any client that claims to be a
+  # browser but doesn't behave like one, and answered aviary's Chrome
+  # user agent with a reCAPTCHA page from every address, home and VPN
+  # alike. Plain command-line identities pass, so this is the one
+  # aviary sends.
+  @user_agent "curl/8.10.1"
   @request_timeout_ms 8_000
   @schedule_fresh_ms :timer.minutes(2)
   @schedule_stale_ms :timer.minutes(30)
@@ -312,7 +317,7 @@ defmodule Aviary.Nhl do
 
     [
       url: url,
-      headers: [{"user-agent", @browser_user_agent} | referer_header],
+      headers: [{"user-agent", @user_agent} | referer_header],
       receive_timeout: @request_timeout_ms,
       retry: false,
       decode_body: false
