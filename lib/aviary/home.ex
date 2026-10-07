@@ -22,8 +22,10 @@ defmodule Aviary.Home do
   derived next-up for series NextUp's index missed, recently added
   episodes, and recently watched. Dedupe picks "what to play next"
   per show (resume > NextUp/derived > latest > recent), then sorts
-  the deduped list by the show's most-recent activity timestamp so
-  the marquee leads with whatever the user touched last.
+  the deduped list by the show's most-recent activity timestamp —
+  the later of the user's last play and the target episode's arrival
+  in the library — so the marquee leads with whatever the user touched
+  last or whatever just dropped.
   """
 
   alias Aviary.Jellyfin
@@ -110,12 +112,18 @@ defmodule Aviary.Home do
       progress: episode_progress(episode),
       title: Map.get(series_names, series_id),
       subtitle: episode_subtitle_line(episode),
-      # Order the row by the show's most recent activity, not the target
-      # episode — an advanced-to "next up" episode has never been played
-      # (last_played_at nil), but the show is as recent as the episode
-      # the user just finished.
-      sort_at: Map.get(activity, series_id) || episode.last_played_at || @epoch
+      sort_at: latest_activity_at(Map.get(activity, series_id), episode)
     }
+  end
+
+  # A show is as recent as the last time the user played it OR the
+  # moment its next episode landed in the library, whichever is later —
+  # so a freshly released episode leads the row even for a show the
+  # user last touched weeks ago.
+  defp latest_activity_at(last_played_at, episode) do
+    [last_played_at, episode.last_played_at, episode.added_at]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.max(DateTime, fn -> @epoch end)
   end
 
   # series_id => first-seen SeriesName across the discovery items.

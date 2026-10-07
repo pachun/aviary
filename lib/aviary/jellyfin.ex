@@ -153,7 +153,7 @@ defmodule Aviary.Jellyfin do
         Req.get!(base_url() <> "/Shows/" <> series_id <> "/Episodes",
           params: [
             userId: auth.id,
-            Fields: "Overview,RunTimeTicks,UserData"
+            Fields: "Overview,RunTimeTicks,UserData,DateCreated"
           ],
           headers: [{"x-emby-token", auth.token}],
           receive_timeout: 15_000
@@ -413,7 +413,7 @@ defmodule Aviary.Jellyfin do
       params: [
         userId: auth.id,
         seriesId: series_id,
-        Fields: "UserData"
+        Fields: "UserData,DateCreated"
       ],
       headers: [{"x-emby-token", auth.token}],
       receive_timeout: 15_000

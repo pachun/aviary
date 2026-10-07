@@ -458,6 +458,7 @@ defmodule Aviary.Catalog do
       runtime_minutes: nil,
       resume_seconds: nil,
       last_played_at: nil,
+      added_at: nil,
       played_percentage: 0.0,
       air_date: air_date,
       # "Aired" means the broadcast has happened, not just "the air
@@ -656,6 +657,7 @@ defmodule Aviary.Catalog do
       runtime_minutes: runtime_minutes(item["RunTimeTicks"]),
       resume_seconds: resume_seconds(item["UserData"]),
       last_played_at: parse_date(get_in(item, ["UserData", "LastPlayedDate"])),
+      added_at: parse_date(item["DateCreated"]),
       played_percentage: played_percentage(item["UserData"]),
       # If it's in the library, it aired by definition. Air date may
       # still be nil for items missing PremiereDate metadata; that's
