@@ -76,7 +76,8 @@ defmodule Aviary.Cache do
           try do
             compute_and_store(key, fresh_ttl_ms, stale_ttl_ms, fun)
           rescue
-            e -> Logger.warning("cache swr refresh raised key=#{inspect(key)} error=#{inspect(e)}")
+            e ->
+              Logger.warning("cache swr refresh raised key=#{inspect(key)} error=#{inspect(e)}")
           end
         end)
 
@@ -84,6 +85,19 @@ defmodule Aviary.Cache do
 
       _ ->
         compute_and_store(key, fresh_ttl_ms, stale_ttl_ms, fun)
+    end
+  end
+
+  @doc """
+  Read a value without computing it: `{:ok, value}` while the entry is
+  within its stale window, `:miss` otherwise.
+  """
+  def get(key) do
+    now = monotonic()
+
+    case :ets.lookup(@table, key) do
+      [{^key, value, _fresh_until, stale_until}] when now < stale_until -> {:ok, value}
+      _ -> :miss
     end
   end
 

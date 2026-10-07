@@ -85,7 +85,22 @@ defmodule Aviary.Nhl do
   team is `%{id, name, nickname, logo}`. Empty on any failure.
   """
   def games do
-    Cache.swr({:nhl, :games}, @schedule_fresh_ms, @schedule_stale_ms, &fetch_games/0)
+    Cache.swr({:nhl, :games}, @schedule_fresh_ms, @schedule_stale_ms, fn ->
+      one_scrape_at_a_time(fn -> fetch_games() end)
+    end)
+  end
+
+  # Every page load and the TV both ask for the schedule, and a cold
+  # cache had each of them scraping the site at once, which the site
+  # meets with dropped connections and a bot challenge. Callers queue
+  # behind the first scrape and reuse its result.
+  defp one_scrape_at_a_time(scrape) do
+    :global.trans({{:nhl, :scrape}, self()}, fn ->
+      case Cache.get({:nhl, :games}) do
+        {:ok, games} when games != [] -> games
+        _ -> scrape.()
+      end
+    end)
   end
 
   @doc """

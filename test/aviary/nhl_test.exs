@@ -101,6 +101,33 @@ defmodule Aviary.NhlTest do
       refute_received {:requested, "/", _}
     end
 
+    test "scrapes once when many callers ask at the same moment" do
+      {:ok, counter} = Agent.start_link(fn -> 0 end)
+      schedule = schedule_dated(Aviary.LocalTime.today())
+
+      Req.Test.stub(Nhl, fn conn ->
+        if conn.request_path == "/", do: Agent.update(counter, &(&1 + 1))
+        Process.sleep(20)
+
+        body =
+          cond do
+            conn.request_path == "/" -> schedule
+            String.ends_with?(conn.request_path, "-live/") -> fixture("team_page.html")
+            true -> ""
+          end
+
+        Plug.Conn.send_resp(conn, 200, body)
+      end)
+
+      results =
+        1..6
+        |> Enum.map(fn _ -> Task.async(fn -> Nhl.games() end) end)
+        |> Task.await_many(10_000)
+
+      assert Enum.all?(results, &(length(&1) == 5))
+      assert Agent.get(counter, & &1) == 1
+    end
+
     test "serves the cached schedule without asking the site again" do
       stub_site(%{"/" => {200, undated_schedule()}})
       assert [%{id: "detroit-red-wings"}] = Nhl.games()
