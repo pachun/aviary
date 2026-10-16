@@ -56,6 +56,14 @@ defmodule Aviary.Sonarr do
   re-fires per-episode searches for whatever's still missing.
   """
   def watch_show(tmdb_id) do
+    if standalone_episodes?(tmdb_id) do
+      watch_latest_episode(tmdb_id)
+    else
+      watch_whole_series(tmdb_id)
+    end
+  end
+
+  defp watch_whole_series(tmdb_id) do
     with {:ok, series} <- ensure_series(tmdb_id, monitor: "all", search: false) do
       # search_each_missing runs in a Task because it has to wait out
       # Sonarr's async RefreshEpisodeService — the /series POST returns
@@ -70,22 +78,30 @@ defmodule Aviary.Sonarr do
   end
 
   @doc """
-  Resolves the first aired episode (lowest real season, earliest episode)
-  so "add the whole show" can grab that one first and broaden to the rest
-  afterward — the same two-stage flow tapping a single episode uses.
-  Returns `{:ok, season, episode}` or `:error` (e.g. nothing aired yet,
-  or Sonarr unreachable).
+  Resolves the episode "add the whole show" should grab first. For a
+  series watched in order that is the first aired episode (lowest real
+  season, earliest episode); SeriesFollowup broadens to the rest once
+  it lands. For a show whose episodes stand alone (see
+  `standalone_episodes?/1`) it is the most recently aired episode, and
+  nothing broadens afterward. Returns `{:ok, season, episode}` or
+  `:error` (e.g. nothing aired yet, or Sonarr unreachable).
   """
-  def first_episode(tmdb_id) do
+  def starting_episode(tmdb_id) do
     with {:ok, series} <- ensure_series(tmdb_id, monitor: "none", search: false) do
       today = Aviary.LocalTime.today()
 
-      series["id"]
-      |> wait_for_episodes()
-      |> Enum.filter(fn ep -> (ep["seasonNumber"] || 0) > 0 and aired?(ep, today) end)
-      |> Enum.sort_by(fn ep -> {ep["seasonNumber"], ep["episodeNumber"]} end)
-      |> List.first()
-      |> case do
+      aired_episodes =
+        series["id"]
+        |> wait_for_episodes()
+        |> Enum.filter(fn ep -> (ep["seasonNumber"] || 0) > 0 and aired?(ep, today) end)
+        |> Enum.sort_by(fn ep -> {ep["seasonNumber"], ep["episodeNumber"]} end)
+
+      starting_episode =
+        if standalone_episodes?(series),
+          do: List.last(aired_episodes),
+          else: List.first(aired_episodes)
+
+      case starting_episode do
         %{"seasonNumber" => season, "episodeNumber" => episode} ->
           {:ok, season, episode}
 
@@ -94,6 +110,47 @@ defmodule Aviary.Sonarr do
       end
     else
       _ -> :error
+    end
+  end
+
+  @standalone_episode_genres ["Game Show", "Talk Show", "News"]
+
+  @doc """
+  Whether a show's episodes stand alone rather than continuing a
+  story: game shows, talk shows, news, and anything Sonarr files as
+  a daily series. Nobody watches The Price is Right or Real Time from
+  episode one, and their back catalogs run to thousands of episodes,
+  so aviary only ever grabs these one episode at a time. "Watch the
+  whole show" grabs the latest episode, and SeriesFollowup never
+  broadens to the rest of the series.
+
+  Accepts a Sonarr series record or lookup result (both carry
+  `genres` and `seriesType`), or a TMDB id to resolve one.
+  """
+  def standalone_episodes?(%{} = series) do
+    series["seriesType"] == "daily" or
+      Enum.any?(series["genres"] || [], &(&1 in @standalone_episode_genres))
+  end
+
+  def standalone_episodes?(tmdb_id) do
+    case find_series_by_tmdb(tmdb_id) do
+      {:ok, series} ->
+        standalone_episodes?(series)
+
+      :not_found ->
+        case lookup(tmdb_id) do
+          {:ok, looked_up} -> standalone_episodes?(looked_up)
+          _ -> false
+        end
+
+      :error ->
+        false
+    end
+  end
+
+  defp watch_latest_episode(tmdb_id) do
+    with {:ok, season, episode} <- starting_episode(tmdb_id) do
+      watch_episode(tmdb_id, season, episode)
     end
   end
 

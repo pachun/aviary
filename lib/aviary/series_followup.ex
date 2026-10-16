@@ -18,6 +18,10 @@ defmodule Aviary.SeriesFollowup do
   different shows at the same time don't compete for bandwidth on
   later episodes neither of them is about to watch.
 
+  Shows whose episodes stand alone (game shows, talk shows, news; see
+  `Sonarr.standalone_episodes?/1`) never broaden: one tap downloads
+  one episode and that is the end of it.
+
   No persistence — the Task runs in-process and dies on aviary
   restart. If aviary restarts mid-poll the followup is lost; the
   next time the user clicks any other episode they'll re-trigger.
@@ -50,7 +54,12 @@ defmodule Aviary.SeriesFollowup do
   fire-and-forget — the LiveView click handler doesn't await.
   """
   def after_episode_imports(tmdb_id, season, episode) do
-    Task.start(fn -> poll(tmdb_id, season, episode, @max_polls) end)
+    if Sonarr.standalone_episodes?(tmdb_id) do
+      Logger.info("series_followup not broadening; episodes stand alone tmdb_id=#{tmdb_id}")
+      :standalone_episodes
+    else
+      Task.start(fn -> poll(tmdb_id, season, episode, @max_polls) end)
+    end
   end
 
   defp poll(_tmdb_id, _season, _episode, 0) do
@@ -63,9 +72,7 @@ defmodule Aviary.SeriesFollowup do
 
     case episode_has_file?(tmdb_id, season, episode) do
       true ->
-        Logger.info(
-          "series_followup episode imported; broadening to series tmdb_id=#{tmdb_id}"
-        )
+        Logger.info("series_followup episode imported; broadening to series tmdb_id=#{tmdb_id}")
 
         # Same call the "Watch the whole show" button would make —
         # idempotent (ensure_series widens monitoring; search_each_missing
