@@ -2,6 +2,8 @@ defmodule Aviary.NhlTest do
   use ExUnit.Case, async: false
 
   alias Aviary.Nhl
+  alias Aviary.Nhl.Schedule
+  alias Aviary.Nhl.Site
 
   @fixtures Path.expand("../support/fixtures/nhl", __DIR__)
   @signed_playlist "https://cdn.example.test/play/abc/178.m3u8?expires=1"
@@ -38,6 +40,8 @@ defmodule Aviary.NhlTest do
         overrides
       )
 
+    test = self()
+
     Req.Test.stub(Nhl, fn conn ->
       {status, body, headers} =
         pages
@@ -48,7 +52,7 @@ defmodule Aviary.NhlTest do
         end)
         |> with_headers()
 
-      send(self(), {:requested, conn.request_path, conn.query_string})
+      send(test, {:requested, conn.request_path, conn.query_string})
 
       headers
       |> Enum.reduce(conn, fn {name, value}, conn ->
@@ -56,6 +60,14 @@ defmodule Aviary.NhlTest do
       end)
       |> Plug.Conn.send_resp(status, body)
     end)
+
+    Req.Test.allow(Nhl, test, Process.whereis(Site))
+  end
+
+  defp walk_site(options \\ []) do
+    {:ok, schedule} = Schedule.start_link([name: nil, refresh_on_its_own: false] ++ options)
+    Schedule.refresh(schedule)
+    schedule
   end
 
   defp with_headers({status, body}), do: {status, body, []}
@@ -64,6 +76,7 @@ defmodule Aviary.NhlTest do
   describe "games/0" do
     test "lists today's games with their feeds" do
       stub_site(%{"/" => {200, schedule_dated(Aviary.LocalTime.today())}})
+      walk_site()
 
       games = Nhl.games()
 
@@ -80,61 +93,130 @@ defmodule Aviary.NhlTest do
 
     test "leaves out games scheduled for another day" do
       stub_site(%{"/" => {200, schedule_dated(Date.add(Aviary.LocalTime.today(), 1))}})
+      walk_site()
 
       assert Nhl.games() == []
     end
 
     test "is empty when the site is down" do
       stub_site(%{"/" => {503, "maintenance"}})
+      walk_site()
 
       assert Nhl.games() == []
     end
 
-    test "leaves the site alone for a while after it bans us" do
-      stub_site(%{"/" => {403, "Forbidden"}})
-      assert Nhl.games() == []
-      assert_received {:requested, "/", _}
-
-      Aviary.Cache.invalidate({:nhl, :games})
+    test "never asks the site on a caller's behalf" do
       stub_site(%{"/" => {200, undated_schedule()}})
+
       assert Nhl.games() == []
-      refute_received {:requested, "/", _}
+      refute_received {:requested, _, _}
     end
 
-    test "scrapes once when many callers ask at the same moment" do
-      {:ok, counter} = Agent.start_link(fn -> 0 end)
-      schedule = schedule_dated(Aviary.LocalTime.today())
+    test "keeps a game's feeds between walks of the schedule" do
+      stub_site(%{"/" => {200, undated_schedule()}})
+      schedule = walk_site()
+      assert_received {:requested, "/", _}
+      assert_received {:requested, "/detroit-red-wings-live/", _}
 
-      Req.Test.stub(Nhl, fn conn ->
-        if conn.request_path == "/", do: Agent.update(counter, &(&1 + 1))
-        Process.sleep(20)
+      Schedule.refresh(schedule)
+      assert_received {:requested, "/", _}
+      refute_received {:requested, "/detroit-red-wings-live/", _}
+      assert [%{feeds: [_, _, _, _]}] = Nhl.games()
+    end
 
-        body =
-          cond do
-            conn.request_path == "/" -> schedule
-            String.ends_with?(conn.request_path, "-live/") -> fixture("team_page.html")
-            true -> ""
-          end
+    test "asks a team page again once its feeds are old enough" do
+      stub_site(%{"/" => {200, undated_schedule()}})
 
-        Plug.Conn.send_resp(conn, 200, body)
-      end)
+      schedule = walk_site(feeds_every_ms: 0)
+      Schedule.refresh(schedule)
+
+      assert_received {:requested, "/detroit-red-wings-live/", _}
+      assert_received {:requested, "/detroit-red-wings-live/", _}
+    end
+
+    test "keeps the feeds it had when a team page stops answering" do
+      stub_site(%{"/" => {200, undated_schedule()}})
+
+      schedule = walk_site(feeds_every_ms: 0)
+
+      stub_site(%{"/" => {200, undated_schedule()}, "/detroit-red-wings-live/" => {503, ""}})
+      Schedule.refresh(schedule)
+
+      assert [%{feeds: [%{id: "rangers"} | _]}] = Nhl.games()
+    end
+
+    test "stops the walk at the first refusal and leaves the site alone for a while" do
+      stub_site(%{
+        "/" => {200, schedule_dated(Aviary.LocalTime.today())},
+        "/detroit-red-wings-live/" => {403, "Forbidden"}
+      })
+
+      schedule = walk_site()
+
+      assert_received {:requested, "/", _}
+      assert_received {:requested, "/detroit-red-wings-live/", _}
+      refute_received {:requested, _, _}
+      assert length(Nhl.games()) == 5
+      assert Enum.all?(Nhl.games(), &(&1.feeds == []))
+
+      stub_site(%{"/" => {200, schedule_dated(Aviary.LocalTime.today())}})
+      Schedule.refresh(schedule)
+      refute_received {:requested, _, _}
+    end
+
+    test "still resolves a stream while holding off the site after a refusal" do
+      stub_site(%{"/" => {200, undated_schedule()}})
+      schedule = walk_site()
+
+      stub_site(%{"/" => {403, "Forbidden"}})
+      Schedule.refresh(schedule)
+
+      assert {:ok, _playlist} = Nhl.playlist("detroit-red-wings", "wings")
+      assert_received {:requested, "/stream/wings.html", _}
+    end
+  end
+
+  describe "Aviary.Nhl.Site" do
+    test "lets one request through at a time, with a pause after each" do
+      pause_ms = 30
+      work_ms = 10
+      clock_granularity_ms = 1
+      {:ok, site} = Site.start_link(name: nil, pause_ms: pause_ms)
+      {:ok, log} = Agent.start_link(fn -> %{in_flight: 0, most_at_once: 0, started_at: []} end)
+
+      perform = fn ->
+        Agent.update(log, fn log ->
+          in_flight = log.in_flight + 1
+
+          %{
+            log
+            | in_flight: in_flight,
+              most_at_once: max(log.most_at_once, in_flight),
+              started_at: [System.monotonic_time(:microsecond) | log.started_at]
+          }
+        end)
+
+        Process.sleep(work_ms)
+        Agent.update(log, &%{&1 | in_flight: &1.in_flight - 1})
+        :done
+      end
 
       results =
-        1..6
-        |> Enum.map(fn _ -> Task.async(fn -> Nhl.games() end) end)
-        |> Task.await_many(10_000)
+        1..4
+        |> Enum.map(fn _ -> Task.async(fn -> Site.request(site, perform) end) end)
+        |> Task.await_many()
 
-      assert Enum.all?(results, &(length(&1) == 5))
-      assert Agent.get(counter, & &1) == 1
-    end
+      assert results == [:done, :done, :done, :done]
+      %{most_at_once: 1, started_at: started_at} = Agent.get(log, & &1)
 
-    test "serves the cached schedule without asking the site again" do
-      stub_site(%{"/" => {200, undated_schedule()}})
-      assert [%{id: "detroit-red-wings"}] = Nhl.games()
-      assert_received {:requested, "/", _}
+      gaps_between_starts_us =
+        started_at
+        |> Enum.sort()
+        |> Enum.chunk_every(2, 1, :discard)
+        |> Enum.map(fn [earlier, later] -> later - earlier end)
 
-      assert [%{id: "detroit-red-wings"}] = Nhl.games()
-      refute_received {:requested, "/", _}
+      shortest_gap_us = (work_ms + pause_ms - clock_granularity_ms) * 1_000
+      assert Enum.all?(gaps_between_starts_us, &(&1 >= shortest_gap_us))
     end
   end
 
@@ -165,6 +247,7 @@ defmodule Aviary.NhlTest do
   describe "playlist/2" do
     setup do
       stub_site(%{"/" => {200, undated_schedule()}})
+      walk_site()
       :ok
     end
 
@@ -246,6 +329,7 @@ defmodule Aviary.NhlTest do
         "/hls/178_0.ts" => {200, "MPEGTS bytes", [{"content-type", "video/mp2t"}]}
       })
 
+      walk_site()
       :ok
     end
 

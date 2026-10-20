@@ -89,6 +89,15 @@ defmodule Aviary.Cache do
   end
 
   @doc """
+  Store a value for `ttl_ms`, replacing whatever the key held.
+  """
+  def put(key, value, ttl_ms) do
+    now = monotonic()
+    :ets.insert(@table, {key, value, now + ttl_ms, now + ttl_ms})
+    :ok
+  end
+
+  @doc """
   Read a value without computing it: `{:ok, value}` while the entry is
   within its stale window, `:miss` otherwise.
   """

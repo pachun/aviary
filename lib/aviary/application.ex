@@ -13,6 +13,8 @@ defmodule Aviary.Application do
       {DNSCluster, query: Application.get_env(:aviary, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Aviary.PubSub},
       Aviary.Cache,
+      {Aviary.Nhl.Site, Application.get_env(:aviary, Aviary.Nhl.Site, [])},
+      {Aviary.Nhl.Schedule, Application.get_env(:aviary, Aviary.Nhl.Schedule, [])},
       Aviary.RottenTomatoes,
       Aviary.TokenCache,
       # Sweeps `pending_deletions` rows hourly and asks the arrs to

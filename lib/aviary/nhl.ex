@@ -13,6 +13,11 @@ defmodule Aviary.Nhl do
   the playlist from aviary every few seconds and fetches video straight
   from the upstream host.
 
+  Only `Aviary.Nhl.Schedule` walks the site, and every request to it
+  passes through `Aviary.Nhl.Site` one at a time. Viewers read the
+  schedule it keeps and reach the site themselves only at the moment of
+  play.
+
   Everything here degrades to "no games" or `{:error, reason}`. The
   home page and nav gate on the result, so a site outage or a markup
   change must never raise into them.
@@ -21,6 +26,7 @@ defmodule Aviary.Nhl do
 
   alias Aviary.Cache
   alias Aviary.Nhl.Page
+  alias Aviary.Nhl.Site
 
   @site "https://slapstreams.com"
   # The site's bot check challenges any client that claims to be a
@@ -30,10 +36,6 @@ defmodule Aviary.Nhl do
   # aviary sends.
   @user_agent "curl/8.10.1"
   @request_timeout_ms 8_000
-  @schedule_fresh_ms :timer.minutes(2)
-  @schedule_stale_ms :timer.minutes(30)
-  @feeds_fresh_ms :timer.minutes(10)
-  @feeds_stale_ms :timer.hours(6)
   @media_url_ttl_ms :timer.hours(6)
   @logo_ttl_ms :timer.hours(24)
   @ban_hold_off_ms :timer.minutes(20)
@@ -82,26 +84,39 @@ defmodule Aviary.Nhl do
   @doc """
   Today's games in schedule order, each with its feeds:
   `%{id, time, away_team, home_team, feeds: [%{id, label}]}`, where each
-  team is `%{id, name, nickname, logo}`. Empty on any failure.
+  team is `%{id, name, nickname, logo}`. Whatever `Aviary.Nhl.Schedule`
+  last gathered, so it never waits on the site: empty before its first
+  walk, and empty again once the site has gone unanswered for a while.
   """
   def games do
-    Cache.swr({:nhl, :games}, @schedule_fresh_ms, @schedule_stale_ms, fn ->
-      one_scrape_at_a_time(fn -> fetch_games() end)
-    end)
+    case Cache.get({:nhl, :games}) do
+      {:ok, games} -> games
+      :miss -> []
+    end
   end
 
-  # Every page load and the TV both ask for the schedule, and a cold
-  # cache had each of them scraping the site at once, which the site
-  # meets with dropped connections and a bot challenge. Callers queue
-  # behind the first scrape and reuse its result.
-  defp one_scrape_at_a_time(scrape) do
-    :global.trans({{:nhl, :scrape}, self()}, fn ->
-      case Cache.get({:nhl, :games}) do
-        {:ok, games} when games != [] -> games
-        _ -> scrape.()
-      end
-    end)
+  @doc false
+  def scrape_schedule do
+    with {:ok, html} <- get_body(@site <> "/") do
+      games =
+        html
+        |> Page.games()
+        |> Enum.filter(&scheduled_today?/1)
+        |> Enum.map(&Map.delete(&1, :date))
+
+      {:ok, games}
+    end
   end
+
+  @doc false
+  def scrape_feeds(game) do
+    with {:ok, html} <- get_body(watch_page_url(game.id)) do
+      {:ok, html |> Page.feeds() |> named_after_the_teams(game)}
+    end
+  end
+
+  @doc false
+  def holding_off_site?, do: Cache.fetch({:nhl, :banned}, @ban_hold_off_ms, fn -> false end)
 
   @doc """
   A team's PNG logo as `{:ok, png}`, fetched from ESPN's CDN and kept for
@@ -195,8 +210,7 @@ defmodule Aviary.Nhl do
   end
 
   defp resolve_media_url(game_id, feed_id) do
-    with false <- site_banned_us?(),
-         {:ok, frame_html} <- get_body(frame_url(feed_id), referer: watch_page_url(game_id)),
+    with {:ok, frame_html} <- get_body(frame_url(feed_id), referer: watch_page_url(game_id)),
          {:ok, params} <- Page.lookup_params(frame_html),
          {:ok, signed_url} <- lookup_signed_url(params, feed_id),
          {:ok, response} <- request(signed_url, redirect: false) do
@@ -228,23 +242,6 @@ defmodule Aviary.Nhl do
 
   defp absolute(uri, base_url), do: base_url |> URI.merge(uri) |> URI.to_string()
 
-  # Team pages are fetched one at a time on purpose. The site runs
-  # behind LiteSpeed, which answers a burst of simultaneous connections
-  # from one address with a reCAPTCHA page for everything that follows,
-  # and a cold start used to open a dozen at once.
-  defp fetch_games do
-    with false <- site_banned_us?(),
-         {:ok, html} <- get_body(@site <> "/") do
-      html
-      |> Page.games()
-      |> Enum.filter(&scheduled_today?/1)
-      |> Enum.map(&Map.put(&1, :feeds, named_feeds(&1)))
-      |> Enum.map(&Map.delete(&1, :date))
-    else
-      _ -> []
-    end
-  end
-
   defp scheduled_today?(%{date: nil}), do: true
   defp scheduled_today?(%{date: date}), do: Date.compare(date, Aviary.LocalTime.today()) == :eq
 
@@ -252,8 +249,7 @@ defmodule Aviary.Nhl do
   # LINK 3, LINK 4. Viewers pick by team, so the two sides take the
   # teams' nicknames, away first to match "Rangers @ Red Wings", and the
   # rest become backups.
-  defp named_feeds(game) do
-    feeds = feeds(game.id)
+  defp named_after_the_teams(feeds, game) do
     away = Enum.filter(feeds, &(&1.label == "AWAY"))
     home = Enum.filter(feeds, &(&1.label == "HOME"))
     backups = feeds -- (away ++ home)
@@ -265,15 +261,6 @@ defmodule Aviary.Nhl do
 
   defp backup_label(0), do: "Backup"
   defp backup_label(index), do: "Backup #{index + 1}"
-
-  defp feeds(game_id) do
-    Cache.swr({:nhl, :feeds, game_id}, @feeds_fresh_ms, @feeds_stale_ms, fn ->
-      case get_body(watch_page_url(game_id)) do
-        {:ok, html} -> Page.feeds(html)
-        _ -> []
-      end
-    end)
-  end
 
   defp feed_ids(game_id) do
     case Enum.find(games(), &(&1.id == game_id)) do
@@ -310,16 +297,11 @@ defmodule Aviary.Nhl do
     end
   end
 
-  # LiteSpeed bans an address that keeps connecting while banned, and
-  # the ban lasts longer each time, so once the site answers 403 nothing
-  # touches it again for a while. Playlists already resolved keep
-  # playing; they don't go through the site.
-  defp site_banned_us?, do: Cache.fetch({:nhl, :banned}, @ban_hold_off_ms, fn -> false end)
-
-  defp remember_ban do
-    Cache.invalidate({:nhl, :banned})
-    Cache.fetch({:nhl, :banned}, @ban_hold_off_ms, fn -> true end)
-  end
+  # A refusal ends the schedule walk for a while, since an address that
+  # keeps connecting after a 403 is refused for longer each time. Play
+  # still tries: one request on a viewer's behalf is not a walk, and a
+  # playlist already resolved doesn't go through the site at all.
+  defp remember_ban, do: Cache.put({:nhl, :banned}, true, @ban_hold_off_ms)
 
   defp log_failure(what, outcome) do
     Logger.warning("nhl: #{what} failed: #{inspect(outcome, limit: 5, printable_limit: 200)}")
@@ -327,6 +309,12 @@ defmodule Aviary.Nhl do
   end
 
   defp request(url, options) do
+    if String.starts_with?(url, @site),
+      do: Site.request(fn -> perform(url, options) end),
+      else: perform(url, options)
+  end
+
+  defp perform(url, options) do
     {referer, options} = Keyword.pop(options, :referer, @site <> "/")
     referer_header = if referer, do: [{"referer", referer}], else: []
 

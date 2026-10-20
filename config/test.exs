@@ -23,3 +23,5 @@ config :phoenix,
 
 # Route the NHL scraper through Req.Test so specs stub slapstreams.com
 config :aviary, :nhl_req_options, plug: {Req.Test, Aviary.Nhl}
+config :aviary, Aviary.Nhl.Site, pause_ms: 0
+config :aviary, Aviary.Nhl.Schedule, refresh_on_its_own: false
