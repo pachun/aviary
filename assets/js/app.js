@@ -111,6 +111,19 @@ const HlsPlayer = {
     video.addEventListener("pause", reportProgress)
     video.addEventListener("ended", reportProgress)
 
+    // A tab left paused while another device carried on picks up from
+    // the household's latest position: when it comes back into view
+    // the server compares and answers with a seek if it is ahead.
+    this.onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        this.pushEvent("resync_position", {position: video.currentTime})
+      }
+    }
+    document.addEventListener("visibilitychange", this.onVisibilityChange)
+    this.handleEvent("seek", ({position}) => {
+      try { video.currentTime = position } catch (e) { /* ignore */ }
+    })
+
     // Persist subtitle on/off changes to the viewer's cross-device
     // default. The native CC menu flips a TextTrack's mode to "showing"
     // / "disabled"; we push whether any track is showing, deduped so
@@ -203,6 +216,7 @@ const HlsPlayer = {
 
   destroyed() {
     if (this.progressInterval) clearInterval(this.progressInterval)
+    document.removeEventListener("visibilitychange", this.onVisibilityChange)
     if (this.controlsHideTimer) clearTimeout(this.controlsHideTimer)
     if (this.hls) this.hls.destroy()
     if (this.referrerMeta) this.referrerMeta.remove()
@@ -422,6 +436,24 @@ const AutoFocus = {
   },
 }
 
+// RefreshWhenVisible — a page left open in a background tab shows
+// whatever the household had watched when it loaded. Each time the
+// tab comes back into view the LiveView re-reads watch state so the
+// resume label, Continue Watching, and the season folds match what
+// happened on other devices meanwhile.
+const RefreshWhenVisible = {
+  mounted() {
+    this.onVisibilityChange = () => {
+      if (document.visibilityState === "visible") this.pushEvent("page_visible", {})
+    }
+    document.addEventListener("visibilitychange", this.onVisibilityChange)
+  },
+
+  destroyed() {
+    document.removeEventListener("visibilitychange", this.onVisibilityChange)
+  },
+}
+
 // AutoDismissFlash — after the flash mounts, wait long enough for the
 // user to read it (info: 4s, error: 6s — errors warrant more time)
 // and then fire the flash card's own phx-click. That click is already
@@ -586,7 +618,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, HlsPlayer, Marquee, AutoFocus, MobileTopBar, AutoDismissFlash},
+  hooks: {...colocatedHooks, HlsPlayer, Marquee, AutoFocus, MobileTopBar, AutoDismissFlash, RefreshWhenVisible},
 })
 
 // Show progress bar on live navigation and form submits

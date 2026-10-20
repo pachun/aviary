@@ -628,6 +628,19 @@ defmodule Aviary.Catalog do
 
   defp resume_seconds(_), do: nil
 
+  @doc """
+  Where this item resumes from right now, read straight from Jellyfin
+  rather than from any cached or in-memory copy of the item. Players
+  ask this at the moment playback starts so a position saved from
+  another device since the detail page loaded is the one they honor.
+  """
+  def resume_point(item_id, auth) do
+    case Aviary.Jellyfin.get_item(item_id, auth) do
+      {:ok, item} -> resume_seconds(item["UserData"])
+      :error -> nil
+    end
+  end
+
   defp to_show_detail(item) do
     %{
       id: item["Id"],

@@ -82,6 +82,35 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
+  defp refresh_watch_state(socket) do
+    user = socket.assigns.current_user
+    show = socket.assigns.show
+    Aviary.Cache.invalidate({:jellyfin_list_episodes, show.id, user.id})
+
+    case Aviary.Catalog.get_show(show.id, user) do
+      {:ok, refreshed} ->
+        socket
+        |> assign(:show, refreshed)
+        |> collapse_seasons_behind_moved_mark(show, refreshed)
+
+      _ ->
+        socket
+    end
+  end
+
+  defp collapse_seasons_behind_moved_mark(socket, before, refreshed) do
+    if mark_season(before) == mark_season(refreshed),
+      do: socket,
+      else: assign(socket, :collapsed_seasons, initial_collapsed_seasons(refreshed))
+  end
+
+  defp mark_season(show) do
+    case watch_mark(show) do
+      %{season: season} -> season
+      _ -> nil
+    end
+  end
+
   # Side-effects that piggyback on the Sonarr poll to keep the chip
   # feeling live:
   #
@@ -546,6 +575,30 @@ defmodule AviaryWeb.ShowsDetailLive do
     end
   end
 
+  # The tab came back into view: pick up whatever the household watched
+  # elsewhere in the meantime, and if a season's worth of progress
+  # moved the watch mark, fold the seasons now behind it.
+  def handle_event("page_visible", _, socket) do
+    {:noreply, refresh_watch_state(socket)}
+  end
+
+  def handle_event("resync_position", %{"position" => position}, socket)
+      when is_number(position) do
+    case socket.assigns.playing_item do
+      nil ->
+        {:noreply, socket}
+
+      item ->
+        {:noreply,
+         VideoPlayer.catch_up_to_saved_position(
+           socket,
+           item.id,
+           position,
+           socket.assigns.current_user
+         )}
+    end
+  end
+
   def handle_event("report_progress", %{"position" => position} = payload, socket) do
     item = socket.assigns.playing_item
 
@@ -712,7 +765,7 @@ defmodule AviaryWeb.ShowsDetailLive do
       mobile_back_to={@kicker.path}
       mobile_back_label={@kicker.label}
     >
-      <article>
+      <article id="show-detail" phx-hook="RefreshWhenVisible">
         <div class={[
           "grid grid-cols-1 md:grid-cols-[260px_1fr] gap-8 pt-4"
         ]}>
@@ -1503,10 +1556,17 @@ defmodule AviaryWeb.ShowsDetailLive do
 
     socket
     |> assign(:in_library, true)
-    |> assign(:playing_item, item)
+    |> assign(:playing_item, at_saved_position(item, user))
     |> assign(:playing_segments, Aviary.Jellyfin.segments(item.id, user))
     |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(item.id, user))
     |> assign(:playing_audio_index, audio_index)
+  end
+
+  # The detail page's copy of an episode is as old as the page; the
+  # position another device saved since then is what the player
+  # should start from.
+  defp at_saved_position(episode, user) do
+    %{episode | resume_seconds: Aviary.Catalog.resume_point(episode.id, user)}
   end
 
   defp pick_continue_episode(show) do

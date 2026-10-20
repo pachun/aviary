@@ -78,6 +78,10 @@ defmodule AviaryWeb.HomeLive do
   # titles. A live game has neither to remember, so both are accepted and
   # ignored rather than crashing the page mid-game.
   def handle_event("report_progress", _, socket), do: {:noreply, socket}
+  def handle_event("resync_position", _, socket), do: {:noreply, socket}
+
+  def handle_event("page_visible", _, socket),
+    do: {:noreply, refresh_continue_watching(socket)}
   def handle_event("subtitles_changed", _, socket), do: {:noreply, socket}
 
   defp live_playlist_path(game_id, feed_id, token, query \\ []) do
@@ -121,7 +125,7 @@ defmodule AviaryWeb.HomeLive do
         via :not(:first-child), so a hidden first section doesn't
         leave a phantom gap.
       --%>
-      <div class="pt-2 space-y-12">
+      <div id="home" phx-hook="RefreshWhenVisible" class="pt-2 space-y-12">
         <%!--
           Continue Watching only renders when populated. Empty section
           with a "nothing in progress" message was noise; same pattern

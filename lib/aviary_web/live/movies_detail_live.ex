@@ -251,7 +251,7 @@ defmodule AviaryWeb.MoviesDetailLive do
     {:noreply,
      socket
      |> assign(:in_library, true)
-     |> assign(:playing_item, movie)
+     |> assign(:playing_item, %{movie | resume_seconds: Aviary.Catalog.resume_point(movie.id, user)})
      |> assign(:playing_segments, Aviary.Jellyfin.segments(movie.id, user))
      |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(movie.id, user))
      |> assign(:playing_audio_index, audio_index)}
@@ -405,6 +405,33 @@ defmodule AviaryWeb.MoviesDetailLive do
   # resume_seconds so if the user closes the player and the page
   # rerenders, the Resume button reflects the latest position without
   # a roundtrip back to Jellyfin.
+  def handle_event("page_visible", _, socket) do
+    movie = socket.assigns.movie
+    user = socket.assigns.current_user
+
+    case Aviary.Catalog.get_movie(movie.tmdb_id || movie.id, user) do
+      {:ok, refreshed} -> {:noreply, assign(socket, :movie, refreshed)}
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("resync_position", %{"position" => position}, socket)
+      when is_number(position) do
+    case socket.assigns.playing_item do
+      nil ->
+        {:noreply, socket}
+
+      item ->
+        {:noreply,
+         VideoPlayer.catch_up_to_saved_position(
+           socket,
+           item.id,
+           position,
+           socket.assigns.current_user
+         )}
+    end
+  end
+
   def handle_event("report_progress", %{"position" => position} = payload, socket) do
     item = socket.assigns.playing_item
     user = socket.assigns.current_user
@@ -429,7 +456,7 @@ defmodule AviaryWeb.MoviesDetailLive do
       mobile_back_to={@kicker.path}
       mobile_back_label={@kicker.label}
     >
-      <article>
+      <article id="movie-detail" phx-hook="RefreshWhenVisible">
         <div class="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-8 pt-4">
           <%!--
             Poster only shows on tablet and up. On phone the 2:3 aspect

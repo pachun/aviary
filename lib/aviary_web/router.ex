@@ -107,6 +107,7 @@ defmodule AviaryWeb.Router do
     get "/nhl/logos/:team", NhlController, :logo
     get "/items/:id/playback", PlaybackController, :show
     get "/items/:id/hls.m3u8", PlaybackController, :manifest
+    get "/items/:id/progress", PlaybackController, :resume_point
     post "/items/:id/progress", PlaybackController, :progress
   end
 

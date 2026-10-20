@@ -7,7 +7,10 @@ defmodule AviaryWeb.API.PlaybackController do
   tracks. `progress` accepts periodic position reports and routes them
   through the same `Aviary.Jellyfin.report_progress/4` the LiveView
   player uses, so resume + Continue Watching stay consistent across
-  clients.
+  clients. `resume_point` reads the saved position back, fresh from
+  Jellyfin, and `show` carries the same value, so a player starts from
+  wherever the household last left the item, whichever device that
+  was on.
 
   Items are addressed by their raw Jellyfin id — the same id works for
   both episodes and movies.
@@ -21,6 +24,7 @@ defmodule AviaryWeb.API.PlaybackController do
 
     json(conn, %{
       streamUrl: "/api/v1/items/#{id}/hls.m3u8",
+      resumeSeconds: Aviary.Catalog.resume_point(id, user),
       intro: intro(Aviary.Jellyfin.segments(id, user)),
       audioTracks: Enum.map(audio, &audio_track/1),
       defaultAudioIndex: Aviary.Jellyfin.default_audio_index(audio),
@@ -146,6 +150,13 @@ defmodule AviaryWeb.API.PlaybackController do
   end
 
   defp parse_ticks(_), do: 0
+
+  # The saved position as Jellyfin has it now. A player that has been
+  # sitting paused or asleep compares this with where it stopped and
+  # jumps ahead when another device has carried on since.
+  def resume_point(conn, %{"id" => id}) do
+    json(conn, %{resumeSeconds: Aviary.Catalog.resume_point(id, conn.assigns.current_user)})
+  end
 
   def progress(conn, %{"id" => id, "position" => position})
       when is_number(position) do

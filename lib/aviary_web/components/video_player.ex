@@ -7,6 +7,21 @@ defmodule AviaryWeb.Components.VideoPlayer do
   """
   use Phoenix.Component
 
+  # A player that sat paused or asleep while another device carried on
+  # jumps ahead to the saved position once its tab is back in view. A
+  # gap smaller than one progress report is the player's own drift.
+  @catch_up_threshold_seconds 15
+
+  def catch_up_to_saved_position(socket, item_id, local_position, user) do
+    case Aviary.Catalog.resume_point(item_id, user) do
+      saved when is_number(saved) and saved > local_position + @catch_up_threshold_seconds ->
+        Phoenix.LiveView.push_event(socket, "seek", %{position: saved})
+
+      _ ->
+        socket
+    end
+  end
+
   attr :item, :map, required: true, doc: "%{id, resume_seconds}"
   attr :current_user, :map, required: true
   attr :title, :string, required: true, doc: "label for the iframe title attr"
