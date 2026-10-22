@@ -72,10 +72,27 @@ defmodule AviaryWeb.SonarrWebhookController do
     :ok
   end
 
+  # "Download" is Sonarr's name for an import: the file is in the
+  # library folder now, so Jellyfin should list it now.
+  defp handle_event(%{"eventType" => "Download"} = params) do
+    tmdb_id = params |> get_in(["series", "tmdbId"]) |> tmdb_id_or_nil()
+    Logger.info("sonarr_webhook import of #{describe_import(params)}")
+
+    Task.start(fn ->
+      try do
+        Aviary.ImportNudge.episode_landed(tmdb_id)
+      rescue
+        e -> Logger.warning("sonarr_webhook import nudge raised: #{inspect(e)}")
+      end
+    end)
+
+    :ok
+  end
+
   defp handle_event(%{"eventType" => evt}) do
-    # Other event types (Grab, Download, Rename, etc.) are not
-    # actionable here but logged at debug so we can see what's
-    # flowing in if we want to add handlers later.
+    # Other event types (Grab, Rename, etc.) are not actionable here
+    # but logged at debug so we can see what's flowing in if we want
+    # to add handlers later.
     Logger.debug("sonarr_webhook eventType=#{evt} (no handler)")
     :ok
   end
@@ -83,6 +100,22 @@ defmodule AviaryWeb.SonarrWebhookController do
   defp handle_event(other) do
     Logger.debug("sonarr_webhook malformed payload: #{inspect(other) |> String.slice(0, 200)}")
     :ok
+  end
+
+  defp tmdb_id_or_nil(id) when is_integer(id) and id > 0, do: Integer.to_string(id)
+  defp tmdb_id_or_nil(id) when is_binary(id) and id not in ["", "0"], do: id
+  defp tmdb_id_or_nil(_), do: nil
+
+  defp describe_import(params) do
+    title = get_in(params, ["series", "title"]) || "unknown series"
+
+    episodes =
+      params
+      |> Map.get("episodes", [])
+      |> Enum.map(&"S#{&1["seasonNumber"]}E#{&1["episodeNumber"]}")
+      |> Enum.join(", ")
+
+    "#{title} #{episodes}"
   end
 
   defp authorized?(conn) do

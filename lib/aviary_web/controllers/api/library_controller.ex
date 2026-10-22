@@ -41,6 +41,7 @@ defmodule AviaryWeb.API.LibraryController do
 
     case Aviary.Sonarr.watch_episode(tmdb_id, season, episode) do
       {:ok, _} ->
+        Aviary.SkipTheLine.for_episode(tmdb_id, season, episode)
         Aviary.SeriesFollowup.after_episode_imports(tmdb_id, season, episode)
         json(conn, %{ok: true})
 
@@ -66,6 +67,7 @@ defmodule AviaryWeb.API.LibraryController do
       {:ok, season, episode} ->
         case Aviary.Sonarr.watch_episode(tmdb_id, season, episode) do
           {:ok, _} ->
+            Aviary.SkipTheLine.for_episode(tmdb_id, season, episode)
             Aviary.SeriesFollowup.after_episode_imports(tmdb_id, season, episode)
             json(conn, %{ok: true})
 

@@ -1704,6 +1704,7 @@ defmodule AviaryWeb.ShowsDetailLive do
           # pipe without making the user click again for the rest.
           # See Aviary.SeriesFollowup for the polling/timeout shape.
           result = Aviary.Sonarr.watch_episode(show.tmdb_id, season, episode)
+          Aviary.SkipTheLine.for_episode(show.tmdb_id, season, episode)
           Aviary.SeriesFollowup.after_episode_imports(show.tmdb_id, season, episode)
           {result, "Grabbing S#{season} E#{episode} of #{show.title}…"}
       end

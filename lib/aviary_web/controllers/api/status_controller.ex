@@ -59,11 +59,13 @@ defmodule AviaryWeb.API.StatusController do
 
   # Same side-effects the web detail page fires while a download is in
   # flight, so the native client's Importing → Play transition doesn't
-  # wait on Jellyfin's scheduled scan. A live download nudges the
-  # downloader to refresh its queue; an import hands off to
-  # Aviary.ImportNudge, which paces its own requests to Jellyfin.
+  # wait on Jellyfin's scheduled scan. A download in flight or finished
+  # nudges the downloader to look at its queue again, so a file the
+  # download client just finished is imported within seconds rather
+  # than on the downloader's own once-a-minute check; an import hands
+  # off to Aviary.ImportNudge, which paces its own requests to Jellyfin.
   defp nudge_downloads(downloader, kinds, nudge_jellyfin) do
-    if "downloading" in kinds do
+    if "downloading" in kinds or "imported" in kinds do
       throttle({:dl_refresh, downloader}, 5_000, fn -> refresh_downloader(downloader) end)
     end
 

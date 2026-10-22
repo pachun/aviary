@@ -182,6 +182,22 @@ defmodule Aviary.Sonarr do
   end
 
   @doc """
+  What has happened to one episode, newest first: grabs (with the
+  download client's id for the job), failures, imports.
+  """
+  def episode_history(episode_id) do
+    case get("/history",
+           episodeId: episode_id,
+           pageSize: 20,
+           sortKey: "date",
+           sortDirection: "descending"
+         ) do
+      {:ok, %{"records" => records}} when is_list(records) -> {:ok, records}
+      _ -> :error
+    end
+  end
+
+  @doc """
   Fires an EpisodeSearch command for one or more episode ids. Public
   because `Aviary.Reconcile` re-uses it to retry grabs that failed
   on Sonarr's side without aviary having issued them in the first
@@ -651,6 +667,7 @@ defmodule Aviary.Sonarr do
       ]
 
       opts = if body, do: Keyword.put(opts, :json, body), else: opts
+      opts = Keyword.merge(opts, Application.get_env(:aviary, :sonarr_req_options, []))
 
       case Req.request([method: method, url: url] ++ opts) do
         {:ok, %Req.Response{status: status, body: response_body}} when status in 200..299 ->

@@ -25,3 +25,10 @@ config :phoenix,
 config :aviary, :nhl_req_options, plug: {Req.Test, Aviary.Nhl}
 config :aviary, Aviary.Nhl.Site, pause_ms: 0
 config :aviary, Aviary.Nhl.Schedule, refresh_on_its_own: false
+
+# The downloaders and Jellyfin are stubbed the same way; their addresses
+# are set in test/test_helper.exs, after config/runtime.exs has run
+config :aviary,
+  sonarr_req_options: [plug: {Req.Test, Aviary.Sonarr}],
+  sabnzbd_req_options: [plug: {Req.Test, Aviary.Sabnzbd}],
+  jellyfin_req_options: [plug: {Req.Test, Aviary.Jellyfin}]

@@ -425,6 +425,34 @@ defmodule Aviary.Jellyfin do
   end
 
   @doc """
+  Aviary's own identity for Jellyfin calls made on nobody's behalf,
+  such as reacting to an import, or nil when no API key is configured.
+  """
+  def server_auth do
+    case Application.get_env(:aviary, :jellyfin_api_key) do
+      key when is_binary(key) and key != "" -> %{id: :server, token: key}
+      _ -> nil
+    end
+  end
+
+  @doc """
+  The Jellyfin series id for a TMDB id as of this moment, asked of
+  Jellyfin directly rather than the catalog cache, or nil when Jellyfin
+  doesn't list the series yet.
+  """
+  def find_series_by_tmdb(tmdb_id, auth) do
+    get!(@api_path, auth, IncludeItemTypes: "Series", Recursive: true, Fields: "ProviderIds")
+    |> Map.get("Items", [])
+    |> Enum.find(&(get_in(&1, ["ProviderIds", "Tmdb"]) == tmdb_id))
+    |> case do
+      %{"Id" => id} -> id
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  @doc """
   Asks Jellyfin to rescan all libraries right now via
   `/Library/Refresh`. Used when Sonarr has just imported a new
   episode but Jellyfin hasn't seen it yet — without the nudge,
@@ -450,10 +478,13 @@ defmodule Aviary.Jellyfin do
     if library_scan_running?(auth) do
       :already_running
     else
-      case Req.post(base_url() <> "/Library/Refresh",
-             headers: [{"x-emby-token", auth.token}],
-             receive_timeout: 5_000,
-             retry: false
+      case Req.post(
+             base_url() <> "/Library/Refresh",
+             with_test_options(
+               headers: [{"x-emby-token", auth.token}],
+               receive_timeout: 5_000,
+               retry: false
+             )
            ) do
         {:ok, %Req.Response{status: status}} when status in 200..299 -> :ok
         _ -> :error
@@ -467,10 +498,13 @@ defmodule Aviary.Jellyfin do
   # a scan while one is running, so a caller polling faster than a scan
   # takes would never let one finish.
   defp library_scan_running?(auth) do
-    case Req.get(base_url() <> "/ScheduledTasks",
-           headers: [{"x-emby-token", auth.token}],
-           receive_timeout: 5_000,
-           retry: false
+    case Req.get(
+           base_url() <> "/ScheduledTasks",
+           with_test_options(
+             headers: [{"x-emby-token", auth.token}],
+             receive_timeout: 5_000,
+             retry: false
+           )
          ) do
       {:ok, %Req.Response{status: 200, body: tasks}} when is_list(tasks) ->
         Enum.any?(tasks, &(&1["Key"] == "RefreshLibrary" and &1["State"] != "Idle"))
@@ -490,17 +524,20 @@ defmodule Aviary.Jellyfin do
   they're saved again.
   """
   def refresh_series(series_id, auth) do
-    Req.post(base_url() <> "/Items/" <> series_id <> "/Refresh",
-      params: [
-        Recursive: true,
-        MetadataRefreshMode: "Default",
-        ImageRefreshMode: "Default",
-        ReplaceAllMetadata: false,
-        ReplaceAllImages: false
-      ],
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 10_000,
-      retry: false
+    Req.post(
+      base_url() <> "/Items/" <> series_id <> "/Refresh",
+      with_test_options(
+        params: [
+          Recursive: true,
+          MetadataRefreshMode: "Default",
+          ImageRefreshMode: "Default",
+          ReplaceAllMetadata: false,
+          ReplaceAllImages: false
+        ],
+        headers: [{"x-emby-token", auth.token}],
+        receive_timeout: 10_000,
+        retry: false
+      )
     )
 
     :ok
@@ -1000,9 +1037,7 @@ defmodule Aviary.Jellyfin do
       (non_desc != [] && non_desc) || streams
 
     chosen
-    |> Enum.sort_by(
-      fn s -> {-s.channels, if(s.default, do: 0, else: 1), s.index} end
-    )
+    |> Enum.sort_by(fn s -> {-s.channels, if(s.default, do: 0, else: 1), s.index} end)
     |> List.first()
     |> case do
       nil -> nil
@@ -1316,11 +1351,18 @@ defmodule Aviary.Jellyfin do
   ## Internals
 
   defp get!(path, auth, params) do
-    Req.get!(base_url() <> path,
-      params: params,
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 15_000
+    Req.get!(
+      base_url() <> path,
+      with_test_options(
+        params: params,
+        headers: [{"x-emby-token", auth.token}],
+        receive_timeout: 15_000
+      )
     ).body
+  end
+
+  defp with_test_options(options) do
+    Keyword.merge(options, Application.get_env(:aviary, :jellyfin_req_options, []))
   end
 
   defp content_type(headers) do

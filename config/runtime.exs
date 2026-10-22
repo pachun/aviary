@@ -76,6 +76,12 @@ config :aviary,
   # Watch buttons fall through to "not in your library yet" flashes.
   sonarr_url: System.get_env("SONARR_URL"),
   sonarr_api_key: System.get_env("SONARR_API_KEY"),
+  # SABnzbd is the Usenet client Sonarr hands grabs to. Aviary talks to
+  # it for one thing: moving the episode someone is waiting on to the
+  # front of its queue. Optional; without it grabs download in the
+  # order Sonarr sent them.
+  sabnzbd_url: System.get_env("SABNZBD_URL"),
+  sabnzbd_api_key: System.get_env("SABNZBD_API_KEY"),
   # Radarr is Sonarr's movie sibling — drives the movie detail page's
   # Watch button and progress chip the same way Sonarr drives shows.
   # Optional; when unset, movies not in the library render the
