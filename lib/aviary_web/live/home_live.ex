@@ -53,15 +53,14 @@ defmodule AviaryWeb.HomeLive do
     watching_game =
       with %{feeds: feeds} = game <- Enum.find(socket.assigns.games, &(&1.id == game_id)),
            %{} = feed <- Enum.find(feeds, &(&1.id == feed_id)) do
+        playlist = live_playlist_path(game.id, feed.id, socket.assigns.current_user.token)
+
         %{
           id: "nhl-#{game.id}-#{feed.id}",
           resume_seconds: 0,
           title: "#{game.away_team.name} at #{game.home_team.name} (#{feed.label})",
-          src: live_playlist_path(game.id, feed.id, socket.assigns.current_user.token),
-          native_src:
-            live_playlist_path(game.id, feed.id, socket.assigns.current_user.token,
-              segments: "relayed"
-            )
+          src: playlist,
+          native_src: playlist
         }
       else
         _ -> nil
@@ -82,11 +81,12 @@ defmodule AviaryWeb.HomeLive do
 
   def handle_event("page_visible", _, socket),
     do: {:noreply, refresh_continue_watching(socket)}
+
   def handle_event("subtitles_changed", _, socket), do: {:noreply, socket}
 
-  defp live_playlist_path(game_id, feed_id, token, query \\ []) do
+  defp live_playlist_path(game_id, feed_id, token) do
     "/api/v1/nhl/games/#{game_id}/feeds/#{feed_id}/playlist.m3u8?" <>
-      URI.encode_query([token: token] ++ query)
+      URI.encode_query(token: token)
   end
 
   # After a dismiss the user's home state may have changed enough to
@@ -149,27 +149,27 @@ defmodule AviaryWeb.HomeLive do
           same feed as a card shelf; see AviaryWeb.API.HomeController.)
         --%>
         <section :if={@upcoming != []}>
-        <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
-          Upcoming
-        </h2>
-        <ul class="border-t border-rule">
-          <li :for={r <- @upcoming}>
-            <.link
-              navigate={"/shows/#{r.series_id}?from=home"}
-              class="grid grid-cols-[140px_1fr_auto] items-baseline gap-4 py-3 px-2 border-b border-rule hover:bg-rule/30 transition-colors"
-            >
-              <span class="font-sans uppercase tracking-[0.18em] text-[0.7rem] text-muted">
-                {waiting_phrase(r.air_date)}
-              </span>
-              <span
-                class="font-display text-ink text-lg leading-tight truncate"
-                style="font-variation-settings: 'opsz' 14;"
+          <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
+            Upcoming
+          </h2>
+          <ul class="border-t border-rule">
+            <li :for={r <- @upcoming}>
+              <.link
+                navigate={"/shows/#{r.series_id}?from=home"}
+                class="grid grid-cols-[140px_1fr_auto] items-baseline gap-4 py-3 px-2 border-b border-rule hover:bg-rule/30 transition-colors"
               >
-                {r.series_name}
-              </span>
-              <span class="font-sans uppercase tracking-[0.18em] text-[0.7rem] text-muted whitespace-nowrap">
-                S{r.season} · E{r.episode}
-                <%!--
+                <span class="font-sans uppercase tracking-[0.18em] text-[0.7rem] text-muted">
+                  {waiting_phrase(r.air_date)}
+                </span>
+                <span
+                  class="font-display text-ink text-lg leading-tight truncate"
+                  style="font-variation-settings: 'opsz' 14;"
+                >
+                  {r.series_name}
+                </span>
+                <span class="font-sans uppercase tracking-[0.18em] text-[0.7rem] text-muted whitespace-nowrap">
+                  S{r.season} · E{r.episode}
+                  <%!--
                   Hidden below sm (phones in portrait, < 640px) because
                   the row is grid-cols-[140px_1fr_auto] and the "Premieres
                   in N days" left column plus this "New season" tag
@@ -177,13 +177,13 @@ defmodule AviaryWeb.HomeLive do
                   truncation. Tag returns on tablet portrait and up
                   where there's room.
                 --%>
-                <span :if={r.kind == :new_season} class="hidden sm:inline text-oxblood ml-2">
-                  New season
+                  <span :if={r.kind == :new_season} class="hidden sm:inline text-oxblood ml-2">
+                    New season
+                  </span>
                 </span>
-              </span>
-            </.link>
-          </li>
-        </ul>
+              </.link>
+            </li>
+          </ul>
         </section>
 
         <section :if={@games != []}>

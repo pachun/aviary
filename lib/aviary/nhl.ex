@@ -9,9 +9,10 @@ defmodule Aviary.Nhl do
   playlist on a second host, whose segment paths are relative. So aviary
   serves the playlist itself: it resolves the media playlist URL once,
   keeps it while it works, rewrites the segment paths to absolute, and
-  resolves again when the upstream stops answering. The Apple TV reloads
-  the playlist from aviary every few seconds and fetches video straight
-  from the upstream host.
+  resolves again when the upstream stops answering. Players reload the
+  playlist from aviary every few seconds and fetch the video through
+  aviary too (`segment/3`), so nothing in the household but aviary ever
+  has to reach the stream host.
 
   Only `Aviary.Nhl.Schedule` walks the site, and every request to it
   passes through `Aviary.Nhl.Site` one at a time. Viewers read the
@@ -151,11 +152,11 @@ defmodule Aviary.Nhl do
 
   @doc """
   Fetches one media file (a segment or a key) of a feed on the viewer's
-  behalf, for players that can't reach the media host themselves: iOS
-  Safari's native player sends the page as Referer, which the host
-  rejects. Only URLs on the feed's own media host are relayed, so this
-  can't be used as a general proxy. `{:ok, %{body, content_type}}` or
-  `:error`.
+  behalf. Every player goes through here: a household router may block
+  the media host's name, and iOS Safari's native player sends the page
+  as Referer, which the host rejects. Only URLs on the feed's own media
+  host are relayed, so this can't be used as a general proxy.
+  `{:ok, %{body, content_type}}` or `:error`.
   """
   def segment(game_id, feed_id, url) do
     with true <- known_feed?(game_id, feed_id),

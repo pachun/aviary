@@ -7,6 +7,12 @@ defmodule AviaryWeb.API.NhlController do
   back the playlist path. `playlist` is what AVPlayer then reloads every
   few seconds; like the subtitle proxy it carries the token in the URL
   because AVPlayer doesn't forward Authorization to HLS sub-requests.
+
+  Every segment and key in that playlist points back at `segment`, so
+  the video reaches the player through aviary and the player never has
+  to reach the stream host itself. A household router that blocks the
+  host's name (eero's filtering did, on 2026-10-22) then blocks nothing,
+  and aviary resolves the name through public DNS.
   """
   use AviaryWeb, :controller
 
@@ -30,11 +36,8 @@ defmodule AviaryWeb.API.NhlController do
     end
   end
 
-  def playlist(conn, %{"id" => game_id, "feed" => feed_id, "token" => token} = params) do
-    rewrite_media_url =
-      if params["segments"] == "relayed",
-        do: &segment_path(game_id, feed_id, token, &1),
-        else: &Function.identity/1
+  def playlist(conn, %{"id" => game_id, "feed" => feed_id, "token" => token}) do
+    rewrite_media_url = &segment_path(game_id, feed_id, token, &1)
 
     with true <- Aviary.Auth.token_valid?(token),
          {:ok, playlist} <- Aviary.Nhl.playlist(game_id, feed_id, rewrite_media_url) do
