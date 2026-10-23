@@ -10,8 +10,10 @@ defmodule Aviary.Discover do
   Thrones, The Sopranos and Sesame Street forever. Talk, news and
   reality shows air every week of the year, so they never count as
   news; they wait in the second tier with the rest of the all-time
-  popular list, minus anything already shown. Shows made for little
-  kids are left out of the row altogether.
+  popular list, minus anything already shown. So does anything almost
+  nobody on TMDB has looked at: a stray entry a contributor pinned to
+  the network is not something the service is pushing. Shows made for
+  little kids are left out of the row altogether.
 
   Items expose the `thumbnail_url` field (a direct TMDB CDN URL) so
   the marquee can render them without going through aviary's image
@@ -44,6 +46,8 @@ defmodule Aviary.Discover do
   @upcoming_episode_days 30
   @new_show_days 90
   @never_featured_genres ["Talk", "News", "Reality"]
+  @never_featured_types ["Talk Show", "News", "Reality"]
+  @least_popularity_to_feature 10
   @little_kids_genre "Kids"
   @detail_lookups_at_once 8
   @detail_lookup_timeout_ms 10_000
@@ -95,7 +99,7 @@ defmodule Aviary.Discover do
   @doc """
   Orders candidates for the row: shows airing now by popularity, then
   everything else by popularity. A candidate is
-  `%{show:, popularity:, genres:, last_aired:, next_airs:}`.
+  `%{show:, popularity:, type:, genres:, last_aired:, next_airs:}`.
   """
   def rank(candidates, today) do
     {airing_now, catalog} = Enum.split_with(candidates, &airing_now?(&1, today))
@@ -129,6 +133,7 @@ defmodule Aviary.Discover do
     %{
       show: show,
       popularity: show["popularity"] || 0,
+      type: details["type"],
       genres: genre_names(details),
       last_aired: air_date(details["lastEpisodeToAir"]),
       next_airs: air_date(details["nextEpisodeToAir"])
@@ -149,10 +154,16 @@ defmodule Aviary.Discover do
   end
 
   defp airing_now?(candidate, today) do
-    featured_kind?(candidate.genres) and has_episode_around_now?(candidate, today)
+    featured_kind?(candidate) and noticed?(candidate) and
+      has_episode_around_now?(candidate, today)
   end
 
-  defp featured_kind?(genres), do: not Enum.any?(genres, &(&1 in @never_featured_genres))
+  defp featured_kind?(%{type: type, genres: genres}) do
+    type not in @never_featured_types and
+      not Enum.any?(genres, &(&1 in @never_featured_genres))
+  end
+
+  defp noticed?(%{popularity: popularity}), do: popularity >= @least_popularity_to_feature
 
   defp for_little_kids?(%{genres: genres}), do: @little_kids_genre in genres
 

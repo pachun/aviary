@@ -106,6 +106,37 @@ defmodule Aviary.DiscoverTest do
              ]
     end
 
+    test "doesn't feature a show almost nobody has looked at" do
+      ranked =
+        Discover.rank(
+          [
+            candidate("Zola & Friend", 0.15, last_aired: Date.add(@today, -5)),
+            candidate("Silo", 126, last_aired: Date.add(@today, -50)),
+            candidate("Nocturne", 18, next_airs: Date.add(@today, 6))
+          ],
+          @today
+        )
+
+      assert titles(ranked) == ["Nocturne", "Silo", "Zola & Friend"]
+    end
+
+    test "reads a reality show from TMDB's type when its genres say documentary" do
+      ranked =
+        Discover.rank(
+          [
+            candidate("Awkwafina: The Unlikely Cook", 60,
+              next_airs: Date.add(@today, 14),
+              type: "Reality",
+              genres: ["Documentary"]
+            ),
+            candidate("Stick", 30, next_airs: Date.add(@today, 11), type: "Scripted")
+          ],
+          @today
+        )
+
+      assert titles(ranked) == ["Stick", "Awkwafina: The Unlikely Cook"]
+    end
+
     test "leaves a far-off premiere in the catalog tier" do
       ranked =
         Discover.rank(
@@ -180,6 +211,7 @@ defmodule Aviary.DiscoverTest do
     %{
       show: show(name, name, popularity),
       popularity: popularity,
+      type: traits[:type] || "Scripted",
       genres: traits[:genres] || [],
       last_aired: traits[:last_aired],
       next_airs: traits[:next_airs]
