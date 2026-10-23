@@ -61,6 +61,51 @@ defmodule Aviary.DiscoverTest do
       assert titles(ranked) == ["Only Murders in the Building", "The Bear"]
     end
 
+    test "sends a season that ended over a month ago back to the catalog" do
+      ranked =
+        Discover.rank(
+          [
+            candidate("Reacher", 344, last_aired: Date.add(@today, -36)),
+            candidate("Carrie", 227, last_aired: Date.add(@today, -15))
+          ],
+          @today
+        )
+
+      assert titles(ranked) == ["Carrie", "Reacher"]
+    end
+
+    test "never features talk, news or reality shows, however often they air" do
+      ranked =
+        Discover.rank(
+          [
+            candidate("Real Time with Bill Maher", 168,
+              last_aired: Date.add(@today, -1),
+              genres: ["Comedy", "Talk"]
+            ),
+            candidate("Last Week Tonight", 100,
+              next_airs: Date.add(@today, 3),
+              genres: ["Talk", "Comedy", "News"]
+            ),
+            candidate("WWE NXT", 98,
+              last_aired: Date.add(@today, -2),
+              genres: ["Action & Adventure", "Drama", "Reality"]
+            ),
+            candidate("Lanterns", 92,
+              last_aired: Date.add(@today, -4),
+              genres: ["Drama", "Mystery"]
+            )
+          ],
+          @today
+        )
+
+      assert titles(ranked) == [
+               "Lanterns",
+               "Real Time with Bill Maher",
+               "Last Week Tonight",
+               "WWE NXT"
+             ]
+    end
+
     test "leaves a far-off premiere in the catalog tier" do
       ranked =
         Discover.rank(
@@ -113,12 +158,13 @@ defmodule Aviary.DiscoverTest do
     end
   end
 
-  defp candidate(name, popularity, dates \\ []) do
+  defp candidate(name, popularity, traits \\ []) do
     %{
       show: show(name, name, popularity),
       popularity: popularity,
-      last_aired: dates[:last_aired],
-      next_airs: dates[:next_airs]
+      genres: traits[:genres] || [],
+      last_aired: traits[:last_aired],
+      next_airs: traits[:next_airs]
     }
   end
 

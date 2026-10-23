@@ -4,11 +4,13 @@ defmodule Aviary.Discover do
   one per major streaming service, from Jellyseerr's TMDB proxy.
 
   A row leads with what the service is pushing right now: its shows
-  with an episode in the last two months or one due in the next month,
-  most popular first. TMDB's popularity score moves slowly and favors a
+  with an episode in the last month or one due in the next, most
+  popular first. TMDB's popularity score moves slowly and favors a
   network's deep catalog, so without that first tier HBO was Game of
-  Thrones, The Sopranos and Sesame Street forever. The rest of the row
-  is the all-time popular list, minus anything already shown.
+  Thrones, The Sopranos and Sesame Street forever. Talk, news and
+  reality shows air every week of the year, so they never count as
+  news; they wait in the second tier with the rest of the all-time
+  popular list, minus anything already shown.
 
   Items expose the `thumbnail_url` field (a direct TMDB CDN URL) so
   the marquee can render them without going through aviary's image
@@ -37,9 +39,10 @@ defmodule Aviary.Discover do
 
   @row_length 20
   @popular_pages 1..2
-  @recent_episode_days 60
+  @recent_episode_days 30
   @upcoming_episode_days 30
   @new_show_days 90
+  @never_featured_genres ["Talk", "News", "Reality"]
   @detail_lookups_at_once 8
   @detail_lookup_timeout_ms 10_000
 
@@ -89,7 +92,7 @@ defmodule Aviary.Discover do
   @doc """
   Orders candidates for the row: shows airing now by popularity, then
   everything else by popularity. A candidate is
-  `%{show:, popularity:, last_aired:, next_airs:}`.
+  `%{show:, popularity:, genres:, last_aired:, next_airs:}`.
   """
   def rank(candidates, today) do
     {airing_now, catalog} = Enum.split_with(candidates, &airing_now?(&1, today))
@@ -123,6 +126,7 @@ defmodule Aviary.Discover do
     %{
       show: show,
       popularity: show["popularity"] || 0,
+      genres: genre_names(details),
       last_aired: air_date(details["lastEpisodeToAir"]),
       next_airs: air_date(details["nextEpisodeToAir"])
     }
@@ -137,7 +141,17 @@ defmodule Aviary.Discover do
 
   defp air_date(_), do: nil
 
-  defp airing_now?(%{last_aired: last_aired, next_airs: next_airs}, today) do
+  defp genre_names(details) do
+    details["genres"] |> List.wrap() |> Enum.map(& &1["name"])
+  end
+
+  defp airing_now?(candidate, today) do
+    featured_kind?(candidate.genres) and has_episode_around_now?(candidate, today)
+  end
+
+  defp featured_kind?(genres), do: not Enum.any?(genres, &(&1 in @never_featured_genres))
+
+  defp has_episode_around_now?(%{last_aired: last_aired, next_airs: next_airs}, today) do
     aired_recently?(last_aired, today) or airs_soon?(next_airs, today)
   end
 
