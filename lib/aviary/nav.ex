@@ -5,9 +5,10 @@ defmodule Aviary.Nav do
 
   Discover and Search are always visible — both are entry points
   that work even for a brand-new user with nothing in their library.
-  Home, Shows, and Movies are conditional on whether their sections
-  would actually have anything to render; an empty tab is worse than
-  no tab.
+  Home, Shows, Movies, and NHL are conditional on whether their
+  sections would actually have anything to render; an empty tab is
+  worse than no tab. NHL shows on game days and is gone the rest of the
+  year.
 
   All four underlying fetches happen in parallel via Task.await_many,
   so the wall-clock is bounded by the slowest single one (typically
@@ -50,9 +51,10 @@ defmodule Aviary.Nav do
     %{
       discover: true,
       search: true,
-      home: home_items != [] or upcoming != [] or recs != [] or games != [],
+      home: home_items != [] or upcoming != [] or recs != [],
       shows: shows != [],
-      movies: movies != []
+      movies: movies != [],
+      nhl: games != []
     }
   end
 
@@ -63,6 +65,7 @@ defmodule Aviary.Nav do
   def landing_path(%{home: true}), do: "/home"
   def landing_path(%{shows: true}), do: "/library?type=shows"
   def landing_path(%{movies: true}), do: "/library?type=movies"
+  def landing_path(%{nhl: true}), do: "/nhl"
   def landing_path(_), do: "/discover"
 
   @doc """

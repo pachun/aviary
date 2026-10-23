@@ -91,6 +91,22 @@ defmodule Aviary.NhlTest do
              ]
     end
 
+    test "reads the schedule's clock times as this evening" do
+      stub_site(%{"/" => {200, schedule_dated(Aviary.LocalTime.today())}})
+      walk_site()
+
+      [%{time: "6:30", starts_at: starts_at} | _] = Nhl.games()
+
+      {local_date, {hour, minute, _second}} =
+        starts_at
+        |> DateTime.to_naive()
+        |> NaiveDateTime.to_erl()
+        |> :calendar.universal_time_to_local_time()
+
+      assert Date.from_erl!(local_date) == Aviary.LocalTime.today()
+      assert {hour, minute} == {18, 30}
+    end
+
     test "leaves out games scheduled for another day" do
       stub_site(%{"/" => {200, schedule_dated(Date.add(Aviary.LocalTime.today(), 1))}})
       walk_site()

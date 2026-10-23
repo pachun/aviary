@@ -2,7 +2,6 @@ defmodule AviaryWeb.HomeLive do
   use AviaryWeb, :live_view
 
   alias AviaryWeb.Components.Marquee
-  alias AviaryWeb.Components.VideoPlayer
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
@@ -12,8 +11,6 @@ defmodule AviaryWeb.HomeLive do
        page_title: "Home",
        items: Aviary.Home.continue_watching(user),
        upcoming: Aviary.Upcoming.releases(user),
-       games: Aviary.Nhl.games(),
-       watching_game: nil,
        recommendations:
          Aviary.Recommendations.list_for_marquee(
            user,
@@ -49,45 +46,8 @@ defmodule AviaryWeb.HomeLive do
     {:noreply, refresh_continue_watching(socket)}
   end
 
-  def handle_event("watch_game", %{"game" => game_id, "feed" => feed_id}, socket) do
-    watching_game =
-      with %{feeds: feeds} = game <- Enum.find(socket.assigns.games, &(&1.id == game_id)),
-           %{} = feed <- Enum.find(feeds, &(&1.id == feed_id)) do
-        playlist = live_playlist_path(game.id, feed.id, socket.assigns.current_user.token)
-
-        %{
-          id: "nhl-#{game.id}-#{feed.id}",
-          resume_seconds: 0,
-          title: "#{game.away_team.name} at #{game.home_team.name} (#{feed.label})",
-          src: playlist,
-          native_src: playlist
-        }
-      else
-        _ -> nil
-      end
-
-    {:noreply, assign(socket, :watching_game, watching_game)}
-  end
-
-  def handle_event("close_player", _, socket) do
-    {:noreply, assign(socket, :watching_game, nil)}
-  end
-
-  # The player hook reports progress and subtitle toggles for library
-  # titles. A live game has neither to remember, so both are accepted and
-  # ignored rather than crashing the page mid-game.
-  def handle_event("report_progress", _, socket), do: {:noreply, socket}
-  def handle_event("resync_position", _, socket), do: {:noreply, socket}
-
   def handle_event("page_visible", _, socket),
     do: {:noreply, refresh_continue_watching(socket)}
-
-  def handle_event("subtitles_changed", _, socket), do: {:noreply, socket}
-
-  defp live_playlist_path(game_id, feed_id, token) do
-    "/api/v1/nhl/games/#{game_id}/feeds/#{feed_id}/playlist.m3u8?" <>
-      URI.encode_query(token: token)
-  end
 
   # After a dismiss the user's home state may have changed enough to
   # affect nav visibility (e.g., they just emptied Continue Watching
@@ -100,7 +60,6 @@ defmodule AviaryWeb.HomeLive do
     socket
     |> assign(:items, Aviary.Home.continue_watching(user))
     |> assign(:upcoming, Aviary.Upcoming.releases(user))
-    |> assign(:games, Aviary.Nhl.games())
     |> assign(
       :recommendations,
       Aviary.Recommendations.list_for_marquee(user, Aviary.Jellyfin.list_users(user))
@@ -186,40 +145,6 @@ defmodule AviaryWeb.HomeLive do
           </ul>
         </section>
 
-        <section :if={@games != []}>
-          <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
-            NHL Today
-          </h2>
-          <ul class="border-t border-rule">
-            <li
-              :for={game <- @games}
-              class="grid grid-cols-[140px_1fr_auto] items-baseline gap-4 py-3 px-2 border-b border-rule"
-            >
-              <span class="font-sans uppercase tracking-[0.18em] text-[0.7rem] text-muted">
-                {game.time}
-              </span>
-              <span
-                class="font-display text-ink text-lg leading-tight truncate"
-                style="font-variation-settings: 'opsz' 14;"
-              >
-                {game.away_team.name} <span class="text-muted">at</span> {game.home_team.name}
-              </span>
-              <span class="flex gap-3 font-sans uppercase tracking-[0.18em] text-[0.7rem] whitespace-nowrap">
-                <button
-                  :for={feed <- game.feeds}
-                  type="button"
-                  phx-click="watch_game"
-                  phx-value-game={game.id}
-                  phx-value-feed={feed.id}
-                  class="text-oxblood hover:underline cursor-pointer"
-                >
-                  {feed.label}
-                </button>
-              </span>
-            </li>
-          </ul>
-        </section>
-
         <%!--
           Family Recommended — items household members have sent the
           user that they haven't watched yet, haven't dismissed, AND
@@ -249,16 +174,6 @@ defmodule AviaryWeb.HomeLive do
           </Marquee.row>
         </section>
       </div>
-
-      <VideoPlayer.overlay
-        :if={@watching_game}
-        item={@watching_game}
-        src={@watching_game.src}
-        native_src={@watching_game.native_src}
-        referrer_policy="no-referrer"
-        current_user={@current_user}
-        title={@watching_game.title}
-      />
     </Layouts.app>
     """
   end

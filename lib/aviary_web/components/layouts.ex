@@ -60,16 +60,17 @@ defmodule AviaryWeb.Layouts do
 
   attr :current_section, :string,
     default: nil,
-    doc: "which top-level section is active — \"home\", \"discover\", \"search\", \"library\", or nil"
+    doc:
+      "which top-level section is active — \"home\", \"discover\", \"search\", \"library\", or nil"
 
   attr :current_user, :map,
     default: nil,
     doc: "currently signed-in user; surfaces as a chip in the masthead"
 
   attr :nav_visibility, :map,
-    default: %{discover: true, home: true, shows: true, movies: true, search: true},
+    default: %{discover: true, home: true, shows: true, movies: true, nhl: true, search: true},
     doc:
-      "Which top-level nav links to render — Discover and Search are always true; Home, Shows, and Movies hide when the user has no content for them, so a brand-new user sees only Discover and Search."
+      "Which top-level nav links to render — Discover and Search are always true; Home, Shows, Movies, and NHL hide when the user has no content for them, so a brand-new user sees only Discover and Search."
 
   attr :mobile_title, :string,
     default: nil,
@@ -78,11 +79,13 @@ defmodule AviaryWeb.Layouts do
 
   attr :mobile_back_to, :string,
     default: nil,
-    doc: "Optional back-link href for the mobile top-bar (renders a chevron-left to the left of the title). Omit on root pages like Settings."
+    doc:
+      "Optional back-link href for the mobile top-bar (renders a chevron-left to the left of the title). Omit on root pages like Settings."
 
   attr :mobile_back_label, :string,
     default: nil,
-    doc: "The DESTINATION name shown next to the chevron (e.g., \"Library\", \"Discover\"). Different from `mobile_title` (current page name) so the back button can't be mistaken for a self-link. iOS pattern: ‹ Library    Dutton Ranch."
+    doc:
+      "The DESTINATION name shown next to the chevron (e.g., \"Library\", \"Discover\"). Different from `mobile_title` (current page name) so the back button can't be mistaken for a self-link. iOS pattern: ‹ Library    Dutton Ranch."
 
   slot :inner_block, required: true
 
@@ -104,7 +107,6 @@ defmodule AviaryWeb.Layouts do
       component rather than papering over it here.
     --%>
     <div class="min-h-dvh bg-paper text-ink antialiased">
-
       <%!--
         ====================================================
         Mobile sticky top bar — iOS large-title pattern.
@@ -131,8 +133,8 @@ defmodule AviaryWeb.Layouts do
         the back link on narrow viewports.
       --%>
       <header
-        id="mobile-top-bar"
         :if={@mobile_title}
+        id="mobile-top-bar"
         phx-hook="MobileTopBar"
         class={[
           "sm:hidden sticky top-0 z-30 bg-paper pt-[env(safe-area-inset-top)]",
@@ -234,6 +236,13 @@ defmodule AviaryWeb.Layouts do
               active={is_nil(@mobile_back_to) && @current_section == "movies"}
             >
               Movies
+            </.section_link>
+            <.section_link
+              :if={@nav_visibility.nhl}
+              href={~p"/nhl"}
+              active={is_nil(@mobile_back_to) && @current_section == "nhl"}
+            >
+              NHL
             </.section_link>
             <.section_link
               href={~p"/discover"}
@@ -340,6 +349,14 @@ defmodule AviaryWeb.Layouts do
             label="Movies"
             icon_outline="hero-film"
             icon_solid="hero-film-solid"
+          />
+          <.tab_bar_link
+            :if={@nav_visibility.nhl}
+            href={~p"/nhl"}
+            active={@current_section == "nhl"}
+            label="NHL"
+            icon_outline="hero-signal"
+            icon_solid="hero-signal-solid"
           />
           <.tab_bar_link
             href={~p"/discover"}
@@ -480,7 +497,9 @@ defmodule AviaryWeb.Layouts do
     ~H"""
     <ol class="flex flex-col gap-3">
       <li class="flex items-start gap-3">
-        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">01</span>
+        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">
+          01
+        </span>
         <p class="text-ink text-sm leading-snug flex-1">
           Tap the
           <svg
@@ -497,7 +516,9 @@ defmodule AviaryWeb.Layouts do
         </p>
       </li>
       <li class="flex items-start gap-3">
-        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">02</span>
+        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">
+          02
+        </span>
         <p class="text-ink text-sm leading-snug flex-1">
           Tap
           <svg
@@ -508,13 +529,19 @@ defmodule AviaryWeb.Layouts do
             stroke-width="1.5"
             class="inline-block size-4 align-middle mx-0.5 -mt-0.5 text-ink"
           >
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25" />
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25"
+            />
           </svg>
           <strong>Share</strong>.
         </p>
       </li>
       <li class="flex items-start gap-3">
-        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">03</span>
+        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">
+          03
+        </span>
         <p class="text-ink text-sm leading-snug flex-1">
           Tap the
           <svg
@@ -532,13 +559,17 @@ defmodule AviaryWeb.Layouts do
         </p>
       </li>
       <li class="flex items-start gap-3">
-        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">04</span>
+        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">
+          04
+        </span>
         <p class="text-ink text-sm leading-snug flex-1">
           Tap <strong>Add to Home Screen</strong> at the bottom of the modal.
         </p>
       </li>
       <li class="flex items-start gap-3">
-        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">05</span>
+        <span class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted shrink-0 pt-0.5">
+          05
+        </span>
         <p class="text-ink text-sm leading-snug flex-1">
           Open the new icon from your home screen to sign in.
         </p>
@@ -624,5 +655,4 @@ defmodule AviaryWeb.Layouts do
     </div>
     """
   end
-
 end

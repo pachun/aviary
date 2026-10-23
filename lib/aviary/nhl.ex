@@ -104,8 +104,32 @@ defmodule Aviary.Nhl do
         |> Page.games()
         |> Enum.filter(&scheduled_today?/1)
         |> Enum.map(&Map.delete(&1, :date))
+        |> Enum.map(&Map.put(&1, :starts_at, starts_at(&1.time)))
 
       {:ok, games}
+    end
+  end
+
+  # The schedule prints Eastern clock times with no AM/PM ("7:00",
+  # "10:00", "12:30"); the league plays afternoons and evenings, so an
+  # hour before eleven is a PM hour. The deployment runs on Eastern
+  # time, so local midnight anchors the day.
+  @last_morning_hour 10
+  @hours_from_am_to_pm 12
+
+  defp starts_at(time) do
+    with [hour, minute] <- String.split(time, ":"),
+         {hour, ""} <- Integer.parse(hour),
+         {minute, ""} <- Integer.parse(minute) do
+      hour = if hour <= @last_morning_hour, do: hour + @hours_from_am_to_pm, else: hour
+      {{year, month, day}, _} = :calendar.local_time()
+
+      {{year, month, day}, {hour, minute, 0}}
+      |> :erlang.localtime_to_universaltime()
+      |> NaiveDateTime.from_erl!()
+      |> DateTime.from_naive!("Etc/UTC")
+    else
+      _ -> nil
     end
   end
 

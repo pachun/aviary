@@ -98,6 +98,7 @@ defmodule AviaryWeb.API.NhlController do
     %{
       id: game.id,
       time: game.time,
+      startsAt: game.starts_at,
       awayTeam: serialize_team(game.away_team),
       homeTeam: serialize_team(game.home_team),
       feeds: Enum.map(game.feeds, &%{id: &1.id, label: &1.label})
