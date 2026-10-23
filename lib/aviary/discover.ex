@@ -10,7 +10,8 @@ defmodule Aviary.Discover do
   Thrones, The Sopranos and Sesame Street forever. Talk, news and
   reality shows air every week of the year, so they never count as
   news; they wait in the second tier with the rest of the all-time
-  popular list, minus anything already shown.
+  popular list, minus anything already shown. Shows made for little
+  kids are left out of the row altogether.
 
   Items expose the `thumbnail_url` field (a direct TMDB CDN URL) so
   the marquee can render them without going through aviary's image
@@ -43,6 +44,7 @@ defmodule Aviary.Discover do
   @upcoming_episode_days 30
   @new_show_days 90
   @never_featured_genres ["Talk", "News", "Reality"]
+  @little_kids_genre "Kids"
   @detail_lookups_at_once 8
   @detail_lookup_timeout_ms 10_000
 
@@ -85,6 +87,7 @@ defmodule Aviary.Discover do
       {:ok, candidate} -> [candidate]
       _ -> []
     end)
+    |> Enum.reject(&for_little_kids?/1)
     |> rank(today)
     |> Enum.map(& &1.show)
   end
@@ -150,6 +153,8 @@ defmodule Aviary.Discover do
   end
 
   defp featured_kind?(genres), do: not Enum.any?(genres, &(&1 in @never_featured_genres))
+
+  defp for_little_kids?(%{genres: genres}), do: @little_kids_genre in genres
 
   defp has_episode_around_now?(%{last_aired: last_aired, next_airs: next_airs}, today) do
     aired_recently?(last_aired, today) or airs_soon?(next_airs, today)

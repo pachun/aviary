@@ -144,6 +144,24 @@ defmodule Aviary.DiscoverTest do
              ]
     end
 
+    test "leaves shows made for little kids out of the row altogether" do
+      stub_jellyseerr(
+        popular: %{
+          {49, 1} => [show(1, "Game of Thrones", 210), show(2, "Sesame Street", 140)],
+          {49, 2} => []
+        },
+        premieres: %{49 => []},
+        details: %{
+          2 => %{
+            "genres" => [%{"name" => "Kids"}, %{"name" => "Comedy"}],
+            "lastEpisodeToAir" => %{"airDate" => Date.to_iso8601(@today)}
+          }
+        }
+      )
+
+      assert Enum.map(Discover.ranked_shows([49], @today), & &1["name"]) == ["Game of Thrones"]
+    end
+
     test "skips shows without a backdrop" do
       stub_jellyseerr(
         popular: %{
