@@ -2,9 +2,10 @@ defmodule Aviary.Jellyseerr do
   @moduledoc """
   Thin wrapper over Jellyseerr's REST API. We use it as our TMDB proxy:
   per-show metadata (`get_tv/1`), per-season episode lists with future
-  air dates (`get_tv_season/2`), and network-scoped discover rows
-  (`discover_tv_network/1`). Jellyfin's metadata stops at "what's been
-  released," so future-air-date intel comes through here.
+  air dates (`get_tv_season/2`), and network-scoped discover lists
+  (`discover_tv_network/2`, `discover_tv_premieres/2`). Jellyfin's
+  metadata stops at "what's been released," so future-air-date intel
+  comes through here.
 
   Auth is a single API key (not per-user) — these endpoints aren't
   user-scoped in any way we depend on, and the data is the same for
@@ -48,11 +49,7 @@ defmodule Aviary.Jellyseerr do
       key ->
         url = base_url() <> "/api/v1/tv/#{tmdb_id}"
 
-        case Req.get(url,
-               headers: [{"x-api-key", key}],
-               receive_timeout: 5_000,
-               retry: false
-             ) do
+        case Req.get(url, request_options(key, [])) do
           {:ok, %Req.Response{status: 200, body: body}} -> {:ok, body}
           _ -> :error
         end
@@ -84,11 +81,7 @@ defmodule Aviary.Jellyseerr do
       key ->
         url = base_url() <> "/api/v1/movie/#{tmdb_id}"
 
-        case Req.get(url,
-               headers: [{"x-api-key", key}],
-               receive_timeout: 5_000,
-               retry: false
-             ) do
+        case Req.get(url, request_options(key, [])) do
           {:ok, %Req.Response{status: 200, body: body}} -> {:ok, body}
           _ -> :error
         end
@@ -121,11 +114,7 @@ defmodule Aviary.Jellyseerr do
       key ->
         url = base_url() <> "/api/v1/tv/#{tmdb_id}/season/#{season_number}"
 
-        case Req.get(url,
-               headers: [{"x-api-key", key}],
-               receive_timeout: 5_000,
-               retry: false
-             ) do
+        case Req.get(url, request_options(key, [])) do
           {:ok, %Req.Response{status: 200, body: body}} -> {:ok, body}
           _ -> :error
         end
@@ -177,37 +166,55 @@ defmodule Aviary.Jellyseerr do
   def search(_), do: {:ok, []}
 
   @doc """
-  Returns `{:ok, results}` where results is the TMDB show list for the
-  given network — used by the discover page to populate each
-  streaming-service row. Each result has id (TMDB), name, posterPath,
-  backdropPath, and a mediaInfo block carrying the Jellyfin id when
-  the show is in the library.
+  One page of TMDB's all-time popular shows for a network, as
+  `{:ok, results}`. Each result has id (TMDB), name, popularity,
+  posterPath, backdropPath, and a mediaInfo block carrying the
+  Jellyfin id when the show is in the library.
   """
-  def discover_tv_network(network_id) do
-    Cache.swr(
-      {:jellyseerr_discover_tv_network, network_id},
-      @discover_fresh_ms,
-      @discover_stale_ms,
-      fn -> do_discover_tv_network(network_id) end
+  def discover_tv_network(network_id, page \\ 1) do
+    cached_discover(
+      {:jellyseerr_discover_tv_network, network_id, page},
+      "/api/v1/discover/tv/network/#{network_id}",
+      page: page
     )
-    |> uncache_errors({:jellyseerr_discover_tv_network, network_id})
   end
 
-  defp do_discover_tv_network(network_id) do
+  @doc """
+  The shows that premiered on a network on or after `since`, most
+  popular first, as `{:ok, results}` in the same shape as
+  `discover_tv_network/2`.
+  """
+  def discover_tv_premieres(network_id, since) do
+    cached_discover(
+      {:jellyseerr_discover_tv_premieres, network_id, since},
+      "/api/v1/discover/tv",
+      network: network_id,
+      firstAirDateGte: Date.to_iso8601(since),
+      sortBy: "popularity.desc"
+    )
+  end
+
+  defp cached_discover(cache_key, path, params) do
+    Cache.swr(cache_key, @discover_fresh_ms, @discover_stale_ms, fn -> discover(path, params) end)
+    |> uncache_errors(cache_key)
+  end
+
+  defp discover(path, params) do
     with key when not is_nil(key) <- api_key(),
-         url = base_url() <> "/api/v1/discover/tv/network/#{network_id}",
          {:ok, %Req.Response{status: 200, body: %{"results" => results}}} <-
-           Req.get(url,
-             headers: [{"x-api-key", key}],
-             receive_timeout: 5_000,
-             retry: false
-           ) do
+           Req.get(base_url() <> path, request_options(key, params: params)) do
       {:ok, results}
     else
       _ -> :error
     end
   rescue
     _ -> :error
+  end
+
+  defp request_options(key, options) do
+    [headers: [{"x-api-key", key}], receive_timeout: 5_000, retry: false]
+    |> Keyword.merge(options)
+    |> Keyword.merge(Application.get_env(:aviary, :jellyseerr_req_options, []))
   end
 
   # Don't poison the cache with transient errors. If the wrapped

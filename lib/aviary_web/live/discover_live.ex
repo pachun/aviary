@@ -36,8 +36,8 @@ defmodule AviaryWeb.DiscoverLive do
   end
 
   defp kick_off_row_fetches(socket, services) do
-    Enum.reduce(services, socket, fn {label, network_id}, acc ->
-      start_async(acc, {:row, label}, fn -> Aviary.Discover.fetch_row(network_id) end)
+    Enum.reduce(services, socket, fn {label, network_ids}, acc ->
+      start_async(acc, {:row, label}, fn -> Aviary.Discover.fetch_row(network_ids) end)
     end)
   end
 
@@ -72,9 +72,9 @@ defmodule AviaryWeb.DiscoverLive do
 
   def handle_info({:retry_row, label}, socket) do
     case Enum.find(socket.assigns.services, fn {l, _} -> l == label end) do
-      {^label, network_id} ->
+      {^label, network_ids} ->
         {:noreply,
-         start_async(socket, {:row, label}, fn -> Aviary.Discover.fetch_row(network_id) end)}
+         start_async(socket, {:row, label}, fn -> Aviary.Discover.fetch_row(network_ids) end)}
 
       _ ->
         {:noreply, socket}
@@ -96,7 +96,7 @@ defmodule AviaryWeb.DiscoverLive do
         feel like only the label changed.
       --%>
       <div class="pt-2 space-y-12">
-        <section :for={{label, _id} <- @services}>
+        <section :for={{label, _network_ids} <- @services}>
           <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
             {label}
           </h2>

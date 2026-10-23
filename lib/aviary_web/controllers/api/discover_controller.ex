@@ -17,8 +17,8 @@ defmodule AviaryWeb.API.DiscoverController do
     rows =
       Aviary.Discover.services()
       |> Task.async_stream(
-        fn {label, network_id} ->
-          %{label: label, items: Enum.map(Aviary.Discover.fetch_row(network_id), &serialize/1)}
+        fn {label, network_ids} ->
+          %{label: label, items: Enum.map(Aviary.Discover.fetch_row(network_ids), &serialize/1)}
         end,
         max_concurrency: 7,
         timeout: 25_000,

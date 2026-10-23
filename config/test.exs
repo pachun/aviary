@@ -31,4 +31,5 @@ config :aviary, Aviary.Nhl.Schedule, refresh_on_its_own: false
 config :aviary,
   sonarr_req_options: [plug: {Req.Test, Aviary.Sonarr}],
   sabnzbd_req_options: [plug: {Req.Test, Aviary.Sabnzbd}],
-  jellyfin_req_options: [plug: {Req.Test, Aviary.Jellyfin}]
+  jellyfin_req_options: [plug: {Req.Test, Aviary.Jellyfin}],
+  jellyseerr_req_options: [plug: {Req.Test, Aviary.Jellyseerr}]

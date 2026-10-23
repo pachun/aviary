@@ -1,9 +1,14 @@
 defmodule Aviary.Discover do
   @moduledoc """
   Discover read-model — composes the rows the /discover page renders,
-  one per major streaming service. Each row is "currently popular TV
-  on this service" pulled from Jellyseerr's discover-by-network proxy
-  over TMDB.
+  one per major streaming service, from Jellyseerr's TMDB proxy.
+
+  A row leads with what the service is pushing right now: its shows
+  with an episode in the last two months or one due in the next month,
+  most popular first. TMDB's popularity score moves slowly and favors a
+  network's deep catalog, so without that first tier HBO was Game of
+  Thrones, The Sopranos and Sesame Street forever. The rest of the row
+  is the all-time popular list, minus anything already shown.
 
   Items expose the `thumbnail_url` field (a direct TMDB CDN URL) so
   the marquee can render them without going through aviary's image
@@ -12,55 +17,137 @@ defmodule Aviary.Discover do
 
   Click target prefers the show's Jellyfin id from Jellyseerr's
   mediaInfo when the show IS in the library; otherwise falls back to
-  the TMDB id, which routes to the existing show detail page (and
-  bounces with a "show not found" flash until the not-yet-in-library
-  detail flow lands).
+  the TMDB id, which routes to the existing show detail page.
   """
 
   alias Aviary.Jellyseerr
 
   # The seven big US streaming services. Order is the row order on
-  # the page. Network ids are TMDB networks; Jellyseerr proxies these
-  # 1:1 via its discover endpoint.
+  # the page. Network ids are TMDB networks; HBO's originals are split
+  # between the HBO channel and HBO Max, so its row draws on both.
   @services [
-    {"Apple TV+", 2552},
-    {"HBO", 49},
-    {"Paramount+", 4330},
-    {"Disney+", 2739},
-    {"Netflix", 213},
-    {"Hulu", 453},
-    {"Prime Video", 1024}
+    {"Apple TV+", [2552]},
+    {"HBO", [49, 3186]},
+    {"Paramount+", [4330]},
+    {"Disney+", [2739]},
+    {"Netflix", [213]},
+    {"Hulu", [453]},
+    {"Prime Video", [1024]}
   ]
 
+  @row_length 20
+  @popular_pages 1..2
+  @recent_episode_days 60
+  @upcoming_episode_days 30
+  @new_show_days 90
+  @detail_lookups_at_once 8
+  @detail_lookup_timeout_ms 10_000
+
   @doc """
-  The list of service rows to render. Returned in display order.
-  Exposed publicly so DiscoverLive can render skeleton placeholders
-  immediately, then stream each row in via start_async.
+  The list of service rows to render, as `{label, network_ids}`, in
+  display order. Exposed so DiscoverLive can render skeleton
+  placeholders immediately, then stream each row in via start_async.
   """
   def services, do: @services
 
   @doc """
-  Fetches one network's row. Used by DiscoverLive in a per-row
+  Fetches one service's row: ranked, trimmed to the row length and
+  given Rotten Tomatoes ratings. Used by DiscoverLive in a per-row
   start_async so the page can paint immediately with skeletons and
-  fill rows independently — instead of the page blocking until all
-  seven rows + 140 RT scrapes are done (the prior 15s cold-cache UX).
+  fill rows independently.
   """
-  def fetch_row(network_id) do
-    case Jellyseerr.discover_tv_network(network_id) do
-      {:ok, results} ->
-        results
-        # The marquee card is 16:9 — items with no TMDB backdrop would
-        # render an empty/stretched tile and look broken. Drop them
-        # silently; popularity-sorted lists almost always have plenty
-        # of valid backdrops at the top.
-        |> Enum.filter(&has_backdrop?/1)
-        |> Enum.map(&to_item/1)
-        |> enrich_with_ratings()
+  def fetch_row(network_ids) do
+    network_ids
+    |> ranked_shows(Date.utc_today())
+    |> Enum.take(@row_length)
+    |> Enum.map(&to_item/1)
+    |> enrich_with_ratings()
+  end
 
-      _ ->
-        []
+  @doc """
+  The service's shows in row order: airing now first, then the
+  all-time popular list, with no show twice. Each entry is the raw
+  TMDB result from Jellyseerr.
+  """
+  def ranked_shows(network_ids, today) do
+    network_ids
+    |> candidates(today)
+    |> Enum.filter(&has_backdrop?/1)
+    |> Task.async_stream(&with_air_dates/1,
+      max_concurrency: @detail_lookups_at_once,
+      timeout: @detail_lookup_timeout_ms,
+      on_timeout: :kill_task
+    )
+    |> Enum.flat_map(fn
+      {:ok, candidate} -> [candidate]
+      _ -> []
+    end)
+    |> rank(today)
+    |> Enum.map(& &1.show)
+  end
+
+  @doc """
+  Orders candidates for the row: shows airing now by popularity, then
+  everything else by popularity. A candidate is
+  `%{show:, popularity:, last_aired:, next_airs:}`.
+  """
+  def rank(candidates, today) do
+    {airing_now, catalog} = Enum.split_with(candidates, &airing_now?(&1, today))
+    most_popular_first(airing_now) ++ most_popular_first(catalog)
+  end
+
+  defp candidates(network_ids, today) do
+    premiered_since = Date.add(today, -@new_show_days)
+
+    network_ids
+    |> Enum.flat_map(fn network_id ->
+      popular =
+        Enum.flat_map(@popular_pages, &discovered(Jellyseerr.discover_tv_network(network_id, &1)))
+
+      premieres = discovered(Jellyseerr.discover_tv_premieres(network_id, premiered_since))
+      popular ++ premieres
+    end)
+    |> Enum.uniq_by(& &1["id"])
+  end
+
+  defp discovered({:ok, results}), do: results
+  defp discovered(_), do: []
+
+  defp with_air_dates(show) do
+    details =
+      case Jellyseerr.get_tv(show["id"]) do
+        {:ok, details} -> details
+        _ -> %{}
+      end
+
+    %{
+      show: show,
+      popularity: show["popularity"] || 0,
+      last_aired: air_date(details["lastEpisodeToAir"]),
+      next_airs: air_date(details["nextEpisodeToAir"])
+    }
+  end
+
+  defp air_date(%{"airDate" => date}) when is_binary(date) do
+    case Date.from_iso8601(date) do
+      {:ok, date} -> date
+      _ -> nil
     end
   end
+
+  defp air_date(_), do: nil
+
+  defp airing_now?(%{last_aired: last_aired, next_airs: next_airs}, today) do
+    aired_recently?(last_aired, today) or airs_soon?(next_airs, today)
+  end
+
+  defp aired_recently?(nil, _today), do: false
+  defp aired_recently?(aired, today), do: Date.diff(today, aired) in 0..@recent_episode_days
+
+  defp airs_soon?(nil, _today), do: false
+  defp airs_soon?(airs, today), do: Date.diff(airs, today) in 0..@upcoming_episode_days
+
+  defp most_popular_first(candidates), do: Enum.sort_by(candidates, & &1.popularity, :desc)
 
   # RT-only audience + critic. Items without RT data render with no
   # corner badge — better to show nothing than to mix data sources
@@ -82,14 +169,15 @@ defmodule Aviary.Discover do
     |> Enum.reject(&is_nil/1)
   end
 
+  # The marquee card is 16:9 — items with no TMDB backdrop would
+  # render an empty/stretched tile and look broken.
   defp has_backdrop?(%{"backdropPath" => p}) when is_binary(p) and p != "", do: true
   defp has_backdrop?(_), do: false
 
   # Marquee item shape. detail_id prefers Jellyfin id when the show
   # is already owned (Jellyseerr's mediaInfo carries it) so clicks
   # land on the actual detail page. Falls back to TMDB id for
-  # unowned shows — those clicks currently 404, which the discover
-  # page accepts until the not-in-library flow exists.
+  # unowned shows.
   defp to_item(result) do
     %{
       kind: :show,
