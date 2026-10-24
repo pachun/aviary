@@ -44,8 +44,30 @@ defmodule Aviary.DailyWire do
 
   defp page_path(show, nil) do
     with {:ok, user} <- get("/middleware/v3/getUserInfo?nocache=1"),
-         plan when is_binary(plan) <- user["accessLevel"] do
-      {:ok, "/middleware/v4/getShowPage?" <> URI.encode_query(slug: show, membershipPlan: plan)}
+         plan when is_binary(plan) <- user["accessLevel"],
+         {:ok, page} <-
+           get(
+             "/middleware/v4/getShowPage?" <> URI.encode_query(slug: show, membershipPlan: plan)
+           ),
+         seasons when is_list(seasons) and seasons != [] <- get_in(page, ["show", "seasons"]),
+         %{"id" => season} <- Enum.max_by(seasons, & &1["name"]) do
+      query =
+        URI.encode_query(
+          slug: show,
+          membershipPlan: plan,
+          showSeasonId: season,
+          podcastSeasonId: "",
+          pageNumber: 1,
+          pageSize: 20,
+          showOffset: 0,
+          podcastOffset: 0,
+          lastPodcastEpisodeId: "",
+          lastShowEpisodeId: "",
+          nextDate: "",
+          orderBy: "published_at_desc"
+        )
+
+      {:ok, "/middleware/v4/getPaginatedEpisodes?" <> query}
     else
       {:error, _} = error -> error
       _ -> {:error, :unavailable}
@@ -101,9 +123,14 @@ defmodule Aviary.DailyWire do
       component
       |> Map.get("items", [])
       |> Enum.flat_map(fn
-        %{"showEpisode" => %{"status" => "PUBLISHED"} = episode} -> [serialize_episode(episode)]
-        _ -> []
+        %{"showEpisode" => %{"status" => "PUBLISHED"} = episode} ->
+          if daily_clip?(show, episode), do: [], else: [serialize_episode(episode)]
+
+        _ ->
+          []
       end)
+
+    episodes = Enum.sort_by(episodes, & &1.publishedAt, :desc)
 
     cursor =
       case component["nextPageUrl"] do
@@ -125,9 +152,33 @@ defmodule Aviary.DailyWire do
       image: get_in(episode, ["images", "thumbnail", "land"]),
       publishedAt: episode["publishedAt"],
       duration: episode["duration"],
+      dateLabel: date_label(episode["publishedAt"]),
+      durationLabel: duration_label(episode["duration"]),
       memberOnly: episode["isPaidVideo"] == true and episode["hasFreeAndPaidVideo"] != true
     }
   end
+
+  defp daily_clip?("the-ben-shapiro-show", %{"slug" => slug}),
+    do: String.ends_with?(slug, "-memberblock")
+
+  defp daily_clip?(_, _), do: false
+
+  defp date_label(timestamp) when is_binary(timestamp) do
+    case DateTime.from_iso8601(timestamp) do
+      {:ok, date, _} -> Calendar.strftime(date, "%a %b %-d, %Y")
+      _ -> nil
+    end
+  end
+
+  defp date_label(_), do: nil
+
+  @seconds_per_minute 60
+  @minimum_duration_minutes 1
+
+  defp duration_label(seconds) when is_number(seconds) and seconds > 0,
+    do: "#{max(@minimum_duration_minutes, round(seconds / @seconds_per_minute))} min"
+
+  defp duration_label(_), do: nil
 
   defp video_url(%{"secureVideoURL" => url}) when is_binary(url) and url != "", do: url
   defp video_url(episode), do: episode["videoURL"]

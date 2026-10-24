@@ -102,9 +102,6 @@ defmodule AviaryWeb.DailyWireLive do
     |> start_async(:episodes, fn -> DailyWire.episodes(user, show, cursor) end)
   end
 
-  defp date(nil), do: ""
-  defp date(timestamp), do: timestamp |> String.slice(0, 10)
-
   def render(assigns) do
     ~H"""
     <Layouts.app
@@ -156,7 +153,9 @@ defmodule AviaryWeb.DailyWireLive do
                 class="aspect-video w-full object-cover bg-rule"
               />
               <div class="flex justify-between gap-2 font-sans text-xs text-muted mt-3">
-                <span>{date(episode.publishedAt)}</span>
+                <span>
+                  {episode.dateLabel}<span :if={episode.durationLabel}> · {episode.durationLabel}</span>
+                </span>
                 <span :if={episode.memberOnly}>Member exclusive</span>
               </div>
               <h2 class="font-display text-xl leading-snug mt-2 group-hover:text-oxblood">

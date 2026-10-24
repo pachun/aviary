@@ -124,23 +124,32 @@ defmodule Aviary.DailyWireTest do
 
         "/middleware/v4/getShowPage" ->
           Req.Test.json(conn, %{
-            tabs: [
-              %{
-                components: [
-                  %{
-                    renderType: "verticalShowEpisodesCarousel",
-                    items: [%{showEpisode: episode()}],
-                    nextPageUrl: "/middleware/v4/getPaginatedEpisodes?pageNumber=2"
-                  }
-                ]
-              }
-            ]
+            show: %{seasons: [%{id: "latest", name: "2026"}, %{id: "old", name: "2021"}]}
           })
 
         "/middleware/v4/getPaginatedEpisodes" ->
-          Req.Test.json(conn, %{
-            componentItems: [%{showEpisode: %{episode() | "slug" => "older"}}]
-          })
+          query = URI.decode_query(conn.query_string)
+          clip = %{episode() | "slug" => "episode-memberblock"}
+
+          case query["pageNumber"] do
+            "1" ->
+              assert query["showSeasonId"] == "latest"
+              assert query["orderBy"] == "published_at_desc"
+              assert query["showOffset"] == "0"
+
+              Req.Test.json(conn, %{
+                componentItems: [%{showEpisode: clip}, %{showEpisode: episode()}],
+                nextPageUrl: "/middleware/v4/getPaginatedEpisodes?pageNumber=2"
+              })
+
+            "2" ->
+              Req.Test.json(conn, %{
+                componentItems: [
+                  %{showEpisode: clip},
+                  %{showEpisode: %{episode() | "slug" => "older"}}
+                ]
+              })
+          end
       end
     end)
 
@@ -148,6 +157,8 @@ defmodule Aviary.DailyWireTest do
              DailyWire.episodes(user, "the-ben-shapiro-show")
 
     assert episode.id == "member-episode"
+    assert episode.dateLabel == "Fri Oct 23, 2026"
+    assert episode.durationLabel == "8 min"
     assert episode.memberOnly
     assert is_binary(cursor)
 
@@ -158,6 +169,56 @@ defmodule Aviary.DailyWireTest do
 
     assert {:error, :invalid_page} =
              DailyWire.episodes(user, "the-ben-shapiro-show", "https://attacker.test")
+  end
+
+  test "Sunday Special selects the newest season and orders episodes by date", %{user: user} do
+    Req.Test.stub(DailyWire, fn conn ->
+      case conn.request_path do
+        "/middleware/v3/getUserInfo" ->
+          Req.Test.json(conn, %{accessLevel: "ALL_ACCESS"})
+
+        "/middleware/v4/getShowPage" ->
+          Req.Test.json(conn, %{
+            show: %{
+              seasons: [
+                %{id: "old", name: "2021"},
+                %{id: "latest", name: "2024"}
+              ]
+            }
+          })
+
+        "/middleware/v4/getPaginatedEpisodes" ->
+          query = URI.decode_query(conn.query_string)
+          assert query["showSeasonId"] == "latest"
+          assert query["orderBy"] == "published_at_desc"
+
+          Req.Test.json(conn, %{
+            componentItems: [
+              %{
+                showEpisode: %{
+                  episode()
+                  | "slug" => "older",
+                    "publishedAt" => "2024-10-19T18:00:00Z"
+                }
+              },
+              %{
+                showEpisode: %{
+                  episode()
+                  | "slug" => "newer",
+                    "publishedAt" => "2024-12-21T18:00:00Z",
+                    "duration" => 3240.5
+                }
+              }
+            ]
+          })
+      end
+    end)
+
+    assert {:ok, %{episodes: [newer, older]}} = DailyWire.episodes(user, "sunday-special")
+    assert newer.id == "newer"
+    assert older.id == "older"
+    assert newer.dateLabel == "Sat Dec 21, 2024"
+    assert newer.durationLabel == "54 min"
   end
 
   test "playback exposes only the signed media URL, never account credentials", %{user: user} do
