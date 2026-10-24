@@ -150,6 +150,16 @@ defmodule AviaryWeb.DailyWireLive do
     |> start_async(:episodes, fn -> DailyWire.episodes(user, show, cursor) end)
   end
 
+  @full_progress 100
+
+  defp watched_percent(%{progress: %{watched: true}}), do: @full_progress
+
+  defp watched_percent(%{progress: %{resumeSeconds: seconds}, duration: duration})
+       when is_number(duration) and duration > 0,
+       do: min(@full_progress, max(0, round(seconds / duration * @full_progress)))
+
+  defp watched_percent(_), do: 0
+
   def render(assigns) do
     ~H"""
     <Layouts.app
@@ -193,13 +203,26 @@ defmodule AviaryWeb.DailyWireLive do
               aria-label={"Play #{episode.title}"}
               class="group w-full text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-oxblood"
             >
-              <img
-                :if={episode.image}
-                src={episode.image}
-                alt=""
-                loading="lazy"
-                class="aspect-video w-full object-cover bg-rule"
-              />
+              <div class="relative">
+                <img
+                  :if={episode.image}
+                  src={episode.image}
+                  alt=""
+                  loading="lazy"
+                  class="aspect-video w-full object-cover bg-rule"
+                />
+                <div
+                  :if={watched_percent(episode) > 0}
+                  role="progressbar"
+                  aria-label="Watched"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow={watched_percent(episode)}
+                  class="absolute bottom-0 inset-x-0 h-1.5 bg-rule"
+                >
+                  <div class="h-full bg-oxblood" style={"width: #{watched_percent(episode)}%"} />
+                </div>
+              </div>
               <div class="flex justify-between gap-2 font-sans text-xs text-muted mt-3">
                 <span>
                   {episode.dateLabel}<span :if={episode.durationLabel}> · {episode.durationLabel}</span>
