@@ -103,6 +103,8 @@ defmodule AviaryWeb.Router do
     get "/movies/:id", MovieController, :show
     get "/trailer", TrailerController, :show
     get "/nhl/games", NhlController, :games
+    get "/daily-wire/shows/:show/episodes", DailyWireController, :episodes
+    get "/daily-wire/episodes/:slug/playback", DailyWireController, :playback
     get "/nhl/games/:id/feeds/:feed", NhlController, :stream
     get "/nhl/logos/:team", NhlController, :logo
     get "/items/:id/playback", PlaybackController, :show
@@ -142,6 +144,7 @@ defmodule AviaryWeb.Router do
       live "/search", SearchLive, :index
       live "/library", LibraryLive, :index
       live "/nhl", NhlLive, :index
+      live "/daily-wire", DailyWireLive, :index
       live "/settings", SettingsLive, :index
       live "/shows/:id", ShowsDetailLive, :show
       live "/movies/:id", MoviesDetailLive, :show

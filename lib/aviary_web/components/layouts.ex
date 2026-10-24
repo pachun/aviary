@@ -245,6 +245,13 @@ defmodule AviaryWeb.Layouts do
               NHL
             </.section_link>
             <.section_link
+              :if={Map.get(@nav_visibility, :daily_wire, false)}
+              href={~p"/daily-wire"}
+              active={is_nil(@mobile_back_to) && @current_section == "daily_wire"}
+            >
+              Daily Wire
+            </.section_link>
+            <.section_link
               href={~p"/discover"}
               active={is_nil(@mobile_back_to) && @current_section == "discover"}
             >
@@ -357,6 +364,14 @@ defmodule AviaryWeb.Layouts do
             label="NHL"
             icon_outline="hero-signal"
             icon_solid="hero-signal-solid"
+          />
+          <.tab_bar_link
+            :if={Map.get(@nav_visibility, :daily_wire, false)}
+            href={~p"/daily-wire"}
+            active={@current_section == "daily_wire"}
+            label="Daily Wire"
+            icon_outline="hero-play-circle"
+            icon_solid="hero-play-circle-solid"
           />
           <.tab_bar_link
             href={~p"/discover"}

@@ -39,5 +39,6 @@ Aviary expects a reachable Jellyfin instance with an API key. The dev loop runs 
 |---|---|---|
 | `JELLYFIN_URL` | Base URL of your Jellyfin server, no trailing slash. From your laptop on the tailnet, use the Tailscale HTTPS URL — e.g. `https://framework-depot.<tailnet>.ts.net:8096`. Matches what `configure.sh`'s summary prints in depot. | Run `tailscale serve status` on the box hosting Jellyfin, or copy from depot's `configure.sh` summary output. |
 | `JELLYFIN_API_KEY` | Jellyfin API token used for catalog reads + poster URLs. | Jellyfin admin → Dashboard → API Keys → "+" → name it `aviary`. Reusing the Sonarr key works but gives you no audit trail per integration. |
+| `DAILY_WIRE_TOKEN_FILE` | Optional path to the writable Daily Wire token file. The Daily Wire tab is visible only to users in its `allowed_user_ids` list (`["*"]` allows every signed-in user). | Depot's `services/aviary/daily-wire-login` creates the file using device login. Keep it outside the repository, in a private persistent directory. |
 
 In production, depot's `configure/aviary/configure.sh` sets the same variables in the container's env. Application code reads them identically in both environments via `Application.fetch_env!(:aviary, :jellyfin_url)`.

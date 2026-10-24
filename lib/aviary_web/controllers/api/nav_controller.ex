@@ -15,6 +15,7 @@ defmodule AviaryWeb.API.NavController do
       shows: visibility.shows,
       movies: visibility.movies,
       nhl: visibility.nhl,
+      dailyWire: visibility.daily_wire,
       landing: landing(visibility)
     })
   end

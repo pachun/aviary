@@ -54,7 +54,8 @@ defmodule Aviary.Nav do
       home: home_items != [] or upcoming != [] or recs != [],
       shows: shows != [],
       movies: movies != [],
-      nhl: games != []
+      nhl: games != [],
+      daily_wire: Aviary.DailyWire.allowed?(user)
     }
   end
 

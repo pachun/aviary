@@ -1,14 +1,21 @@
 defmodule AviaryWeb.ErrorHTMLTest do
   use AviaryWeb.ConnCase, async: true
 
-  # Bring render_to_string/4 for testing custom views
   import Phoenix.Template, only: [render_to_string: 4]
 
   test "renders 404.html" do
-    assert render_to_string(AviaryWeb.ErrorHTML, "404", "html", []) == "Not Found"
+    document =
+      render_to_string(AviaryWeb.ErrorHTML, "404", "html", []) |> LazyHTML.from_fragment()
+
+    assert document |> LazyHTML.query("h1") |> LazyHTML.text() |> String.trim() ==
+             "Page Not Found"
   end
 
   test "renders 500.html" do
-    assert render_to_string(AviaryWeb.ErrorHTML, "500", "html", []) == "Internal Server Error"
+    document =
+      render_to_string(AviaryWeb.ErrorHTML, "500", "html", []) |> LazyHTML.from_fragment()
+
+    assert document |> LazyHTML.query("h1") |> LazyHTML.text() |> String.trim() ==
+             "Uh oh. Something Went Wrong."
   end
 end

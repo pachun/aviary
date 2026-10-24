@@ -51,6 +51,7 @@ config :aviary,
   # hosted image.
   og_image: System.get_env("OG_IMAGE"),
   jellyfin_url: System.get_env("JELLYFIN_URL"),
+  daily_wire_token_file: System.get_env("DAILY_WIRE_TOKEN_FILE"),
   jellyfin_api_key: System.get_env("JELLYFIN_API_KEY"),
   # Browser-facing Jellyfin URL — must be reachable from the
   # laptop/phone running the player, not just from inside the docker
