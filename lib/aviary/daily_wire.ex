@@ -17,7 +17,9 @@ defmodule Aviary.DailyWire do
     with :ok <- authorize(user),
          true <- Enum.any?(@shows, &(&1.slug == show)),
          {:ok, path} <- page_path(show, cursor) do
-      cached_page(path, show)
+      with {:ok, page} <- cached_page(path, show) do
+        {:ok, %{page | episodes: Aviary.DailyWire.Progress.for_episodes(user.id, page.episodes)}}
+      end
     else
       false -> {:error, :not_found}
       error -> error
@@ -33,10 +35,23 @@ defmodule Aviary.DailyWire do
          url when is_binary(url) <- video_url(episode),
          %URI{scheme: "https", host: "stream.mux.com", path: path} <- URI.parse(url),
          true <- String.ends_with?(path, ".m3u8") do
-      {:ok, %{streamUrl: url, contentType: "hls", title: episode["title"]}}
+      {:ok,
+       %{
+         streamUrl: url,
+         contentType: "hls",
+         title: episode["title"],
+         slug: slug,
+         progress: Aviary.DailyWire.Progress.start(user.id, slug)
+       }}
     else
       {:error, _} = error -> error
       _ -> {:error, :playback_unavailable}
+    end
+  end
+
+  def save_progress(user, slug, params) do
+    with :ok <- authorize(user) do
+      Aviary.DailyWire.Progress.save(user.id, slug, params)
     end
   end
 

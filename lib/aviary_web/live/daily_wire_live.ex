@@ -8,7 +8,13 @@ defmodule AviaryWeb.DailyWireLive do
     if DailyWire.allowed?(socket.assigns.current_user) do
       {:ok,
        socket
-       |> assign(page_title: "Daily Wire", shows: DailyWire.shows(), watching: nil, error: nil)
+       |> assign(
+         page_title: "Daily Wire",
+         shows: DailyWire.shows(),
+         watching: nil,
+         error: nil,
+         episode_index: %{}
+       )
        |> assign(show: "the-ben-shapiro-show", next_page: nil, loading: true, empty: true)
        |> stream(:episodes, [])
        |> load_page(nil)}
@@ -24,7 +30,7 @@ defmodule AviaryWeb.DailyWireLive do
     if Enum.any?(DailyWire.shows(), &(&1.slug == show)) do
       {:noreply,
        socket
-       |> assign(show: show, next_page: nil, error: nil, empty: true)
+       |> assign(show: show, next_page: nil, error: nil, empty: true, episode_index: %{})
        |> stream(:episodes, [], reset: true)
        |> load_page(nil)}
     else
@@ -49,8 +55,13 @@ defmodule AviaryWeb.DailyWireLive do
      |> start_async(:playback, fn -> DailyWire.playback(user, slug) end)}
   end
 
-  def handle_event("close_player", _, socket), do: {:noreply, assign(socket, :watching, nil)}
-  def handle_event("report_progress", _, socket), do: {:noreply, socket}
+  def handle_event("close_player", params, socket) do
+    {:noreply, socket |> save_progress(params) |> assign(:watching, nil)}
+  end
+
+  def handle_event("report_progress", params, socket),
+    do: {:noreply, save_progress(socket, params)}
+
   def handle_event("resync_position", _, socket), do: {:noreply, socket}
   def handle_event("subtitles_changed", _, socket), do: {:noreply, socket}
 
@@ -59,6 +70,8 @@ defmodule AviaryWeb.DailyWireLive do
      socket
      |> stream(:episodes, page.episodes)
      |> assign(
+       episode_index:
+         Map.merge(socket.assigns.episode_index, Map.new(page.episodes, &{&1.id, &1})),
        next_page: page.nextPage,
        loading: false,
        error: nil,
@@ -69,9 +82,10 @@ defmodule AviaryWeb.DailyWireLive do
   def handle_async(:playback, {:ok, {:ok, playback}}, socket) do
     {:noreply,
      assign(socket, :watching, %{
-       id: "daily-wire",
+       id: playback.slug,
+       progress_session: playback.progress.sessionId,
        title: playback.title,
-       resume_seconds: 0,
+       resume_seconds: playback.progress.resumeSeconds,
        src: playback.streamUrl
      })}
   end
@@ -90,6 +104,40 @@ defmodule AviaryWeb.DailyWireLive do
 
   def handle_async(_, {:exit, _}, socket) do
     {:noreply, assign(socket, loading: false, error: "Daily Wire is unavailable. Try again.")}
+  end
+
+  defp save_progress(%{assigns: %{watching: nil}} = socket, _), do: socket
+
+  defp save_progress(socket, params) do
+    watching = socket.assigns.watching
+
+    case DailyWire.save_progress(socket.assigns.current_user, watching.id, params) do
+      {:ok, progress} ->
+        case socket.assigns.episode_index[watching.id] do
+          nil ->
+            socket
+
+          episode ->
+            updated = Map.put(episode, :progress, progress)
+
+            socket
+            |> assign(:episode_index, Map.put(socket.assigns.episode_index, watching.id, updated))
+            |> stream_insert(:episodes, updated)
+        end
+
+      {:error, :invalid_progress} ->
+        socket
+
+      {:error, :stale_progress} ->
+        put_flash(
+          socket,
+          :error,
+          "This episode was opened on another device. Reopen it here to save progress."
+        )
+
+      {:error, _} ->
+        put_flash(socket, :error, "Your watch progress could not be saved.")
+    end
   end
 
   defp load_page(socket, cursor) do
@@ -162,7 +210,9 @@ defmodule AviaryWeb.DailyWireLive do
                 {episode.title}
               </h2>
               <p class="font-sans text-sm text-muted mt-2 line-clamp-2">{episode.description}</p>
-              <span class="inline-block font-sans text-sm text-oxblood mt-3">Play</span>
+              <span class="inline-block font-sans text-sm text-oxblood mt-3">
+                {episode.progress.label}
+              </span>
             </button>
           </article>
         </div>
@@ -186,6 +236,7 @@ defmodule AviaryWeb.DailyWireLive do
         native_src={@watching.src}
         current_user={@current_user}
         title={@watching.title}
+        close_action={JS.dispatch("daily-wire-close", to: "#player-#{@watching.id}")}
       />
     </Layouts.app>
     """

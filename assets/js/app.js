@@ -100,7 +100,10 @@ const HlsPlayer = {
     const reportProgress = () => {
       if (video.currentTime > 1) {
         this.pushEvent("report_progress", {
-          position: video.currentTime,
+          sessionId: video.dataset.progressSession,
+          sequence: Date.now(),
+          ended: video.ended,
+          position: Math.min(video.currentTime, video.duration || video.currentTime),
           duration: Number.isFinite(video.duration) ? video.duration : null,
         })
       }
@@ -110,11 +113,22 @@ const HlsPlayer = {
     }, 10000)
     video.addEventListener("pause", reportProgress)
     video.addEventListener("ended", reportProgress)
+    this.closeDailyWire = () => {
+      this.pushEvent("close_player", video.currentTime > 1 ? {
+        sessionId: video.dataset.progressSession,
+        sequence: Date.now(),
+        position: Math.min(video.currentTime, video.duration || video.currentTime),
+        duration: Number.isFinite(video.duration) ? video.duration : null,
+        ended: video.ended,
+      } : {})
+    }
+    video.addEventListener("daily-wire-close", this.closeDailyWire)
 
     // A tab left paused while another device carried on picks up from
     // the household's latest position: when it comes back into view
     // the server compares and answers with a seek if it is ahead.
     this.onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") reportProgress()
       if (document.visibilityState === "visible") {
         this.pushEvent("resync_position", {position: video.currentTime})
       }
@@ -209,7 +223,8 @@ const HlsPlayer = {
       }
 
       video.addEventListener("webkitendfullscreen", () => {
-        this.pushEvent("close_player", {})
+        if (video.dataset.progressSession) this.closeDailyWire()
+        else this.pushEvent("close_player", {})
       })
     }
   },

@@ -60,6 +60,8 @@ defmodule AviaryWeb.Components.VideoPlayer do
     doc:
       "Locks Jellyfin to a specific audio track in the HLS master playlist. nil lets Jellyfin pick its own default. Used to skip the Audio Description track that ships with Apple TV+ content."
 
+  attr :close_action, :any, default: "close_player"
+
   def overlay(assigns) do
     intro = get_in(assigns, [:segments, :introduction])
     assigns = assign(assigns, :intro, intro)
@@ -83,7 +85,7 @@ defmodule AviaryWeb.Components.VideoPlayer do
       id={"player-overlay-#{@item.id}"}
       data-controls-visible="true"
       class="group fixed inset-0 z-50 bg-black flex items-center justify-center data-[controls-visible=false]:cursor-none"
-      phx-window-keydown="close_player"
+      phx-window-keydown={@close_action}
       phx-key="Escape"
     >
       <video
@@ -91,6 +93,7 @@ defmodule AviaryWeb.Components.VideoPlayer do
         phx-hook="HlsPlayer"
         data-src={@src || Aviary.Jellyfin.hls_url(@item.id, @current_user, @audio_stream_index)}
         data-resume-at={@item.resume_seconds || 0}
+        data-progress-session={Map.get(@item, :progress_session)}
         data-native-src={@native_src}
         data-referrer-policy={@referrer_policy}
         data-intro-start={@intro && @intro.start}
@@ -188,7 +191,7 @@ defmodule AviaryWeb.Components.VideoPlayer do
         </button>
         <button
           type="button"
-          phx-click="close_player"
+          phx-click={@close_action}
           aria-label="Close player"
           class="font-sans text-xs tracking-[0.18em] uppercase font-medium text-white/80 hover:text-white cursor-pointer transition-colors px-4 py-2 rounded-sm bg-black/40 backdrop-blur-sm"
         >

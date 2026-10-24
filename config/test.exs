@@ -33,3 +33,7 @@ config :aviary,
   sabnzbd_req_options: [plug: {Req.Test, Aviary.Sabnzbd}],
   jellyfin_req_options: [plug: {Req.Test, Aviary.Jellyfin}],
   jellyseerr_req_options: [plug: {Req.Test, Aviary.Jellyseerr}]
+
+config :aviary, Aviary.Repo,
+  database: Path.join(System.tmp_dir!(), "aviary-test-#{System.pid()}.db"),
+  pool_size: 1

@@ -8,6 +8,7 @@ defmodule Aviary.DailyWireTest do
     directory =
       Path.join(System.tmp_dir!(), "aviary-daily-wire-#{System.unique_integer([:positive])}")
 
+    Aviary.Repo.delete_all(Aviary.DailyWire.Progress)
     File.mkdir_p!(directory)
     path = Path.join(directory, "tokens.json")
     previous_path = Application.get_env(:aviary, :daily_wire_token_file)
@@ -238,6 +239,51 @@ defmodule Aviary.DailyWireTest do
     assert url == "https://stream.mux.com/member.m3u8?token=media-only"
     refute Jason.encode!(playback) =~ "current-access"
     refute Jason.encode!(playback) =~ "current-refresh"
+  end
+
+  test "browser and API playback share durable resume state", %{user: user} do
+    Req.Test.stub(DailyWire, fn conn ->
+      Req.Test.json(conn, %{
+        show: %{slug: "the-ben-shapiro-show"},
+        title: "Member episode",
+        playbackPolicy: "SIGNED",
+        videoURL: "https://stream.mux.com/member.m3u8"
+      })
+    end)
+
+    assert {:ok, playback} = DailyWire.playback(user, "member-episode")
+
+    params = %{
+      "slug" => "member-episode",
+      "sessionId" => playback.progress.sessionId,
+      "sequence" => 1,
+      "position" => 120,
+      "duration" => 600
+    }
+
+    conn = Phoenix.ConnTest.build_conn() |> Plug.Conn.assign(:current_user, user)
+    response = AviaryWeb.API.DailyWireController.progress(conn, params)
+    assert Jason.decode!(response.resp_body)["resumeSeconds"] == 120
+    assert {:ok, resumed} = DailyWire.playback(user, "member-episode")
+    assert resumed.progress.resumeSeconds == 120
+    assert resumed.progress.sessionId != playback.progress.sessionId
+
+    socket = %Phoenix.LiveView.Socket{
+      assigns: %{__changed__: %{}, current_user: user, episode_index: %{}}
+    }
+
+    {:noreply, socket} =
+      AviaryWeb.DailyWireLive.handle_async(:playback, {:ok, {:ok, resumed}}, socket)
+
+    assert socket.assigns.watching.resume_seconds == 120
+    final_report = %{params | "sessionId" => resumed.progress.sessionId, "position" => 180}
+
+    {:noreply, closed} =
+      AviaryWeb.DailyWireLive.handle_event("close_player", final_report, socket)
+
+    assert closed.assigns.watching == nil
+    assert {:ok, next} = DailyWire.playback(user, "member-episode")
+    assert next.progress.resumeSeconds == 180
   end
 
   test "playback rejects other shows and DRM content", %{user: user} do

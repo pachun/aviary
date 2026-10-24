@@ -9,6 +9,10 @@ defmodule AviaryWeb.API.DailyWireController do
     respond(conn, Aviary.DailyWire.playback(conn.assigns.current_user, slug))
   end
 
+  def progress(conn, %{"slug" => slug} = params) do
+    respond(conn, Aviary.DailyWire.save_progress(conn.assigns.current_user, slug, params))
+  end
+
   defp respond(conn, {:ok, body}) do
     conn |> put_resp_header("cache-control", "no-store") |> json(body)
   end
@@ -19,6 +23,8 @@ defmodule AviaryWeb.API.DailyWireController do
         :forbidden -> :forbidden
         :not_found -> :not_found
         :invalid_page -> :bad_request
+        :invalid_progress -> :bad_request
+        :stale_progress -> :conflict
         _ -> :service_unavailable
       end
 
