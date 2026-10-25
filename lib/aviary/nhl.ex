@@ -1,6 +1,7 @@
 defmodule Aviary.Nhl do
   @moduledoc """
-  Today's NHL games and their live streams, sourced from slapstreams.com.
+  NHL games and their live streams, sourced from slapstreams.com.
+  The previous evening's games remain available until 6 a.m. local time.
 
   The site is scraped, not queried: the schedule is a table on the
   homepage, each game's watch page lists up to four feed buttons, and
@@ -83,7 +84,7 @@ defmodule Aviary.Nhl do
   @quoted_uri ~r{URI="([^"]+)"}
 
   @doc """
-  Today's games in schedule order, each with its feeds:
+  Current games, including the previous evening before 6 a.m., each with its feeds:
   `%{id, time, away_team, home_team, feeds: [%{id, label}]}`, where each
   team is `%{id, name, nickname, logo}`. Whatever `Aviary.Nhl.Schedule`
   last gathered, so it never waits on the site: empty before its first
@@ -97,34 +98,38 @@ defmodule Aviary.Nhl do
   end
 
   @doc false
-  def scrape_schedule do
+  def scrape_schedule(local_now \\ :calendar.local_time()) do
+    dates = schedule_dates(local_now)
+
     with {:ok, html} <- get_body(@site <> "/") do
       games =
         html
         |> Page.games()
-        |> Enum.filter(&scheduled_today?/1)
-        |> Enum.map(&Map.delete(&1, :date))
-        |> Enum.map(&Map.put(&1, :starts_at, starts_at(&1.time)))
+        |> Enum.map(&Map.update!(&1, :date, fn date -> date || List.last(dates) end))
+        |> Enum.filter(&(&1.date in dates))
+        |> Enum.map(&Map.put(&1, :starts_at, starts_at(&1.time, &1.date)))
 
       {:ok, games}
     end
   end
 
-  # The schedule prints Eastern clock times with no AM/PM ("7:00",
-  # "10:00", "12:30"); the league plays afternoons and evenings, so an
-  # hour before eleven is a PM hour. The deployment runs on Eastern
-  # time, so local midnight anchors the day.
   @last_morning_hour 10
   @hours_from_am_to_pm 12
+  @overnight_until_hour 6
 
-  defp starts_at(time) do
+  @doc false
+  def schedule_dates({date, {hour, _, _}}) do
+    today = Date.from_erl!(date)
+    if hour < @overnight_until_hour, do: [today, Date.add(today, -1)], else: [today]
+  end
+
+  defp starts_at(time, date) when is_binary(time) do
     with [hour, minute] <- String.split(time, ":"),
          {hour, ""} <- Integer.parse(hour),
          {minute, ""} <- Integer.parse(minute) do
       hour = if hour <= @last_morning_hour, do: hour + @hours_from_am_to_pm, else: hour
-      {{year, month, day}, _} = :calendar.local_time()
 
-      {{year, month, day}, {hour, minute, 0}}
+      {Date.to_erl(date), {hour, minute, 0}}
       |> :erlang.localtime_to_universaltime()
       |> NaiveDateTime.from_erl!()
       |> DateTime.from_naive!("Etc/UTC")
@@ -132,6 +137,8 @@ defmodule Aviary.Nhl do
       _ -> nil
     end
   end
+
+  defp starts_at(_, _), do: nil
 
   @doc false
   def scrape_feeds(game) do
@@ -266,9 +273,6 @@ defmodule Aviary.Nhl do
   end
 
   defp absolute(uri, base_url), do: base_url |> URI.merge(uri) |> URI.to_string()
-
-  defp scheduled_today?(%{date: nil}), do: true
-  defp scheduled_today?(%{date: date}), do: Date.compare(date, Aviary.LocalTime.today()) == :eq
 
   # The site labels feeds by broadcaster side (HOME, AWAY) and then
   # LINK 3, LINK 4. Viewers pick by team, so the two sides take the

@@ -74,6 +74,58 @@ defmodule Aviary.NhlTest do
   defp with_headers({status, body, headers}), do: {status, body, headers}
 
   describe "games/0" do
+    test "keeps games and playback across midnight even when the source removes yesterday" do
+      date = ~D[2026-10-24]
+      {:ok, clock} = Agent.start_link(fn -> {{2026, 10, 24}, {23, 59, 0}} end)
+      stub_site(%{"/" => {200, schedule_dated(date)}, "/hls/178_0.ts" => {200, "video"}})
+      schedule = walk_site(local_now: fn -> Agent.get(clock, & &1) end)
+      before_midnight = Nhl.games()
+      assert length(before_midnight) == 5
+      assert {:ok, _} = Nhl.playlist("detroit-red-wings", "wings")
+
+      Agent.update(clock, fn _ -> {{2026, 10, 25}, {0, 2, 0}} end)
+      stub_site(%{"/" => {200, "<table></table>"}, "/hls/178_0.ts" => {200, "video"}})
+      Schedule.refresh(schedule)
+
+      assert Nhl.games() == before_midnight
+      assert {:ok, _} = Nhl.playlist("detroit-red-wings", "wings")
+
+      assert {:ok, %{body: "video"}} =
+               Nhl.segment(
+                 "detroit-red-wings",
+                 "wings",
+                 "https://media.example.test/hls/178_0.ts"
+               )
+
+      Agent.update(clock, fn _ -> {{2026, 10, 25}, {6, 0, 0}} end)
+      Schedule.refresh(schedule)
+      assert Nhl.games() == []
+      assert Nhl.playlist("detroit-red-wings", "wings") == {:error, :unavailable}
+    end
+
+    test "loads yesterday after a midnight restart with its original start date" do
+      stub_site(%{"/" => {200, schedule_dated(~D[2026-10-24])}})
+      walk_site(local_now: fn -> {{2026, 10, 25}, {0, 2, 0}} end)
+
+      assert [%{starts_at: starts_at} | _] = Nhl.games()
+      assert length(Nhl.games()) == 5
+
+      assert starts_at
+             |> DateTime.to_naive()
+             |> NaiveDateTime.to_erl()
+             |> :calendar.universal_time_to_local_time() == {{2026, 10, 24}, {18, 30, 0}}
+
+      assert {:ok, _} = Nhl.playlist("detroit-red-wings", "wings")
+    end
+
+    test "excludes yesterday at the morning cutoff and days outside the overnight window" do
+      stub_site(%{"/" => {200, schedule_dated(~D[2026-10-24])}})
+      walk_site(local_now: fn -> {{2026, 10, 25}, {6, 0, 0}} end)
+      assert Nhl.games() == []
+      walk_site(local_now: fn -> {{2026, 10, 26}, {0, 2, 0}} end)
+      assert Nhl.games() == []
+    end
+
     test "lists today's games with their feeds" do
       stub_site(%{"/" => {200, schedule_dated(Aviary.LocalTime.today())}})
       walk_site()
