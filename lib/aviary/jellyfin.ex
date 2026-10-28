@@ -1016,13 +1016,18 @@ defmodule Aviary.Jellyfin do
   Picks the audio stream index aviary should default to. Selection
   priority (highest first):
 
-    1. Most channels (5.1 > stereo). Households with surround setups
+    1. English. Multi-language releases regularly flag another
+       language as the file's default (Disney+ rips ship German-default
+       Futurama), and a Turkish 5.1 track must never beat English
+       stereo. Files with no English track fall through to the rules
+       below unchanged.
+    2. Most channels (5.1 > stereo). Households with surround setups
        prefer the multichannel track; stereo-only browsers downmix
        the multichannel stream automatically so there's no penalty
        for picking it as the default.
-    2. Among same-channel-count tracks, prefer the one Jellyfin
+    3. Among same-channel-count tracks, prefer the one Jellyfin
        marks `IsDefault`.
-    3. Among same-channel + same-default tracks, take the first by
+    4. Among same-channel + same-default tracks, take the first by
        order in the file.
 
   Audio-description tracks are excluded before sorting. Returns nil
@@ -1037,12 +1042,21 @@ defmodule Aviary.Jellyfin do
       (non_desc != [] && non_desc) || streams
 
     chosen
-    |> Enum.sort_by(fn s -> {-s.channels, if(s.default, do: 0, else: 1), s.index} end)
+    |> Enum.sort_by(fn s ->
+      {if(english_audio?(s), do: 0, else: 1), -s.channels, if(s.default, do: 0, else: 1), s.index}
+    end)
     |> List.first()
     |> case do
       nil -> nil
       track -> track.index
     end
+  end
+
+  defp english_audio?(track) do
+    lang = track.lang |> to_string() |> String.downcase()
+
+    lang in ["en", "eng"] or
+      (lang in ["", "und"] and String.contains?(String.downcase(track.label), "english"))
   end
 
   @doc """
