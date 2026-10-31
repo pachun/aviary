@@ -509,6 +509,13 @@ defmodule AviaryWeb.ShowsDetailLive do
      |> Aviary.Nav.refresh_visibility()}
   end
 
+  def handle_event("close_player", %{"ended" => true}, socket) do
+    case next_playable_after(socket.assigns.show, socket.assigns.playing_item) do
+      nil -> handle_event("close_player", %{}, socket)
+      next -> {:noreply, start_playing(socket, next)}
+    end
+  end
+
   def handle_event("close_player", _, socket) do
     # Refresh nav_visibility because playing something for the first
     # time added a library_entries row + flipped Jellyfin's Continue
@@ -1668,6 +1675,19 @@ defmodule AviaryWeb.ShowsDetailLive do
   end
 
   defp basically_done?(_, _), do: false
+
+  defp next_playable_after(_show, nil), do: nil
+
+  defp next_playable_after(show, %{id: finished_id}) do
+    show.episodes_by_season
+    |> Enum.flat_map(fn {_, eps} -> eps end)
+    |> Enum.drop_while(&(&1.id != finished_id))
+    |> Enum.drop(1)
+    |> Enum.find(&playable_episode?/1)
+  end
+
+  defp playable_episode?(%{id: "tmdb-" <> _}), do: false
+  defp playable_episode?(%{season: season}), do: season >= 1
 
   defp next_after_in(flat, id) do
     flat

@@ -123,9 +123,12 @@ const HlsPlayer = {
       } : {})
     }
     video.addEventListener("daily-wire-close", this.closeDailyWire)
+    let closeRequested = false
     const closePlayer = () => {
+      if (closeRequested) return
+      closeRequested = true
       if (video.dataset.progressSession) this.closeDailyWire()
-      else this.pushEvent("close_player", {})
+      else this.pushEvent("close_player", {ended: video.ended})
     }
     video.addEventListener("ended", closePlayer)
 
