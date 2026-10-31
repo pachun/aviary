@@ -123,6 +123,11 @@ const HlsPlayer = {
       } : {})
     }
     video.addEventListener("daily-wire-close", this.closeDailyWire)
+    const closePlayer = () => {
+      if (video.dataset.progressSession) this.closeDailyWire()
+      else this.pushEvent("close_player", {})
+    }
+    video.addEventListener("ended", closePlayer)
 
     // A tab left paused while another device carried on picks up from
     // the household's latest position: when it comes back into view
@@ -222,10 +227,7 @@ const HlsPlayer = {
         video.addEventListener("loadedmetadata", enterNativeFullscreen, {once: true})
       }
 
-      video.addEventListener("webkitendfullscreen", () => {
-        if (video.dataset.progressSession) this.closeDailyWire()
-        else this.pushEvent("close_player", {})
-      })
+      video.addEventListener("webkitendfullscreen", closePlayer)
     }
   },
 
