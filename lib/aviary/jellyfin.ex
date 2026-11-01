@@ -41,6 +41,7 @@ defmodule Aviary.Jellyfin do
         Fields: "PremiereDate,EndDate,Status,ProductionYear,ProviderIds"
       )
       |> Map.fetch!("Items")
+      |> tap(&Aviary.MetadataRepair.series_listed/1)
     end)
   end
 
@@ -134,8 +135,12 @@ defmodule Aviary.Jellyfin do
       )
 
     case result["Items"] do
-      [item | _] -> {:ok, item}
-      _ -> :error
+      [item | _] ->
+        Aviary.MetadataRepair.series_listed([item])
+        {:ok, item}
+
+      _ ->
+        :error
     end
   end
 
@@ -150,18 +155,22 @@ defmodule Aviary.Jellyfin do
       @episodes_fresh_ms,
       @episodes_stale_ms,
       fn ->
-        Req.get!(base_url() <> "/Shows/" <> series_id <> "/Episodes",
-          params: [
-            userId: auth.id,
-            Fields: "Overview,RunTimeTicks,UserData,DateCreated"
-          ],
-          headers: [{"x-emby-token", auth.token}],
-          receive_timeout: 15_000
+        Req.get!(
+          base_url() <> "/Shows/" <> series_id <> "/Episodes",
+          with_test_options(
+            params: [
+              userId: auth.id,
+              Fields: "Overview,RunTimeTicks,UserData,DateCreated,ProviderIds"
+            ],
+            headers: [{"x-emby-token", auth.token}],
+            receive_timeout: 15_000
+          )
         ).body
         |> case do
           %{"Items" => items} when is_list(items) -> items
           _ -> []
         end
+        |> tap(&Aviary.MetadataRepair.episodes_listed(series_id, &1))
       end
     )
   end
@@ -563,19 +572,104 @@ defmodule Aviary.Jellyfin do
   `/Library/Refresh` couldn't get Jellyfin to notice the file.
   """
   def full_refresh_series(series_id, auth) do
-    Req.post(base_url() <> "/Items/" <> series_id <> "/Refresh",
-      params: [
-        Recursive: true,
-        MetadataRefreshMode: "FullRefresh",
-        ImageRefreshMode: "Default",
-        ReplaceAllMetadata: true,
-        ReplaceAllImages: false
-      ],
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 10_000
+    Req.post(
+      base_url() <> "/Items/" <> series_id <> "/Refresh",
+      with_test_options(
+        params: [
+          Recursive: true,
+          MetadataRefreshMode: "FullRefresh",
+          ImageRefreshMode: "Default",
+          ReplaceAllMetadata: true,
+          ReplaceAllImages: false
+        ],
+        headers: [{"x-emby-token", auth.token}],
+        receive_timeout: 10_000,
+        retry: false
+      )
     )
 
     :ok
+  rescue
+    _ -> :error
+  end
+
+  @doc """
+  Throws out everything Jellyfin holds for one item, local NFO
+  included, and fetches it again from the providers. The repair for an
+  episode whose first lookup failed and left the filename as its title.
+  """
+  def refetch_metadata(item_id, auth) do
+    post_refresh(item_id, auth,
+      MetadataRefreshMode: "FullRefresh",
+      ImageRefreshMode: "FullRefresh",
+      ReplaceAllMetadata: true,
+      ReplaceAllImages: true
+    )
+  end
+
+  @doc "Fetches an item's images again, keeping its metadata."
+  def refetch_images(item_id, auth) do
+    post_refresh(item_id, auth,
+      MetadataRefreshMode: "Default",
+      ImageRefreshMode: "FullRefresh",
+      ReplaceAllMetadata: false,
+      ReplaceAllImages: true
+    )
+  end
+
+  defp post_refresh(item_id, auth, params) do
+    case Req.post(
+           base_url() <> "/Items/" <> item_id <> "/Refresh",
+           with_test_options(
+             params: params,
+             headers: [{"x-emby-token", auth.token}],
+             receive_timeout: 10_000,
+             retry: false
+           )
+         ) do
+      {:ok, %Req.Response{status: status}} when status in 200..299 -> :ok
+      _ -> :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  @doc """
+  The providers' candidates for a series by title, each a remote search
+  result Jellyfin can apply as the series' identity.
+  """
+  def search_series_identity(series_id, name, auth) do
+    case Req.post(
+           base_url() <> "/Items/RemoteSearch/Series",
+           with_test_options(
+             json: %{"SearchInfo" => %{"Name" => name}, "ItemId" => series_id},
+             headers: [{"x-emby-token", auth.token}],
+             receive_timeout: 15_000,
+             retry: false
+           )
+         ) do
+      {:ok, %Req.Response{status: 200, body: candidates}} when is_list(candidates) -> candidates
+      _ -> []
+    end
+  rescue
+    _ -> []
+  end
+
+  @doc "Makes one remote search result the series' identity and refetches its artwork."
+  def apply_series_identity(series_id, identity, auth) do
+    case Req.post(
+           base_url() <> "/Items/RemoteSearch/Apply/" <> series_id,
+           with_test_options(
+             params: [ReplaceAllImages: true],
+             json: identity,
+             headers: [{"x-emby-token", auth.token}],
+             receive_timeout: 15_000,
+             retry: false
+           )
+         ) do
+      {:ok, %Req.Response{status: status}} when status in 200..299 -> :ok
+      _ -> :error
+    end
   rescue
     _ -> :error
   end
