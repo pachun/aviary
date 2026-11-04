@@ -100,6 +100,7 @@ defmodule AviaryWeb.Router do
     get "/preferences", PreferencesController, :show
     put "/preferences", PreferencesController, :update
     get "/shows/:id", ShowController, :show
+    post "/shows/:id/watch-point", ShowController, :set_watch_point
     get "/movies/:id", MovieController, :show
     get "/trailer", TrailerController, :show
     get "/nhl/games", NhlController, :games

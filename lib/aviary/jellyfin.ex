@@ -740,24 +740,30 @@ defmodule Aviary.Jellyfin do
   library.
   """
   def mark_played(item_id, auth) do
-    Req.post(base_url() <> "/UserPlayedItems/" <> item_id,
-      params: [
-        userId: auth.id,
-        datePlayed: DateTime.utc_now() |> DateTime.to_iso8601()
-      ],
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 5_000
+    Req.post(
+      base_url() <> "/UserPlayedItems/" <> item_id,
+      with_test_options(
+        params: [
+          userId: auth.id,
+          datePlayed: DateTime.utc_now() |> DateTime.to_iso8601()
+        ],
+        headers: [{"x-emby-token", auth.token}],
+        receive_timeout: 5_000
+      )
     )
 
     # Canonical endpoint sets Played=true but doesn't reliably zero
     # PlaybackPositionTicks. Without this follow-up write, Jellyfin's
     # Resume/NextUp keep treating the episode as in-progress (the
     # symptom that landed E5 in Continue Watching instead of E6).
-    Req.post(base_url() <> "/UserItems/" <> item_id <> "/UserData",
-      params: [userId: auth.id],
-      headers: [{"x-emby-token", auth.token}],
-      json: %{"PlaybackPositionTicks" => 0},
-      receive_timeout: 5_000
+    Req.post(
+      base_url() <> "/UserItems/" <> item_id <> "/UserData",
+      with_test_options(
+        params: [userId: auth.id],
+        headers: [{"x-emby-token", auth.token}],
+        json: %{"PlaybackPositionTicks" => 0},
+        receive_timeout: 5_000
+      )
     )
 
     invalidate_user_episode_caches(auth)
@@ -775,10 +781,13 @@ defmodule Aviary.Jellyfin do
   watch.
   """
   def mark_unplayed(item_id, auth) do
-    Req.delete(base_url() <> "/UserPlayedItems/" <> item_id,
-      params: [userId: auth.id],
-      headers: [{"x-emby-token", auth.token}],
-      receive_timeout: 5_000
+    Req.delete(
+      base_url() <> "/UserPlayedItems/" <> item_id,
+      with_test_options(
+        params: [userId: auth.id],
+        headers: [{"x-emby-token", auth.token}],
+        receive_timeout: 5_000
+      )
     )
 
     invalidate_user_episode_caches(auth)

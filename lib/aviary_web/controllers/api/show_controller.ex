@@ -23,6 +23,21 @@ defmodule AviaryWeb.API.ShowController do
     end
   end
 
+  def set_watch_point(conn, %{"id" => id, "episodeId" => episode_id}) do
+    user = conn.assigns.current_user
+
+    with {:ok, show} <- Aviary.Catalog.get_show(id, user),
+         :ok <- Aviary.WatchPoint.set(show, episode_id, user) do
+      json(conn, %{ok: true})
+    else
+      _ -> conn |> put_status(:not_found) |> json(%{error: "not_found"})
+    end
+  end
+
+  def set_watch_point(conn, _params) do
+    conn |> put_status(:bad_request) |> json(%{error: "bad_request"})
+  end
+
   defp in_library?(%{source: :library, tmdb_id: tmdb_id}, user)
        when is_binary(tmdb_id),
        do: Aviary.Library.member?(user.id, tmdb_id)

@@ -384,18 +384,6 @@ defmodule AviaryWeb.ShowsDetailLive do
         {:noreply, socket}
 
       idx ->
-        # Watch-mark is an engagement signal — ensure the show is in
-        # library_entries so Upcoming surfaces its drops. (Play and
-        # Sonarr-trigger already do this; without this call, marking
-        # via the marker column would never register.)
-        if show.tmdb_id, do: Aviary.Library.add(user.id, show.tmdb_id)
-
-        not_tmdb? = &(not String.starts_with?(to_string(&1.id), "tmdb-"))
-
-        {prior, future} = Enum.split(flat, idx + 1)
-        to_mark = Enum.filter(prior, not_tmdb?)
-        to_unmark = Enum.filter(future, not_tmdb?)
-
         # Optimistic UI: snap the in-memory show so the marker
         # moves on the next render — N×Jellyfin RTT + a full
         # get_show round-trip was the source of the perceived
@@ -405,18 +393,7 @@ defmodule AviaryWeb.ShowsDetailLive do
         pid = self()
 
         Task.start(fn ->
-          (Enum.map(to_mark, &{:played, &1}) ++ Enum.map(to_unmark, &{:unplayed, &1}))
-          |> Task.async_stream(
-            fn
-              {:played, ep} -> Aviary.Jellyfin.mark_played(ep.id, user)
-              {:unplayed, ep} -> Aviary.Jellyfin.mark_unplayed(ep.id, user)
-            end,
-            max_concurrency: 5,
-            timeout: 5_000,
-            on_timeout: :kill_task
-          )
-          |> Stream.run()
-
+          Aviary.WatchPoint.set(show, episode_id, user)
           send(pid, :reconcile_watch_point)
         end)
 
