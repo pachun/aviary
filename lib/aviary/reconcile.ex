@@ -12,9 +12,10 @@ defmodule Aviary.Reconcile do
   when health is restored, but also safe to invoke directly for ad-
   hoc catch-up.
 
-  Also clears the two states an *arr will sit in forever on its own: a
+  Also clears the states an *arr will sit in forever on its own: a
   completed download it refuses to import, and a release it grabbed for
-  a protocol it has no download client for.
+  a protocol it has no download client for. `sweep_stuck_downloads/0`
+  does only that part, cheaply enough to run every few minutes.
 
   Throttled so a flurry of events (qBit flapping, multiple health
   issues clearing in sequence) doesn't pile up dozens of identical
@@ -32,6 +33,12 @@ defmodule Aviary.Reconcile do
   # step in once it clearly hasn't.
   @orphan_grace_seconds 900
 
+  # An import the *arr has flagged never un-flags itself, but give a
+  # download that only just finished a few minutes before giving up on
+  # it, so a post-processing step still settling isn't mistaken for a
+  # bad file.
+  @stuck_grace_seconds 300
+
   @doc """
   Runs the reconcile pass. Returns `:ok` if it actually ran, or
   `:throttled` if the previous run was within the throttle window
@@ -48,9 +55,20 @@ defmodule Aviary.Reconcile do
   end
 
   defp do_run do
-    clear_import_blocks()
-    clear_orphaned_grabs()
+    sweep_stuck_downloads()
     refire_missing_searches()
+  end
+
+  @doc """
+  Clears every download Sonarr or Radarr has stopped making progress
+  on: finished downloads they won't import, and grabs parked for a
+  download client Radarr doesn't have.
+  """
+  def sweep_stuck_downloads do
+    clear_stuck_sonarr_downloads()
+    clear_stuck_radarr_downloads()
+    clear_orphaned_grabs()
+    :ok
   end
 
   # Radarr will happily accept a grab for a protocol it has no download
@@ -94,60 +112,68 @@ defmodule Aviary.Reconcile do
   end
 
   defp orphaned_grab?(record) do
-    record["status"] == "downloadClientUnavailable" and settled?(record["added"])
+    record["status"] == "downloadClientUnavailable" and
+      settled?(record["added"], @orphan_grace_seconds)
   end
 
-  defp settled?(added) when is_binary(added) do
+  defp settled?(added, grace_seconds) when is_binary(added) do
     case DateTime.from_iso8601(added) do
-      {:ok, at, _} -> DateTime.diff(DateTime.utc_now(), at) >= @orphan_grace_seconds
+      {:ok, at, _} -> DateTime.diff(DateTime.utc_now(), at) >= grace_seconds
       _ -> false
     end
   end
 
-  defp settled?(_), do: false
+  defp settled?(_, _), do: false
 
   defp describe(record) do
     get_in(record, ["movie", "title"]) || record["title"] || "queue record #{record["id"]}"
   end
 
-  # Sonarr won't auto-import a completed download when it can only
-  # match it to the series by the grab-history id (parse-by-name
-  # fails — e.g. the release names the show without the year Sonarr's
-  # title carries, and the series has no bare-name alias). The files
-  # are fine; Sonarr is just being cautious. Left alone these sit at
-  # 100%-downloaded-never-imported forever, so we clear them: find the
-  # blocked downloads, keep only files that parse cleanly to a series
-  # + episodes with no rejections, and fire Sonarr's own ManualImport.
-  defp clear_import_blocks do
+  # A finished download the *arr has flagged is one of three things,
+  # and each has one right move:
+  #
+  #   * the episode (or movie) already has a file from another release
+  #     — the download is redundant; drop it;
+  #   * the files parse cleanly but the *arr only trusts the grab
+  #     history to say which series/movie they belong to — the files
+  #     are fine, so import them ourselves;
+  #   * anything else (a zero-filled "video", a release whose file is a
+  #     different episode, a mismatched quality) — give up on this
+  #     release, blocklist it so it isn't grabbed yet again, and let
+  #     the *arr grab the next one.
+  #
+  # Left alone, every one of these sits at 100%-downloaded forever and
+  # shows as "stuck" in aviary and perch; the third kind also gets
+  # re-grabbed, since nothing ever told the *arr the release was bad.
+  defp clear_stuck_sonarr_downloads do
     case Aviary.Sonarr.queue(pageSize: 300) do
       {:ok, %{"records" => records}} when is_list(records) ->
         download_counts = Enum.frequencies(Enum.map(records, & &1["downloadId"]))
-        blocked = Enum.filter(records, &import_blocked?/1)
-        {redundant, missing} = Enum.split_with(blocked, &episode_already_imported?/1)
+        stuck = Enum.filter(records, &stuck?/1)
+        {redundant, unimported} = Enum.split_with(stuck, &episode_already_imported?/1)
+        {matched_by_id, hopeless} = Enum.split_with(unimported, &matched_by_id_only?/1)
 
-        # A duplicate grab for an episode that already landed a file from
-        # another release: Sonarr can't import over the existing file, so
-        # it sits blocked forever. Drop it — but only when this download
-        # is solely for that one episode, so we never delete a download
-        # another still-missing episode is riding on.
+        # Only drop a download when it is solely for that one episode,
+        # so we never delete one another still-missing episode rides on.
         redundant
         |> Enum.filter(fn r -> download_counts[r["downloadId"]] == 1 end)
-        |> tap(fn dups ->
-          if dups != [], do: Logger.info("reconcile: removing #{length(dups)} redundant import-blocked download(s)")
+        |> Enum.each(fn r ->
+          Logger.info("reconcile: dropping #{describe(r)}: its episode already has a file")
+          Aviary.Sonarr.remove_from_queue(r["id"])
         end)
-        |> Enum.each(fn r -> Aviary.Sonarr.remove_from_queue(r["id"]) end)
 
-        # A genuine block — the episode has no file yet — gets force-imported.
-        actionable =
-          missing
-          |> Enum.map(& &1["downloadId"])
-          |> Enum.reject(&is_nil/1)
-          |> Enum.uniq()
+        matched_by_id
+        |> Enum.uniq_by(& &1["downloadId"])
+        |> Enum.each(fn r ->
+          case force_sonarr_import(r["downloadId"]) do
+            :imported -> :ok
+            :nothing_clean -> give_up_on(:sonarr, r)
+          end
+        end)
 
-        if actionable != [] do
-          Logger.info("reconcile: force-importing #{length(actionable)} import-blocked download(s)")
-          Enum.each(actionable, &force_import/1)
-        end
+        hopeless
+        |> Enum.uniq_by(& &1["downloadId"])
+        |> Enum.each(&give_up_on(:sonarr, &1))
 
         :ok
 
@@ -156,49 +182,144 @@ defmodule Aviary.Reconcile do
     end
   end
 
+  defp clear_stuck_radarr_downloads do
+    case Aviary.Radarr.queue(pageSize: 100) do
+      {:ok, %{"records" => records}} when is_list(records) ->
+        stuck = Enum.filter(records, &stuck?/1)
+        {redundant, unimported} = Enum.split_with(stuck, &movie_already_imported?/1)
+        {matched_by_id, hopeless} = Enum.split_with(unimported, &matched_by_id_only?/1)
+
+        Enum.each(redundant, fn r ->
+          Logger.info("reconcile: dropping #{describe(r)}: the movie already has a file")
+          Aviary.Radarr.remove_from_queue_and_client(r["id"])
+        end)
+
+        matched_by_id
+        |> Enum.uniq_by(& &1["downloadId"])
+        |> Enum.each(fn r ->
+          case force_radarr_import(r["downloadId"]) do
+            :imported -> :ok
+            :nothing_clean -> give_up_on(:radarr, r)
+          end
+        end)
+
+        hopeless
+        |> Enum.uniq_by(& &1["downloadId"])
+        |> Enum.each(&give_up_on(:radarr, &1))
+
+        :ok
+
+      _ ->
+        :error
+    end
+  end
+
+  # Finished downloading, flagged, and been that way long enough. A
+  # warning on a download still in flight ("stalled with no
+  # connections") is not stuck, just slow, and never qualifies.
+  defp stuck?(record) do
+    record["status"] == "completed" and
+      (record["trackedDownloadState"] == "importBlocked" or
+         (record["trackedDownloadStatus"] == "warning" and status_messages(record) != [])) and
+      settled?(record["added"], @stuck_grace_seconds)
+  end
+
+  defp status_messages(record) do
+    Enum.flat_map(record["statusMessages"] || [], fn m -> m["messages"] || [] end)
+  end
+
+  defp matched_by_id_only?(record) do
+    Enum.any?(status_messages(record), &String.contains?(&1, "by ID"))
+  end
+
   defp episode_already_imported?(record) do
     record["episodeHasFile"] == true or match?(%{"hasFile" => true}, record["episode"])
   end
 
-  defp import_blocked?(record) do
-    record["trackedDownloadState"] == "importBlocked" or
-      (record["trackedDownloadStatus"] == "warning" and
-         Enum.any?(record["statusMessages"] || [], fn m ->
-           Enum.any?(m["messages"] || [], &String.contains?(&1, "matched to series by ID"))
-         end))
+  defp movie_already_imported?(record) do
+    match?(%{"hasFile" => true}, record["movie"])
   end
 
-  defp force_import(download_id) do
+  defp give_up_on(arr, record) do
+    reasons = Enum.join(status_messages(record), "; ")
+
+    Logger.info(
+      "reconcile: giving up on #{describe(record)} (#{reasons}): blocklisting it and searching again"
+    )
+
+    case arr do
+      :sonarr -> Aviary.Sonarr.mark_download_failed(record["id"])
+      :radarr -> Aviary.Radarr.mark_download_failed(record["id"])
+    end
+  end
+
+  defp force_sonarr_import(download_id) do
     with {:ok, candidates} <- Aviary.Sonarr.manual_import_candidates(download_id) do
       files =
         candidates
-        |> Enum.filter(&importable?/1)
-        |> Enum.map(&to_import_file(&1, download_id))
+        |> Enum.filter(&importable_episode_file?/1)
+        |> Enum.map(&to_sonarr_import_file(&1, download_id))
 
       case files do
         [] ->
-          Logger.info("reconcile: import-blocked #{download_id} has no clean files, leaving it")
-          :ok
+          :nothing_clean
 
         _ ->
           Logger.info("reconcile: force-importing #{download_id} (#{length(files)} file(s))")
           Aviary.Sonarr.manual_import(files)
+          :imported
       end
     end
   end
 
-  defp importable?(file) do
+  defp importable_episode_file?(file) do
     (file["rejections"] || []) == [] and is_map(file["series"]) and
       file["series"]["id"] != nil and is_list(file["episodes"]) and file["episodes"] != []
   end
 
-  defp to_import_file(file, download_id) do
+  defp to_sonarr_import_file(file, download_id) do
     %{
       id: file["id"],
       path: file["path"],
       folderName: file["folderName"],
       seriesId: file["series"]["id"],
       episodeIds: Enum.map(file["episodes"], & &1["id"]),
+      quality: file["quality"],
+      languages: file["languages"],
+      releaseGroup: file["releaseGroup"],
+      downloadId: file["downloadId"] || download_id
+    }
+  end
+
+  defp force_radarr_import(download_id) do
+    with {:ok, candidates} <- Aviary.Radarr.manual_import_candidates(download_id) do
+      files =
+        candidates
+        |> Enum.filter(&importable_movie_file?/1)
+        |> Enum.map(&to_radarr_import_file(&1, download_id))
+
+      case files do
+        [] ->
+          :nothing_clean
+
+        _ ->
+          Logger.info("reconcile: force-importing #{download_id} (#{length(files)} file(s))")
+          Aviary.Radarr.manual_import(files)
+          :imported
+      end
+    end
+  end
+
+  defp importable_movie_file?(file) do
+    (file["rejections"] || []) == [] and is_map(file["movie"]) and file["movie"]["id"] != nil
+  end
+
+  defp to_radarr_import_file(file, download_id) do
+    %{
+      id: file["id"],
+      path: file["path"],
+      folderName: file["folderName"],
+      movieId: file["movie"]["id"],
       quality: file["quality"],
       languages: file["languages"],
       releaseGroup: file["releaseGroup"],

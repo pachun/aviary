@@ -93,6 +93,53 @@ defmodule Aviary.Radarr do
     end
   end
 
+  @doc """
+  Drops a finished download the movie no longer needs, leftover files
+  included. The release stays grabbable.
+  """
+  def remove_from_queue_and_client(queue_id) do
+    case delete("/queue/#{queue_id}", removeFromClient: true, blocklist: false) do
+      {:ok, _} -> :ok
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Gives up on a download Radarr can't import: deletes it from the
+  client, blocklists the release, and lets Radarr search for another.
+  """
+  def mark_download_failed(queue_id) do
+    case delete("/queue/#{queue_id}",
+           removeFromClient: true,
+           blocklist: true,
+           skipRedownload: false
+         ) do
+      {:ok, _} -> :ok
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Radarr's manual-import candidates for a completed download: each
+  file with the movie Radarr matched it to and any rejections.
+  """
+  def manual_import_candidates(download_id) do
+    case get("/manualimport", downloadId: download_id, filterExistingFiles: false) do
+      {:ok, files} when is_list(files) -> {:ok, files}
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Imports candidate rows from `manual_import_candidates/1` through
+  Radarr's ManualImport command.
+  """
+  def manual_import(files) when is_list(files) and files != [] do
+    command("ManualImport", %{importMode: "auto", files: files})
+  end
+
+  def manual_import(_), do: :error
+
   def movie_search(radarr_movie_ids) when is_list(radarr_movie_ids) do
     command("MoviesSearch", %{movieIds: radarr_movie_ids})
   end
@@ -328,6 +375,7 @@ defmodule Aviary.Radarr do
       ]
 
       opts = if body, do: Keyword.put(opts, :json, body), else: opts
+      opts = Keyword.merge(opts, Application.get_env(:aviary, :radarr_req_options, []))
 
       case Req.request([method: method, url: url] ++ opts) do
         {:ok, %Req.Response{status: status, body: response_body}} when status in 200..299 ->

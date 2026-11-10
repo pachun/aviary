@@ -282,6 +282,22 @@ defmodule Aviary.Sonarr do
   end
 
   @doc """
+  Gives up on a download Sonarr can't import: deletes it from the
+  client, blocklists the release so it isn't grabbed a third time, and
+  lets Sonarr search for a different one.
+  """
+  def mark_download_failed(queue_id) do
+    case delete("/queue/#{queue_id}",
+           removeFromClient: true,
+           blocklist: true,
+           skipRedownload: false
+         ) do
+      {:ok, _} -> :ok
+      _ -> :error
+    end
+  end
+
+  @doc """
   Returns a `%{monitored: bool, episodes: map, queue: list}` snapshot
   for a single show. The episodes map is keyed by
   `{season, episode}` so callers can look up state per episode

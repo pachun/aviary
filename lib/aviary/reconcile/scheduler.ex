@@ -8,6 +8,11 @@ defmodule Aviary.Reconcile.Scheduler do
   again, so a monitored episode whose every release failed sits
   "Searching" forever. A daily pass re-fires the searches so the next
   working release gets picked up without anyone tapping the episode.
+
+  A finished download Sonarr or Radarr won't import sits in the queue
+  forever too, and the webhooks never fire for it. A sweep every few
+  minutes clears those so a show never shows "stuck" for longer than
+  it takes to grab the next release.
   """
 
   use GenServer
@@ -15,6 +20,8 @@ defmodule Aviary.Reconcile.Scheduler do
 
   @interval_ms 24 * 60 * 60 * 1000
   @initial_delay_ms 5 * 60 * 1000
+  @sweep_interval_ms 10 * 60 * 1000
+  @first_sweep_delay_ms 60 * 1000
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -23,6 +30,7 @@ defmodule Aviary.Reconcile.Scheduler do
   @impl true
   def init(_opts) do
     schedule_next_pass(@initial_delay_ms)
+    schedule_next_sweep(@first_sweep_delay_ms)
     {:ok, %{}}
   end
 
@@ -33,8 +41,18 @@ defmodule Aviary.Reconcile.Scheduler do
     {:noreply, state}
   end
 
+  def handle_info(:sweep, state) do
+    sweep()
+    schedule_next_sweep(@sweep_interval_ms)
+    {:noreply, state}
+  end
+
   defp schedule_next_pass(delay_ms) do
     Process.send_after(self(), :reconcile, delay_ms)
+  end
+
+  defp schedule_next_sweep(delay_ms) do
+    Process.send_after(self(), :sweep, delay_ms)
   end
 
   defp reconcile do
@@ -44,6 +62,14 @@ defmodule Aviary.Reconcile.Scheduler do
       Aviary.Reconcile.run()
     rescue
       e -> Logger.warning("reconcile scheduler raised: #{inspect(e)}")
+    end
+  end
+
+  defp sweep do
+    try do
+      Aviary.Reconcile.sweep_stuck_downloads()
+    rescue
+      e -> Logger.warning("reconcile sweep raised: #{inspect(e)}")
     end
   end
 end

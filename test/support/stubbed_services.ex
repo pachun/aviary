@@ -9,6 +9,8 @@ defmodule Aviary.StubbedServices do
   def point_at_stubs do
     Application.put_env(:aviary, :sonarr_url, "http://sonarr.test")
     Application.put_env(:aviary, :sonarr_api_key, "sonarr-test-key")
+    Application.put_env(:aviary, :radarr_url, "http://radarr.test")
+    Application.put_env(:aviary, :radarr_api_key, "radarr-test-key")
     Application.put_env(:aviary, :sabnzbd_url, "http://sabnzbd.test")
     Application.put_env(:aviary, :sabnzbd_api_key, "sabnzbd-test-key")
     Application.put_env(:aviary, :jellyfin_url, "http://jellyfin.test")

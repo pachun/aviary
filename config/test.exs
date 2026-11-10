@@ -30,6 +30,7 @@ config :aviary, Aviary.Nhl.Schedule, refresh_on_its_own: false
 # are set in test/test_helper.exs, after config/runtime.exs has run
 config :aviary,
   sonarr_req_options: [plug: {Req.Test, Aviary.Sonarr}],
+  radarr_req_options: [plug: {Req.Test, Aviary.Radarr}],
   sabnzbd_req_options: [plug: {Req.Test, Aviary.Sabnzbd}],
   jellyfin_req_options: [plug: {Req.Test, Aviary.Jellyfin}],
   jellyseerr_req_options: [plug: {Req.Test, Aviary.Jellyseerr}]
