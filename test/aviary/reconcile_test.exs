@@ -161,6 +161,164 @@ defmodule Aviary.ReconcileTest do
     end
   end
 
+  describe "an episode whose every accepted release failed to download" do
+    test "gets the most playable release Sonarr rejects" do
+      stub_sonarr(
+        queue: [],
+        failed_downloads: [failed_download(99)],
+        releases: [
+          release("blocklisted.1080p.h264", rejections: ["Release is blocklisted"]),
+          release("hevc.1080p",
+            rejections: [
+              "Custom Formats Codec: HEVC / x265 have score -10000 below Series profile minimum 0"
+            ],
+            customFormats: [%{"name" => "Codec: HEVC / x265"}]
+          ),
+          release("h264.720p",
+            rejections: ["WEBDL-720p is not wanted in profile"],
+            quality: quality(720)
+          )
+        ]
+      )
+
+      assert Reconcile.grab_last_resort_releases() == 1
+      assert_received {:sonarr, :grab, %{"guid" => "h264.720p", "indexerId" => 2}}
+      refute_received {:sonarr, :grab, _}
+    end
+
+    test "settles for HEVC when no H.264 release is left" do
+      stub_sonarr(
+        queue: [],
+        failed_downloads: [failed_download(99)],
+        releases: [
+          release("hevc.720p",
+            rejections: ["Custom Formats Codec: HEVC / x265 have score -10000 below minimum 0"],
+            customFormats: [%{"name" => "Codec: HEVC / x265"}],
+            quality: quality(720)
+          ),
+          release("hevc.1080p",
+            rejections: ["Custom Formats Codec: HEVC / x265 have score -10000 below minimum 0"],
+            customFormats: [%{"name" => "Codec: HEVC / x265"}]
+          )
+        ]
+      )
+
+      assert Reconcile.grab_last_resort_releases() == 1
+      assert_received {:sonarr, :grab, %{"guid" => "hevc.1080p"}}
+    end
+
+    test "is left to Sonarr while a release it accepts is still on offer" do
+      stub_sonarr(
+        queue: [],
+        failed_downloads: [failed_download(99)],
+        releases: [
+          release("accepted.1080p.h264", approved: true, rejections: []),
+          release("h264.720p",
+            rejections: ["WEBDL-720p is not wanted in profile"],
+            quality: quality(720)
+          )
+        ]
+      )
+
+      assert Reconcile.grab_last_resort_releases() == 0
+      refute_received {:sonarr, :grab, _}
+    end
+
+    test "never gets a release that is unwatchable here" do
+      stub_sonarr(
+        queue: [],
+        failed_downloads: [failed_download(99)],
+        releases: [
+          release("blocklisted", rejections: ["Release is blocklisted"]),
+          release("uhd",
+            rejections: ["WEBDL-2160p is not wanted in profile"],
+            quality: quality(2160)
+          ),
+          release("banned.group",
+            rejections: ["Custom Formats Banned Release Groups have score -10000 below minimum 0"],
+            customFormats: [%{"name" => "Banned Release Groups"}]
+          ),
+          release("german",
+            rejections: ["WEBDL-720p is not wanted in profile"],
+            quality: quality(720),
+            languages: [%{"id" => 4, "name" => "German"}]
+          ),
+          release("wrong.episode", rejections: ["Episode wasn't requested: 1x02"])
+        ]
+      )
+
+      assert Reconcile.grab_last_resort_releases() == 0
+      refute_received {:sonarr, :grab, _}
+    end
+
+    test "is left alone while another release is downloading" do
+      stub_sonarr(
+        queue: [%{"id" => 5, "episodeId" => 99, "status" => "downloading"}],
+        failed_downloads: [failed_download(99)],
+        releases: [
+          release("h264.720p",
+            rejections: ["WEBDL-720p is not wanted in profile"],
+            quality: quality(720)
+          )
+        ]
+      )
+
+      assert Reconcile.grab_last_resort_releases() == 0
+      refute_received {:sonarr, :grab, _}
+    end
+
+    test "is left alone once it has a file or is no longer monitored" do
+      stub_sonarr(
+        queue: [],
+        failed_downloads: [
+          failed_download(99, hasFile: true),
+          failed_download(100, monitored: false)
+        ],
+        releases: [
+          release("h264.720p",
+            rejections: ["WEBDL-720p is not wanted in profile"],
+            quality: quality(720)
+          )
+        ]
+      )
+
+      assert Reconcile.grab_last_resort_releases() == 0
+      refute_received {:sonarr, :grab, _}
+    end
+  end
+
+  defp failed_download(episode_id, episode_overrides \\ []) do
+    episode =
+      Map.merge(
+        %{"id" => episode_id, "monitored" => true, "hasFile" => false},
+        Map.new(episode_overrides, fn {key, value} -> {Atom.to_string(key), value} end)
+      )
+
+    %{"eventType" => "downloadFailed", "episodeId" => episode_id, "episode" => episode}
+  end
+
+  defp release(guid, overrides) do
+    Map.merge(
+      %{
+        "guid" => guid,
+        "indexerId" => 2,
+        "title" => guid,
+        "approved" => false,
+        "temporarilyRejected" => false,
+        "downloadAllowed" => true,
+        "customFormats" => [],
+        "quality" => quality(1080),
+        "languages" => [%{"id" => 1, "name" => "English"}],
+        "size" => 1_000_000_000
+      },
+      Map.new(overrides, fn {key, value} -> {Atom.to_string(key), value} end)
+    )
+  end
+
+  defp quality(resolution) do
+    %{"quality" => %{"name" => "WEBDL-#{resolution}p", "resolution" => resolution}}
+  end
+
   defp finished(id, messages, overrides \\ []) do
     Map.merge(
       %{
@@ -218,6 +376,8 @@ defmodule Aviary.ReconcileTest do
     test = self()
     queue = Keyword.fetch!(opts, :queue)
     candidates = Keyword.get(opts, :candidates, [])
+    failed_downloads = Keyword.get(opts, :failed_downloads, [])
+    releases = Keyword.get(opts, :releases, [])
 
     Req.Test.stub(name, fn conn ->
       case {conn.method, conn.request_path} do
@@ -229,6 +389,17 @@ defmodule Aviary.ReconcileTest do
 
         {"GET", "/api/v3/manualimport"} ->
           Req.Test.json(conn, candidates)
+
+        {"GET", "/api/v3/history"} ->
+          Req.Test.json(conn, %{"records" => failed_downloads})
+
+        {"GET", "/api/v3/release"} ->
+          Req.Test.json(conn, releases)
+
+        {"POST", "/api/v3/release"} ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(test, {tag, :grab, Jason.decode!(body)})
+          Req.Test.json(conn, %{})
 
         {"DELETE", "/api/v3/queue/" <> id} ->
           send(test, {tag, :delete, id, conn.query_params})

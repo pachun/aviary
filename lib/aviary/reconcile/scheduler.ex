@@ -13,6 +13,13 @@ defmodule Aviary.Reconcile.Scheduler do
   forever too, and the webhooks never fire for it. A sweep every few
   minutes clears those so a show never shows "stuck" for longer than
   it takes to grab the next release.
+
+  When every release Sonarr accepts for an episode has failed, the
+  daily pass can't help: there is nothing left for Sonarr to grab. A
+  last-resort pass follows it and grabs the best release the quality
+  profile rejects. A last-resort grab can itself turn out to be gone
+  from the news servers, so the pass repeats a few minutes after any
+  pass that grabbed something, until it has nothing left to try.
   """
 
   use GenServer
@@ -22,6 +29,7 @@ defmodule Aviary.Reconcile.Scheduler do
   @initial_delay_ms 5 * 60 * 1000
   @sweep_interval_ms 10 * 60 * 1000
   @first_sweep_delay_ms 60 * 1000
+  @last_resort_delay_ms 5 * 60 * 1000
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -31,14 +39,22 @@ defmodule Aviary.Reconcile.Scheduler do
   def init(_opts) do
     schedule_next_pass(@initial_delay_ms)
     schedule_next_sweep(@first_sweep_delay_ms)
-    {:ok, %{}}
+    {:ok, %{last_resort_timer: nil}}
   end
 
   @impl true
   def handle_info(:reconcile, state) do
     reconcile()
     schedule_next_pass(@interval_ms)
-    {:noreply, state}
+    {:noreply, schedule_last_resort_pass(state)}
+  end
+
+  def handle_info(:last_resort, state) do
+    if grab_last_resort_releases() > 0 do
+      {:noreply, schedule_last_resort_pass(state)}
+    else
+      {:noreply, %{state | last_resort_timer: nil}}
+    end
   end
 
   def handle_info(:sweep, state) do
@@ -53,6 +69,21 @@ defmodule Aviary.Reconcile.Scheduler do
 
   defp schedule_next_sweep(delay_ms) do
     Process.send_after(self(), :sweep, delay_ms)
+  end
+
+  defp schedule_last_resort_pass(state) do
+    if state.last_resort_timer, do: Process.cancel_timer(state.last_resort_timer)
+    %{state | last_resort_timer: Process.send_after(self(), :last_resort, @last_resort_delay_ms)}
+  end
+
+  defp grab_last_resort_releases do
+    try do
+      Aviary.Reconcile.grab_last_resort_releases()
+    rescue
+      e ->
+        Logger.warning("reconcile last-resort pass raised: #{inspect(e)}")
+        0
+    end
   end
 
   defp reconcile do

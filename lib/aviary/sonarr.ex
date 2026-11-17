@@ -35,6 +35,11 @@ defmodule Aviary.Sonarr do
   @behaviour_default_quality_profile 4
   @behaviour_default_root_folder "/shows"
 
+  @default_timeout_ms 10_000
+  @indexer_search_timeout_ms 120_000
+  @download_failed_event_type 4
+  @failed_downloads_page_size 1000
+
   @doc """
   "Watch the whole show" — adds the series with monitor=all, then
   fires a per-episode EpisodeSearch for every aired, monitored,
@@ -205,6 +210,45 @@ defmodule Aviary.Sonarr do
   """
   def episode_search(episode_ids) when is_list(episode_ids) do
     command("EpisodeSearch", %{episodeIds: episode_ids})
+  end
+
+  @doc """
+  Every download Sonarr gave up on, newest first, each with the episode
+  it was for.
+  """
+  def failed_downloads do
+    case get("/history",
+           eventType: @download_failed_event_type,
+           includeEpisode: true,
+           pageSize: @failed_downloads_page_size,
+           sortKey: "date",
+           sortDirection: "descending"
+         ) do
+      {:ok, %{"records" => records}} when is_list(records) -> {:ok, records}
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Searches the indexers for one episode and returns every release found,
+  each with Sonarr's verdict (`approved`, `rejections`).
+  """
+  def releases(episode_id) do
+    case request(:get, "/release", [episodeId: episode_id], nil, @indexer_search_timeout_ms) do
+      {:ok, releases} when is_list(releases) -> {:ok, releases}
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Sends a release from `releases/1` to the download client whatever
+  Sonarr's verdict on it was.
+  """
+  def grab_release(%{"guid" => guid, "indexerId" => indexer_id}) do
+    case post("/release", %{guid: guid, indexerId: indexer_id}) do
+      {:ok, _} -> :ok
+      _ -> :error
+    end
   end
 
   @doc """
@@ -670,14 +714,14 @@ defmodule Aviary.Sonarr do
     request(:delete, path, params, nil)
   end
 
-  defp request(method, path, params, body) do
+  defp request(method, path, params, body, receive_timeout_ms \\ @default_timeout_ms) do
     require Logger
 
     with key when not is_nil(key) <- api_key(),
          url = base_url() <> "/api/v3" <> path do
       opts = [
         headers: [{"x-api-key", key}],
-        receive_timeout: 10_000,
+        receive_timeout: receive_timeout_ms,
         retry: false,
         params: params
       ]

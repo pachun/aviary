@@ -39,6 +39,13 @@ defmodule Aviary.Reconcile do
   # bad file.
   @stuck_grace_seconds 300
 
+  @hevc_custom_format "Codec: HEVC / x265"
+  @multiple_audio_custom_format "Multi / Dual Audio"
+  @tolerated_custom_formats [@hevc_custom_format, @multiple_audio_custom_format]
+  @watchable_resolutions [720, 1080]
+  @unknown_resolution 0
+  @no_releases_grabbed 0
+
   @doc """
   Runs the reconcile pass. Returns `:ok` if it actually ran, or
   `:throttled` if the previous run was within the throttle window
@@ -325,6 +332,85 @@ defmodule Aviary.Reconcile do
       releaseGroup: file["releaseGroup"],
       downloadId: file["downloadId"] || download_id
     }
+  end
+
+  @doc """
+  Grabs a release Sonarr's quality profile rejects for each episode
+  whose every accepted release has already failed to download, so the
+  episode is watchable instead of "Searching" forever. Sonarr still
+  upgrades it once a release the profile accepts turns up.
+
+  Returns how many releases it grabbed.
+  """
+  def grab_last_resort_releases do
+    with {:ok, failed_downloads} <- Aviary.Sonarr.failed_downloads(),
+         {:ok, %{"records" => queue}} when is_list(queue) <- Aviary.Sonarr.queue(pageSize: 300) do
+      queued_episode_ids = MapSet.new(queue, & &1["episodeId"])
+
+      failed_downloads
+      |> Enum.map(& &1["episode"])
+      |> Enum.filter(&still_wanted?/1)
+      |> Enum.uniq_by(& &1["id"])
+      |> Enum.reject(&MapSet.member?(queued_episode_ids, &1["id"]))
+      |> Enum.count(&grab_last_resort_release/1)
+    else
+      _ -> @no_releases_grabbed
+    end
+  end
+
+  defp still_wanted?(%{"monitored" => true, "hasFile" => false}), do: true
+  defp still_wanted?(_), do: false
+
+  defp grab_last_resort_release(episode) do
+    with {:ok, releases} <- Aviary.Sonarr.releases(episode["id"]),
+         false <- Enum.any?(releases, &sonarr_will_grab?/1),
+         [best | _] <-
+           releases |> Enum.filter(&last_resort?/1) |> Enum.sort_by(&last_resort_rank/1),
+         :ok <- Aviary.Sonarr.grab_release(best) do
+      Logger.info(
+        "reconcile: every accepted release of episode #{episode["id"]} failed; grabbed #{best["title"]} as a last resort (Sonarr rejected it for: #{Enum.join(best["rejections"], "; ")})"
+      )
+
+      true
+    else
+      _ -> false
+    end
+  end
+
+  defp sonarr_will_grab?(release) do
+    release["approved"] == true or release["temporarilyRejected"] == true
+  end
+
+  defp last_resort?(release) do
+    rejections = release["rejections"] || []
+
+    release["downloadAllowed"] == true and rejections != [] and
+      Enum.all?(rejections, &rejected_only_by_preference?/1) and
+      Enum.all?(custom_format_names(release), &(&1 in @tolerated_custom_formats)) and
+      resolution(release) in @watchable_resolutions and
+      Enum.any?(release["languages"] || [], &(&1["name"] == "English"))
+  end
+
+  defp rejected_only_by_preference?(rejection) when is_binary(rejection) do
+    String.starts_with?(rejection, "Custom Formats ") or
+      String.ends_with?(rejection, "is not wanted in profile")
+  end
+
+  defp rejected_only_by_preference?(_), do: false
+
+  defp last_resort_rank(release) do
+    formats = custom_format_names(release)
+
+    {@hevc_custom_format in formats, -resolution(release),
+     @multiple_audio_custom_format in formats, -(release["size"] || 0)}
+  end
+
+  defp custom_format_names(release) do
+    Enum.map(release["customFormats"] || [], & &1["name"])
+  end
+
+  defp resolution(release) do
+    get_in(release, ["quality", "quality", "resolution"]) || @unknown_resolution
   end
 
   defp refire_missing_searches do
