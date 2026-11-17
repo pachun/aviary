@@ -17,9 +17,10 @@ defmodule Aviary.Reconcile.Scheduler do
   When every release Sonarr accepts for an episode has failed, the
   daily pass can't help: there is nothing left for Sonarr to grab. A
   last-resort pass follows it and grabs the best release the quality
-  profile rejects. A last-resort grab can itself turn out to be gone
-  from the news servers, so the pass repeats a few minutes after any
-  pass that grabbed something, until it has nothing left to try.
+  profile rejects. Each sweep does the same for episodes whose download
+  failed within the last hour, so an episode Sonarr has just run out of
+  releases for, or whose last-resort release was gone too, gets the
+  next one within minutes.
   """
 
   use GenServer
@@ -29,7 +30,6 @@ defmodule Aviary.Reconcile.Scheduler do
   @initial_delay_ms 5 * 60 * 1000
   @sweep_interval_ms 10 * 60 * 1000
   @first_sweep_delay_ms 60 * 1000
-  @last_resort_delay_ms 5 * 60 * 1000
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -39,22 +39,14 @@ defmodule Aviary.Reconcile.Scheduler do
   def init(_opts) do
     schedule_next_pass(@initial_delay_ms)
     schedule_next_sweep(@first_sweep_delay_ms)
-    {:ok, %{last_resort_timer: nil}}
+    {:ok, %{}}
   end
 
   @impl true
   def handle_info(:reconcile, state) do
     reconcile()
     schedule_next_pass(@interval_ms)
-    {:noreply, schedule_last_resort_pass(state)}
-  end
-
-  def handle_info(:last_resort, state) do
-    if grab_last_resort_releases() > 0 do
-      {:noreply, schedule_last_resort_pass(state)}
-    else
-      {:noreply, %{state | last_resort_timer: nil}}
-    end
+    {:noreply, state}
   end
 
   def handle_info(:sweep, state) do
@@ -71,26 +63,12 @@ defmodule Aviary.Reconcile.Scheduler do
     Process.send_after(self(), :sweep, delay_ms)
   end
 
-  defp schedule_last_resort_pass(state) do
-    if state.last_resort_timer, do: Process.cancel_timer(state.last_resort_timer)
-    %{state | last_resort_timer: Process.send_after(self(), :last_resort, @last_resort_delay_ms)}
-  end
-
-  defp grab_last_resort_releases do
-    try do
-      Aviary.Reconcile.grab_last_resort_releases()
-    rescue
-      e ->
-        Logger.warning("reconcile last-resort pass raised: #{inspect(e)}")
-        0
-    end
-  end
-
   defp reconcile do
     Logger.info("reconcile scheduler: running daily pass")
 
     try do
       Aviary.Reconcile.run()
+      Aviary.Reconcile.grab_last_resort_releases()
     rescue
       e -> Logger.warning("reconcile scheduler raised: #{inspect(e)}")
     end
@@ -99,6 +77,7 @@ defmodule Aviary.Reconcile.Scheduler do
   defp sweep do
     try do
       Aviary.Reconcile.sweep_stuck_downloads()
+      Aviary.Reconcile.grab_last_resort_releases_after_recent_failures()
     rescue
       e -> Logger.warning("reconcile sweep raised: #{inspect(e)}")
     end

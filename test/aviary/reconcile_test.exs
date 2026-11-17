@@ -5,6 +5,7 @@ defmodule Aviary.ReconcileTest do
 
   @an_hour_ago DateTime.utc_now() |> DateTime.add(-3600) |> DateTime.to_iso8601()
   @just_now DateTime.utc_now() |> DateTime.to_iso8601()
+  @hours_ago DateTime.utc_now() |> DateTime.add(-3 * 3600) |> DateTime.to_iso8601()
 
   describe "a finished download Sonarr won't import" do
     test "is blocklisted and searched for again when the file is useless" do
@@ -287,6 +288,54 @@ defmodule Aviary.ReconcileTest do
     end
   end
 
+  describe "an episode with a grab Sonarr has not reported on yet" do
+    test "is left alone while the grab is recent" do
+      stub_sonarr(
+        queue: [],
+        failed_downloads: [failed_download(99)],
+        episode_history: [%{"eventType" => "grabbed", "date" => @just_now}],
+        releases: [a_720p_h264_release()]
+      )
+
+      assert Reconcile.grab_last_resort_releases() == 0
+      refute_received {:sonarr, :grab, _}
+    end
+
+    test "gets another release once the grab has gone unanswered for hours" do
+      stub_sonarr(
+        queue: [],
+        failed_downloads: [failed_download(99)],
+        episode_history: [%{"eventType" => "grabbed", "date" => @hours_ago}],
+        releases: [a_720p_h264_release()]
+      )
+
+      assert Reconcile.grab_last_resort_releases() == 1
+    end
+  end
+
+  describe "the pass that runs every few minutes" do
+    test "gets a release for an episode whose download just failed" do
+      stub_sonarr(
+        queue: [],
+        failed_downloads: [failed_download(99)],
+        releases: [a_720p_h264_release()]
+      )
+
+      assert Reconcile.grab_last_resort_releases_after_recent_failures() == 1
+    end
+
+    test "skips an episode whose last failure was hours ago" do
+      stub_sonarr(
+        queue: [],
+        failed_downloads: [Map.put(failed_download(99), "date", @hours_ago)],
+        releases: [a_720p_h264_release()]
+      )
+
+      assert Reconcile.grab_last_resort_releases_after_recent_failures() == 0
+      refute_received {:sonarr, :grab, _}
+    end
+  end
+
   defp failed_download(episode_id, episode_overrides \\ []) do
     episode =
       Map.merge(
@@ -294,7 +343,19 @@ defmodule Aviary.ReconcileTest do
         Map.new(episode_overrides, fn {key, value} -> {Atom.to_string(key), value} end)
       )
 
-    %{"eventType" => "downloadFailed", "episodeId" => episode_id, "episode" => episode}
+    %{
+      "eventType" => "downloadFailed",
+      "episodeId" => episode_id,
+      "episode" => episode,
+      "date" => @just_now
+    }
+  end
+
+  defp a_720p_h264_release do
+    release("h264.720p",
+      rejections: ["WEBDL-720p is not wanted in profile"],
+      quality: quality(720)
+    )
   end
 
   defp release(guid, overrides) do
@@ -378,6 +439,7 @@ defmodule Aviary.ReconcileTest do
     candidates = Keyword.get(opts, :candidates, [])
     failed_downloads = Keyword.get(opts, :failed_downloads, [])
     releases = Keyword.get(opts, :releases, [])
+    episode_history = Keyword.get(opts, :episode_history, [])
 
     Req.Test.stub(name, fn conn ->
       case {conn.method, conn.request_path} do
@@ -391,7 +453,10 @@ defmodule Aviary.ReconcileTest do
           Req.Test.json(conn, candidates)
 
         {"GET", "/api/v3/history"} ->
-          Req.Test.json(conn, %{"records" => failed_downloads})
+          records =
+            if conn.query_params["episodeId"], do: episode_history, else: failed_downloads
+
+          Req.Test.json(conn, %{"records" => records})
 
         {"GET", "/api/v3/release"} ->
           Req.Test.json(conn, releases)

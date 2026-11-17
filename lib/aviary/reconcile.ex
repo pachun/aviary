@@ -45,6 +45,8 @@ defmodule Aviary.Reconcile do
   @watchable_resolutions [720, 1080]
   @unknown_resolution 0
   @no_releases_grabbed 0
+  @recent_failure_seconds 3600
+  @grab_outcome_wait_seconds 3600
 
   @doc """
   Runs the reconcile pass. Returns `:ok` if it actually ran, or
@@ -343,15 +345,33 @@ defmodule Aviary.Reconcile do
   Returns how many releases it grabbed.
   """
   def grab_last_resort_releases do
+    grab_last_resort_releases_after(&Function.identity/1)
+  end
+
+  @doc """
+  The same, for only the episodes with a download that failed within
+  the last hour — cheap enough to run every few minutes, so an episode
+  gets its last-resort release right after Sonarr runs out of releases
+  instead of at the next daily pass.
+  """
+  def grab_last_resort_releases_after_recent_failures do
+    grab_last_resort_releases_after(fn failed_downloads ->
+      Enum.filter(failed_downloads, &happened_within?(&1, @recent_failure_seconds))
+    end)
+  end
+
+  defp grab_last_resort_releases_after(choose_failed_downloads) do
     with {:ok, failed_downloads} <- Aviary.Sonarr.failed_downloads(),
          {:ok, %{"records" => queue}} when is_list(queue) <- Aviary.Sonarr.queue(pageSize: 300) do
       queued_episode_ids = MapSet.new(queue, & &1["episodeId"])
 
       failed_downloads
+      |> choose_failed_downloads.()
       |> Enum.map(& &1["episode"])
       |> Enum.filter(&still_wanted?/1)
       |> Enum.uniq_by(& &1["id"])
       |> Enum.reject(&MapSet.member?(queued_episode_ids, &1["id"]))
+      |> Enum.reject(&grab_outcome_pending?/1)
       |> Enum.count(&grab_last_resort_release/1)
     else
       _ -> @no_releases_grabbed
@@ -360,6 +380,32 @@ defmodule Aviary.Reconcile do
 
   defp still_wanted?(%{"monitored" => true, "hasFile" => false}), do: true
   defp still_wanted?(_), do: false
+
+  # https://github.com/pachun/aviary/commit/9b3e9fa grabbed the same
+  # dead release three times: a busy Sonarr took 25 minutes to list a
+  # grab in its queue or record its failure, so the queue alone can't
+  # say whether a grab is still in flight.
+  defp grab_outcome_pending?(episode) do
+    case Aviary.Sonarr.episode_history(episode["id"]) do
+      {:ok, [%{"eventType" => "grabbed"} = latest | _]} ->
+        happened_within?(latest, @grab_outcome_wait_seconds)
+
+      {:ok, _} ->
+        false
+
+      :error ->
+        true
+    end
+  end
+
+  defp happened_within?(%{"date" => date}, seconds) when is_binary(date) do
+    case DateTime.from_iso8601(date) do
+      {:ok, at, _} -> DateTime.diff(DateTime.utc_now(), at) < seconds
+      _ -> false
+    end
+  end
+
+  defp happened_within?(_, _), do: false
 
   defp grab_last_resort_release(episode) do
     with {:ok, releases} <- Aviary.Sonarr.releases(episode["id"]),
