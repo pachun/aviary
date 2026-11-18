@@ -411,7 +411,10 @@ defmodule Aviary.Sonarr do
     end
   end
 
-  defp all_series do
+  @doc """
+  Every show Sonarr tracks, as `{:ok, list}` or `:error`.
+  """
+  def all_series do
     Aviary.Cache.swr(:sonarr_series_list, @series_fresh_ms, @series_stale_ms, fn ->
       case get("/series", []) do
         {:ok, list} when is_list(list) -> {:ok, list}

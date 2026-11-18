@@ -45,6 +45,7 @@ defmodule Aviary.Reconcile.Scheduler do
   @impl true
   def handle_info(:reconcile, state) do
     reconcile()
+    fill_in_more_like_this_rows()
     schedule_next_pass(@interval_ms)
     {:noreply, state}
   end
@@ -72,6 +73,10 @@ defmodule Aviary.Reconcile.Scheduler do
     rescue
       e -> Logger.warning("reconcile scheduler raised: #{inspect(e)}")
     end
+  end
+
+  defp fill_in_more_like_this_rows do
+    Task.Supervisor.start_child(Aviary.TaskSupervisor, &Aviary.MoreLikeThis.fill_in_library/0)
   end
 
   defp sweep do

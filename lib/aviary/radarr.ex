@@ -218,7 +218,10 @@ defmodule Aviary.Radarr do
     end
   end
 
-  defp all_movies do
+  @doc """
+  Every movie Radarr tracks, as `{:ok, list}` or `:error`.
+  """
+  def all_movies do
     Aviary.Cache.swr(:radarr_movie_list, @movie_fresh_ms, @movie_stale_ms, fn ->
       case get("/movie", []) do
         {:ok, list} when is_list(list) -> {:ok, list}

@@ -128,7 +128,13 @@ defmodule Aviary.RottenTomatoes do
   end
 
   defp scrape_url(url) do
-    case Req.get(url, headers: [{"user-agent", @ua}], receive_timeout: 8_000) do
+    options =
+      Keyword.merge(
+        [headers: [{"user-agent", @ua}], receive_timeout: 8_000],
+        Application.get_env(:aviary, :rotten_tomatoes_req_options, [])
+      )
+
+    case Req.get(url, options) do
       {:ok, %Req.Response{status: 200, body: html}} ->
         scores_in_page(html)
 

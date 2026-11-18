@@ -17,5 +17,6 @@ defmodule Aviary.StubbedServices do
     Application.put_env(:aviary, :jellyfin_api_key, "jellyfin-test-key")
     Application.put_env(:aviary, :jellyseerr_url, "http://jellyseerr.test")
     Application.put_env(:aviary, :jellyseerr_api_key, "jellyseerr-test-key")
+    Application.put_env(:aviary, :anthropic_api_key, "claude-test-key")
   end
 end

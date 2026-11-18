@@ -147,11 +147,7 @@ defmodule Aviary.Jellyseerr do
     with key when not is_nil(key) <- api_key(),
          url = base_url() <> "/api/v1/search?query=#{encoded_q}&page=1",
          {:ok, %Req.Response{status: 200, body: %{"results" => results}}} <-
-           Req.get(url,
-             headers: [{"x-api-key", key}],
-             receive_timeout: 5_000,
-             retry: false
-           ) do
+           Req.get(url, request_options(key, [])) do
       filtered =
         Enum.filter(results, &(&1["mediaType"] in ["tv", "movie"]))
 
