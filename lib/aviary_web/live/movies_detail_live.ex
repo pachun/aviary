@@ -2,6 +2,7 @@ defmodule AviaryWeb.MoviesDetailLive do
   use AviaryWeb, :live_view
 
   alias AviaryWeb.Components.CatalogGrid
+  alias AviaryWeb.Components.Marquee
   alias AviaryWeb.Components.VideoPlayer
 
   # Mirrors @sonarr_poll_ms in ShowsDetailLive. Five seconds is the
@@ -31,10 +32,10 @@ defmodule AviaryWeb.MoviesDetailLive do
             playing_subtitles: [],
             playing_audio_index: nil,
             subtitles_default:
-              Aviary.Preferences.subtitles_default?(
-                socket.assigns.current_user.id
-              ),
+              Aviary.Preferences.subtitles_default?(socket.assigns.current_user.id),
             kicker: kicker(params["from"], params["q"]),
+            from: params["from"] || "movies",
+            more_like_this: nil,
             radarr_status: nil,
             imported_stuck_since: nil,
             in_library: in_library?(movie, socket.assigns.current_user),
@@ -55,6 +56,9 @@ defmodule AviaryWeb.MoviesDetailLive do
           )
           |> fetch_radarr_status()
           |> schedule_radarr_poll()
+          |> start_async(:more_like_this, fn ->
+            Aviary.MoreLikeThis.fetch(:movie, movie.tmdb_id)
+          end)
 
         {:ok, socket}
 
@@ -64,6 +68,14 @@ defmodule AviaryWeb.MoviesDetailLive do
          |> put_flash(:error, "Movie not found")
          |> push_navigate(to: ~p"/library?type=movies")}
     end
+  end
+
+  def handle_async(:more_like_this, {:ok, items}, socket) do
+    {:noreply, assign(socket, more_like_this: items)}
+  end
+
+  def handle_async(:more_like_this, {:exit, _reason}, socket) do
+    {:noreply, assign(socket, more_like_this: [])}
   end
 
   def handle_info(:poll_radarr, socket) do
@@ -251,7 +263,10 @@ defmodule AviaryWeb.MoviesDetailLive do
     {:noreply,
      socket
      |> assign(:in_library, true)
-     |> assign(:playing_item, %{movie | resume_seconds: Aviary.Catalog.resume_point(movie.id, user)})
+     |> assign(:playing_item, %{
+       movie
+       | resume_seconds: Aviary.Catalog.resume_point(movie.id, user)
+     })
      |> assign(:playing_segments, Aviary.Jellyfin.segments(movie.id, user))
      |> assign(:playing_subtitles, Aviary.Jellyfin.subtitle_streams(movie.id, user))
      |> assign(:playing_audio_index, audio_index)}
@@ -269,7 +284,9 @@ defmodule AviaryWeb.MoviesDetailLive do
     movie = socket.assigns.movie
     user = socket.assigns.current_user
 
-    if in_progress?(movie_state(movie, socket.assigns.radarr_status, socket.assigns.download_seen)) do
+    if in_progress?(
+         movie_state(movie, socket.assigns.radarr_status, socket.assigns.download_seen)
+       ) do
       {:noreply, socket}
     else
       case Aviary.Radarr.watch_movie(movie.tmdb_id) do
@@ -290,8 +307,7 @@ defmodule AviaryWeb.MoviesDetailLive do
            |> put_flash(:info, "Grabbing #{movie.title}…")}
 
         _ ->
-          {:noreply,
-           put_flash(socket, :error, "Couldn't reach Radarr. Try again in a moment.")}
+          {:noreply, put_flash(socket, :error, "Couldn't reach Radarr. Try again in a moment.")}
       end
     end
   end
@@ -604,7 +620,10 @@ defmodule AviaryWeb.MoviesDetailLive do
                   invitation, Remove → neutral ink).
                 --%>
                 <%!-- "Add to library" chip removed — big CTA owns it. --%>
-                <div :if={@movie.source == :library and @movie.tmdb_id} class="mt-1 flex flex-wrap gap-2 items-center">
+                <div
+                  :if={@movie.source == :library and @movie.tmdb_id}
+                  class="mt-1 flex flex-wrap gap-2 items-center"
+                >
                   <button
                     :if={@in_library}
                     type="button"
@@ -650,6 +669,23 @@ defmodule AviaryWeb.MoviesDetailLive do
             </p>
           </div>
         </div>
+
+        <section :if={@more_like_this != []} class="mt-12 md:mt-14">
+          <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
+            More like this
+          </h2>
+          <%= if @more_like_this do %>
+            <Marquee.row
+              items={@more_like_this}
+              from={@from}
+              key={"more-like-this:" <> to_string(@movie.id)}
+            >
+              <:empty></:empty>
+            </Marquee.row>
+          <% else %>
+            <Marquee.skeleton />
+          <% end %>
+        </section>
       </article>
 
       <VideoPlayer.overlay

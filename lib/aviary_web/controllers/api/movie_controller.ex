@@ -22,6 +22,17 @@ defmodule AviaryWeb.API.MovieController do
     end
   end
 
+  def more_like_this(conn, %{"id" => id}) do
+    case Aviary.Catalog.get_movie(id, conn.assigns.current_user) do
+      {:ok, movie} ->
+        items = Aviary.MoreLikeThis.fetch(:movie, movie.tmdb_id)
+        json(conn, %{items: Enum.map(items, &AviaryWeb.API.MarqueeItem.serialize/1)})
+
+      :error ->
+        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+    end
+  end
+
   defp in_library?(%{source: :library, tmdb_id: tmdb_id}, user)
        when is_binary(tmdb_id),
        do: Aviary.Library.member?(user.id, tmdb_id)

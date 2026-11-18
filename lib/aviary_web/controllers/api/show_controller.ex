@@ -23,6 +23,17 @@ defmodule AviaryWeb.API.ShowController do
     end
   end
 
+  def more_like_this(conn, %{"id" => id}) do
+    case Aviary.Catalog.get_show(id, conn.assigns.current_user) do
+      {:ok, show} ->
+        items = Aviary.MoreLikeThis.fetch(:show, show.tmdb_id)
+        json(conn, %{items: Enum.map(items, &AviaryWeb.API.MarqueeItem.serialize/1)})
+
+      :error ->
+        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+    end
+  end
+
   def set_watch_point(conn, %{"id" => id, "episodeId" => episode_id}) do
     user = conn.assigns.current_user
 

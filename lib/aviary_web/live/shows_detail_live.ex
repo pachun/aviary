@@ -2,6 +2,7 @@ defmodule AviaryWeb.ShowsDetailLive do
   use AviaryWeb, :live_view
 
   alias AviaryWeb.Components.CatalogGrid
+  alias AviaryWeb.Components.Marquee
   alias AviaryWeb.Components.ReleaseCalendar
   alias AviaryWeb.Components.VideoPlayer
 
@@ -34,10 +35,10 @@ defmodule AviaryWeb.ShowsDetailLive do
             playing_subtitles: [],
             playing_audio_index: nil,
             subtitles_default:
-              Aviary.Preferences.subtitles_default?(
-                socket.assigns.current_user.id
-              ),
+              Aviary.Preferences.subtitles_default?(socket.assigns.current_user.id),
             kicker: kicker(params["from"], params["q"]),
+            from: params["from"] || "shows",
+            more_like_this: nil,
             sonarr_status: nil,
             collapsed_seasons: initial_collapsed_seasons(show),
             imported_stuck_since: nil,
@@ -49,13 +50,15 @@ defmodule AviaryWeb.ShowsDetailLive do
             # Family Recommendations state — see handle_event
             # "open_recommend_popover" for the popover behavior.
             household_users: list_household_users(socket.assigns.current_user),
-            recommenders:
-              recommender_records(show, socket.assigns.current_user),
+            recommenders: recommender_records(show, socket.assigns.current_user),
             recommend_popover_open: false,
             recommend_popover_recipients: []
           )
           |> fetch_sonarr_status()
           |> schedule_sonarr_poll()
+          |> start_async(:more_like_this, fn ->
+            Aviary.MoreLikeThis.fetch(:show, show.tmdb_id)
+          end)
 
         {:ok, socket}
 
@@ -65,6 +68,14 @@ defmodule AviaryWeb.ShowsDetailLive do
          |> put_flash(:error, "Show not found")
          |> push_navigate(to: ~p"/library?type=shows")}
     end
+  end
+
+  def handle_async(:more_like_this, {:ok, items}, socket) do
+    {:noreply, assign(socket, more_like_this: items)}
+  end
+
+  def handle_async(:more_like_this, {:exit, _reason}, socket) do
+    {:noreply, assign(socket, more_like_this: [])}
   end
 
   def handle_info(:poll_sonarr, socket) do
@@ -664,12 +675,18 @@ defmodule AviaryWeb.ShowsDetailLive do
         --%>
         <span
           aria-label="Download"
-          class={[@chip_base, "bg-oxblood text-white transition-opacity opacity-90 group-hover:opacity-100 [letter-spacing:0]"]}
+          class={[
+            @chip_base,
+            "bg-oxblood text-white transition-opacity opacity-90 group-hover:opacity-100 [letter-spacing:0]"
+          ]}
         >
           ↓
         </span>
       <% _ -> %>
-        <span class={[@chip_base, "bg-oxblood text-white transition-opacity opacity-90 group-hover:opacity-100"]}>
+        <span class={[
+          @chip_base,
+          "bg-oxblood text-white transition-opacity opacity-90 group-hover:opacity-100"
+        ]}>
           {@label}
         </span>
     <% end %>
@@ -894,7 +911,10 @@ defmodule AviaryWeb.ShowsDetailLive do
                   the big CTA owns that action when the show isn't in
                   the user's library. Remove + Recommend stay.
                 --%>
-                <div :if={@show.source == :library and @show.tmdb_id} class="mt-1 flex flex-wrap gap-2 items-center">
+                <div
+                  :if={@show.source == :library and @show.tmdb_id}
+                  class="mt-1 flex flex-wrap gap-2 items-center"
+                >
                   <button
                     :if={@in_library}
                     type="button"
@@ -1053,24 +1073,26 @@ defmodule AviaryWeb.ShowsDetailLive do
               --%>
               <li
                 :for={ep <- episodes}
-                class={[
-                  "border-b border-rule transition-colors duration-200",
-                  # minmax(0, 1fr) — not bare 1fr — so the column track
-                  # can SHRINK below its content's intrinsic width. A
-                  # plain `1fr` track has default min-width:auto, which
-                  # means a long episode title inside the play button
-                  # inflates the column past 1fr and pushes the
-                  # action_chip off the right edge of the viewport on
-                  # mobile. Same flex-min-w-0 trick, at the grid level.
-                  @in_library && "grid grid-cols-[32px_minmax(0,1fr)] border-l-2",
-                  @in_library &&
-                    case row_position(ep, @mark) do
-                      :at -> "border-l-oxblood"
-                      :before -> "border-l-oxblood/40"
-                      :after -> "border-l-transparent"
-                    end,
-                  !ep.aired && "opacity-50"
-                ]}
+                class={
+                  [
+                    "border-b border-rule transition-colors duration-200",
+                    # minmax(0, 1fr) — not bare 1fr — so the column track
+                    # can SHRINK below its content's intrinsic width. A
+                    # plain `1fr` track has default min-width:auto, which
+                    # means a long episode title inside the play button
+                    # inflates the column past 1fr and pushes the
+                    # action_chip off the right edge of the viewport on
+                    # mobile. Same flex-min-w-0 trick, at the grid level.
+                    @in_library && "grid grid-cols-[32px_minmax(0,1fr)] border-l-2",
+                    @in_library &&
+                      case row_position(ep, @mark) do
+                        :at -> "border-l-oxblood"
+                        :before -> "border-l-oxblood/40"
+                        :after -> "border-l-transparent"
+                      end,
+                    !ep.aired && "opacity-50"
+                  ]
+                }
               >
                 <%!--
                   Marker column. Empty by default; ghost ✓ on hover
@@ -1205,6 +1227,23 @@ defmodule AviaryWeb.ShowsDetailLive do
               </li>
             </ul>
           </div>
+        </section>
+
+        <section :if={@more_like_this != []} class="mt-12 md:mt-14">
+          <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
+            More like this
+          </h2>
+          <%= if @more_like_this do %>
+            <Marquee.row
+              items={@more_like_this}
+              from={@from}
+              key={"more-like-this:" <> to_string(@show.id)}
+            >
+              <:empty></:empty>
+            </Marquee.row>
+          <% else %>
+            <Marquee.skeleton />
+          <% end %>
         </section>
       </article>
 
@@ -1377,7 +1416,10 @@ defmodule AviaryWeb.ShowsDetailLive do
   defp seasons_text(n), do: "#{n} seasons"
 
   defp year_range({start, nil}) when is_integer(start), do: "#{start} – present"
-  defp year_range({start, finish}) when is_integer(start) and is_integer(finish), do: "#{start} – #{finish}"
+
+  defp year_range({start, finish}) when is_integer(start) and is_integer(finish),
+    do: "#{start} – #{finish}"
+
   defp year_range(_), do: nil
 
   defp has_episodes?(show) do
@@ -1425,13 +1467,22 @@ defmodule AviaryWeb.ShowsDetailLive do
   # downloaded — could be unaired or aired-but-missing). Two flavors:
   # unaired carries an air date and reads as a waiting state; aired-
   # but-missing reads as a Watch trigger.
-  defp action_label(%{next_up: %{id: "tmdb-" <> _, season: s, episode: e, aired: false, air_date: %Date{} = date}}) do
+  defp action_label(%{
+         next_up: %{
+           id: "tmdb-" <> _,
+           season: s,
+           episode: e,
+           aired: false,
+           air_date: %Date{} = date
+         }
+       }) do
     "S#{s} E#{e} " <> waiting_phrase(date)
   end
 
   defp action_label(%{next_up: %{id: "tmdb-" <> _, season: s, episode: e}}) do
     "Watch S#{s} E#{e}"
   end
+
   #
   # When we know the next episode's air date (Jellyseerr returned a
   # schedule), surface it on the button itself so the user sees
@@ -1722,8 +1773,7 @@ defmodule AviaryWeb.ShowsDetailLive do
          |> put_flash(:info, flash_text)}
 
       _ ->
-        {:noreply,
-         put_flash(socket, :error, "Couldn't reach Sonarr. Try again in a moment.")}
+        {:noreply, put_flash(socket, :error, "Couldn't reach Sonarr. Try again in a moment.")}
     end
   end
 

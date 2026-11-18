@@ -25,7 +25,7 @@ defmodule Aviary.Discover do
   the TMDB id, which routes to the existing show detail page.
   """
 
-  alias Aviary.Jellyseerr
+  alias Aviary.{Jellyseerr, TmdbResult}
 
   # The seven big US streaming services. Order is the row order on
   # the page. Network ids are TMDB networks; HBO's originals are split
@@ -69,7 +69,7 @@ defmodule Aviary.Discover do
     network_ids
     |> ranked_shows(Date.utc_today())
     |> Enum.take(@row_length)
-    |> Enum.map(&to_item/1)
+    |> Enum.map(&TmdbResult.marquee_item(&1, :show))
     |> enrich_with_ratings()
   end
 
@@ -81,7 +81,7 @@ defmodule Aviary.Discover do
   def ranked_shows(network_ids, today) do
     network_ids
     |> candidates(today)
-    |> Enum.filter(&has_backdrop?/1)
+    |> Enum.filter(&TmdbResult.has_backdrop?/1)
     |> Task.async_stream(&with_air_dates/1,
       max_concurrency: @detail_lookups_at_once,
       timeout: @detail_lookup_timeout_ms,
@@ -198,52 +198,4 @@ defmodule Aviary.Discover do
     end)
     |> Enum.reject(&is_nil/1)
   end
-
-  # The marquee card is 16:9 — items with no TMDB backdrop would
-  # render an empty/stretched tile and look broken.
-  defp has_backdrop?(%{"backdropPath" => p}) when is_binary(p) and p != "", do: true
-  defp has_backdrop?(_), do: false
-
-  # Marquee item shape. detail_id prefers Jellyfin id when the show
-  # is already owned (Jellyseerr's mediaInfo carries it) so clicks
-  # land on the actual detail page. Falls back to TMDB id for
-  # unowned shows.
-  defp to_item(result) do
-    %{
-      kind: :show,
-      detail_id: jellyfin_id(result) || result["id"],
-      title: result["name"],
-      year: tmdb_year(result["firstAirDate"]),
-      subtitle: nil,
-      thumbnail_url: backdrop_url(result["backdropPath"]),
-      rating: nil
-    }
-  end
-
-  defp tmdb_year(date) when is_binary(date) do
-    case Integer.parse(String.slice(date, 0, 4)) do
-      {year, _} -> year
-      :error -> nil
-    end
-  end
-
-  defp tmdb_year(_), do: nil
-
-  defp jellyfin_id(%{"mediaInfo" => %{"jellyfinMediaId" => id}})
-       when is_binary(id) and id != "",
-       do: id
-
-  defp jellyfin_id(_), do: nil
-
-  # TMDB CDN backdrop, routed through aviary's disk-cached proxy
-  # (`/image/tmdb/...` → AviaryWeb.ImageController.tmdb/2 →
-  # Aviary.TmdbImageCache). Same-origin keeps the browser's HTTP/2
-  # connection hot and avoids the per-visit DNS + TLS to
-  # image.tmdb.org; subsequent fetches of the same image pay only
-  # local disk IO. w780 is the size sweet spot — large enough for
-  # the 320px-wide marquee card on retina without overpaying bytes.
-  defp backdrop_url(nil), do: nil
-  defp backdrop_url(""), do: nil
-  defp backdrop_url("/" <> path), do: "/image/tmdb/w780/" <> path
-  defp backdrop_url(path) when is_binary(path), do: "/image/tmdb/w780/" <> path
 end

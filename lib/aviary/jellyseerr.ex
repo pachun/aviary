@@ -194,6 +194,22 @@ defmodule Aviary.Jellyseerr do
     )
   end
 
+  @doc """
+  The titles TMDB recommends alongside a show or movie, most relevant
+  first, as `{:ok, results}` in the same shape as
+  `discover_tv_network/2`.
+  """
+  def recommendations(kind, tmdb_id) when kind in [:show, :movie] do
+    cached_discover(
+      {:jellyseerr_recommendations, kind, to_string(tmdb_id)},
+      "/api/v1/#{media_type(kind)}/#{tmdb_id}/recommendations",
+      []
+    )
+  end
+
+  defp media_type(:show), do: "tv"
+  defp media_type(:movie), do: "movie"
+
   defp cached_discover(cache_key, path, params) do
     Cache.swr(cache_key, @discover_fresh_ms, @discover_stale_ms, fn -> discover(path, params) end)
     |> uncache_errors(cache_key)
