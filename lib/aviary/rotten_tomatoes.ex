@@ -76,6 +76,19 @@ defmodule Aviary.RottenTomatoes do
       nil
   end
 
+  @doc """
+  The critic and audience scores embedded in a Rotten Tomatoes page, or
+  `nil` unless the page carries both.
+  """
+  def scores_in_page(html) when is_binary(html) do
+    critic = extract_score(html, "criticsScore")
+    audience = extract_score(html, "audienceScore")
+
+    if critic && audience do
+      %{critic: critic, audience: audience}
+    end
+  end
+
   ## GenServer
 
   @impl true
@@ -117,14 +130,7 @@ defmodule Aviary.RottenTomatoes do
   defp scrape_url(url) do
     case Req.get(url, headers: [{"user-agent", @ua}], receive_timeout: 8_000) do
       {:ok, %Req.Response{status: 200, body: html}} ->
-        critic = extract_score(html, "criticsScore")
-        audience = extract_score(html, "audienceScore")
-
-        if critic && audience do
-          %{critic: critic, audience: audience}
-        else
-          nil
-        end
+        scores_in_page(html)
 
       _ ->
         nil
@@ -191,12 +197,7 @@ defmodule Aviary.RottenTomatoes do
   defp base_url(:tv), do: "#{@rt_base}/tv/"
 
   defp extract_score(html, key) do
-    # The embedded JSON has the shape
-    #   "criticsScore":{...,"score":"91",...}
-    # and similarly for audienceScore. We don't bother parsing the
-    # whole document — a non-greedy regex up to the score field is
-    # enough and resilient to other adjacent fields being added.
-    pattern = ~r/"#{key}":\{[^{}]*?"score":"(\d+)"/
+    pattern = ~r/"#{key}":\{[^{}]*?"(?:scorePercent|score)":"(\d+)%?"/
 
     case Regex.run(pattern, html) do
       [_, score] -> String.to_integer(score)
