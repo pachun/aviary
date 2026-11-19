@@ -1,18 +1,18 @@
-defmodule AviaryWeb.DailyWireControllerTest do
+defmodule AviaryWeb.SeriesControllerTest do
   use AviaryWeb.ConnCase, async: true
 
   test "episode lists require a signed-in Aviary session", %{conn: conn} do
-    conn = get(conn, "/api/v1/daily-wire/shows/the-ben-shapiro-show/episodes")
+    conn = get(conn, "/api/v1/series/shows/the-ben-shapiro-show/episodes")
     assert json_response(conn, 401) == %{"error" => "unauthorized"}
   end
 
   test "progress requires a signed-in Aviary session", %{conn: conn} do
-    conn = post(conn, "/api/v1/daily-wire/episodes/member-episode/progress", %{"position" => 120})
+    conn = post(conn, "/api/v1/series/episodes/member-episode/progress", %{"position" => 120})
     assert json_response(conn, 401) == %{"error" => "unauthorized"}
   end
 
   test "playback requires a signed-in Aviary session", %{conn: conn} do
-    conn = get(conn, "/api/v1/daily-wire/episodes/member-episode/playback")
+    conn = get(conn, "/api/v1/series/episodes/member-episode/playback")
     assert json_response(conn, 401) == %{"error" => "unauthorized"}
   end
 end

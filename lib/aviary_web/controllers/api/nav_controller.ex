@@ -19,8 +19,6 @@ defmodule AviaryWeb.API.NavController do
       home: visibility.home,
       shows: visibility.shows,
       movies: visibility.movies,
-      nhl: visibility.nhl,
-      dailyWire: visibility.daily_wire,
       live: visibility.nhl && %{label: Aviary.Live.label(), sports: Aviary.Live.sports?()},
       series:
         visibility.daily_wire && %{label: Aviary.Series.label(), shows: Aviary.Series.shows()},

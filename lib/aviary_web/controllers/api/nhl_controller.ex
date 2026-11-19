@@ -1,12 +1,13 @@
 defmodule AviaryWeb.API.NhlController do
   @moduledoc """
-  Today's NHL games for the tvOS home shelf, and the live playlist the
-  client plays. `stream` is the bearer-authed handshake at the moment of
-  play: it checks the feed is broadcasting (503 `not_live` when it isn't,
-  so the client can say "hasn't started" instead of "broken") and hands
-  back the playlist path. `playlist` is what AVPlayer then reloads every
-  few seconds; like the subtitle proxy it carries the token in the URL
-  because AVPlayer doesn't forward Authorization to HLS sub-requests.
+  What the NHL schedule adds to the live section for the tvOS client:
+  the playlist a relayed feed plays from, team logos, the standings and
+  each team's page. The events themselves and the handshake at the
+  moment of play are `AviaryWeb.API.LiveController`'s.
+
+  `playlist` is what AVPlayer reloads every few seconds; like the
+  subtitle proxy it carries the token in the URL because AVPlayer
+  doesn't forward Authorization to HLS sub-requests.
 
   Every segment and key in that playlist points back at `segment`, so
   the video reaches the player through aviary and the player never has
@@ -15,10 +16,6 @@ defmodule AviaryWeb.API.NhlController do
   and aviary resolves the name through public DNS.
   """
   use AviaryWeb, :controller
-
-  def games(conn, _params) do
-    json(conn, %{games: Enum.map(Aviary.Nhl.games(), &serialize_game/1)})
-  end
 
   def standings(conn, _params) do
     case Aviary.Nhl.Standings.divisions() do
@@ -41,22 +38,6 @@ defmodule AviaryWeb.API.NhlController do
     case Aviary.Nhl.Team.fetch(team_id) do
       {:ok, team} -> json(conn, AviaryWeb.API.NhlTeam.serialize(team))
       :error -> conn |> put_status(:not_found) |> json(%{error: "not_found"})
-    end
-  end
-
-  def stream(conn, %{"id" => game_id, "feed" => feed_id}) do
-    case Aviary.Nhl.playlist(game_id, feed_id) do
-      {:ok, _playlist} ->
-        json(conn, %{
-          streamUrl: playlist_path(game_id, feed_id, conn.assigns.current_user.token),
-          contentType: "hls"
-        })
-
-      {:error, :not_live} ->
-        conn |> put_status(:service_unavailable) |> json(%{error: "not_live"})
-
-      {:error, :unavailable} ->
-        conn |> put_status(:bad_gateway) |> json(%{error: "stream_unavailable"})
     end
   end
 
@@ -111,22 +92,6 @@ defmodule AviaryWeb.API.NhlController do
       :error ->
         send_resp(conn, 404, "")
     end
-  end
-
-  defp playlist_path(game_id, feed_id, token) do
-    "/api/v1/nhl/games/#{game_id}/feeds/#{feed_id}/playlist.m3u8?" <>
-      URI.encode_query(token: token)
-  end
-
-  defp serialize_game(game) do
-    %{
-      id: game.id,
-      time: game.time,
-      startsAt: game.starts_at,
-      awayTeam: serialize_team(game.away_team),
-      homeTeam: serialize_team(game.home_team),
-      feeds: Enum.map(game.feeds, &%{id: &1.id, label: &1.label})
-    }
   end
 
   defp serialize_division(division) do

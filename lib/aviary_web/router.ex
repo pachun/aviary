@@ -110,14 +110,9 @@ defmodule AviaryWeb.Router do
     get "/series/shows/:show/episodes", SeriesController, :episodes
     get "/series/episodes/:id/playback", SeriesController, :playback
     post "/series/episodes/:id/progress", SeriesController, :progress
-    get "/nhl/games", NhlController, :games
     get "/nhl/standings", NhlController, :standings
     get "/nhl/teams", NhlController, :teams
     get "/nhl/teams/:id", NhlController, :team
-    get "/daily-wire/shows/:show/episodes", DailyWireController, :episodes
-    get "/daily-wire/episodes/:slug/playback", DailyWireController, :playback
-    post "/daily-wire/episodes/:slug/progress", DailyWireController, :progress
-    get "/nhl/games/:id/feeds/:feed", NhlController, :stream
     get "/nhl/logos/:team", NhlController, :logo
     get "/items/:id/playback", PlaybackController, :show
     get "/items/:id/hls.m3u8", PlaybackController, :manifest

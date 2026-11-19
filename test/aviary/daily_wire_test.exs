@@ -254,7 +254,7 @@ defmodule Aviary.DailyWireTest do
     assert {:ok, playback} = DailyWire.playback(user, "member-episode")
 
     params = %{
-      "slug" => "member-episode",
+      "id" => "member-episode",
       "sessionId" => playback.progress.sessionId,
       "sequence" => 1,
       "position" => 120,
@@ -262,7 +262,7 @@ defmodule Aviary.DailyWireTest do
     }
 
     conn = Phoenix.ConnTest.build_conn() |> Plug.Conn.assign(:current_user, user)
-    response = AviaryWeb.API.DailyWireController.progress(conn, params)
+    response = AviaryWeb.API.SeriesController.progress(conn, params)
     assert Jason.decode!(response.resp_body)["resumeSeconds"] == 120
     assert {:ok, resumed} = DailyWire.playback(user, "member-episode")
     assert resumed.progress.resumeSeconds == 120
