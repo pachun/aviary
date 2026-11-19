@@ -69,6 +69,7 @@ defmodule Aviary.Nhl.Standings do
       name: name,
       nickname: get_in(listed, ["teamCommonName", "default"]),
       rank: listed["divisionSequence"],
+      league_rank: listed["leagueSequence"],
       games_played: listed["gamesPlayed"],
       wins: listed["wins"],
       losses: listed["losses"],
@@ -86,12 +87,12 @@ defmodule Aviary.Nhl.Standings do
   defp streak(_listed), do: nil
 
   @doc """
-  Every team in alphabetical order, as `{:ok, teams}` in the same shape
-  the divisions list them, or `:error`.
+  Every team from the top of the league down, as `{:ok, teams}` in the
+  same shape the divisions list them, or `:error`.
   """
   def teams do
     with {:ok, divisions} <- divisions() do
-      {:ok, divisions |> Enum.flat_map(& &1.teams) |> Enum.sort_by(& &1.name)}
+      {:ok, divisions |> Enum.flat_map(& &1.teams) |> Enum.sort_by(& &1.league_rank)}
     end
   end
 

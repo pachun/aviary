@@ -40,6 +40,8 @@ defmodule AviaryWeb.NhlLive do
 
   def handle_event("choose_view", _params, socket), do: {:noreply, assign(socket, view: "games")}
 
+  def handle_event("show_teams", _params, socket), do: {:noreply, assign(socket, team: nil)}
+
   def handle_event("show_team", %{"team" => team_id}, socket) do
     {:noreply,
      socket
@@ -95,10 +97,6 @@ defmodule AviaryWeb.NhlLive do
     do: {:noreply, assign(socket, team: {:shown, team})}
 
   def handle_async(:team, _result, socket), do: {:noreply, assign(socket, team: :unavailable)}
-
-  defp shown_team_id({:loading, team_id}), do: team_id
-  defp shown_team_id({:shown, team}), do: team.id
-  defp shown_team_id(_team), do: nil
 
   defp assign_games(socket) do
     games = Aviary.Nhl.games()
@@ -171,12 +169,7 @@ defmodule AviaryWeb.NhlLive do
 
       <NhlTables.standings :if={@view == "standings"} divisions={@divisions} />
 
-      <NhlTables.teams
-        :if={@view == "teams"}
-        teams={@teams}
-        team={@team}
-        shown_team_id={shown_team_id(@team)}
-      />
+      <NhlTables.teams :if={@view == "teams"} teams={@teams} team={@team} />
 
       <div :if={@view == "games"} id="nhl" phx-hook="RefreshWhenVisible" class="space-y-12">
         <p :if={@games == []} class="font-sans text-muted">No games today.</p>

@@ -32,7 +32,7 @@ defmodule AviaryWeb.API.NhlController do
 
   def teams(conn, _params) do
     case Aviary.Nhl.Standings.teams() do
-      {:ok, teams} -> json(conn, %{teams: Enum.map(teams, &serialize_team/1)})
+      {:ok, teams} -> json(conn, %{teams: Enum.map(teams, &serialize_standing/1)})
       :error -> conn |> put_status(:bad_gateway) |> json(%{error: "teams_unavailable"})
     end
   end
@@ -142,6 +142,7 @@ defmodule AviaryWeb.API.NhlController do
     |> serialize_team()
     |> Map.merge(%{
       rank: team.rank,
+      leagueRank: team.league_rank,
       gamesPlayed: team.games_played,
       wins: team.wins,
       losses: team.losses,

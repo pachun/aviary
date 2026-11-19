@@ -8,6 +8,7 @@ defmodule AviaryWeb.Components.NhlTables do
   @regulation "REG"
   @save_percentage_decimals 3
   @goals_against_decimals 2
+  @position_names %{"C" => "C", "L" => "LW", "R" => "RW", "D" => "D", "G" => "G"}
   @position_groups [{"Forwards", ["C", "L", "R"]}, {"Defense", ["D"]}, {"Goalies", ["G"]}]
 
   attr :divisions, :any, required: true
@@ -60,39 +61,68 @@ defmodule AviaryWeb.Components.NhlTables do
 
   attr :teams, :any, required: true
   attr :team, :any, required: true
-  attr :shown_team_id, :string, default: nil
 
   def teams(assigns) do
     ~H"""
     <p :if={@teams == :unavailable} class="font-sans text-muted">Teams are unavailable.</p>
-    <div :if={is_list(@teams)} class="grid gap-10 md:grid-cols-[16rem_1fr]">
-      <ul class="flex gap-1 overflow-x-auto md:block md:space-y-1 md:overflow-visible">
-        <li :for={listed <- @teams} class="shrink-0">
-          <button
-            type="button"
-            phx-click="show_team"
-            phx-value-team={listed.id}
-            aria-pressed={@shown_team_id == listed.id}
-            class={[
-              "flex w-full items-center gap-3 px-2 py-1.5 text-left cursor-pointer hover:text-oxblood focus-visible:outline-2 focus-visible:outline-oxblood",
-              @shown_team_id == listed.id && "text-oxblood",
-              @shown_team_id != listed.id && "text-ink"
-            ]}
-          >
-            <img src={listed.logo_url} alt="" class="size-7" />
-            <span class="font-display text-base whitespace-nowrap">{listed.name}</span>
-          </button>
-        </li>
-      </ul>
+    <p :if={@team == :unavailable} class="font-sans text-muted">
+      This team's page is unavailable.
+    </p>
 
-      <div>
-        <p :if={@team == nil} class="font-sans text-muted">Pick a team to see its page.</p>
-        <p :if={@team == :unavailable} class="font-sans text-muted">
-          This team's page is unavailable.
-        </p>
-        <.team_page :if={match?({:shown, _}, @team)} team={elem(@team, 1)} />
-      </div>
+    <div :if={match?({:shown, _}, @team)}>
+      <button
+        type="button"
+        phx-click="show_teams"
+        class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-oxblood hover:underline cursor-pointer mb-8"
+      >
+        All teams
+      </button>
+      <.team_page team={elem(@team, 1)} />
     </div>
+
+    <table
+      :if={is_list(@teams) and not match?({:shown, _}, @team)}
+      class="w-full font-sans text-sm tabular-nums"
+    >
+      <thead>
+        <tr class="border-b border-rule text-muted text-[0.7rem] tracking-[0.14em] uppercase">
+          <th colspan="2"></th>
+          <th
+            :for={heading <- ~w(GP W L OTL PTS DIFF L10 STRK)}
+            class="text-right font-normal py-2 pl-3"
+          >
+            {heading}
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          :for={listed <- @teams}
+          phx-click="show_team"
+          phx-value-team={listed.id}
+          class="group border-b border-rule cursor-pointer hover:bg-rule/40"
+        >
+          <td class="py-2 pr-2 text-muted w-8">{listed.league_rank}</td>
+          <td class="py-2">
+            <button
+              type="button"
+              class="flex items-center gap-3 cursor-pointer text-ink group-hover:text-oxblood focus-visible:outline-2 focus-visible:outline-oxblood"
+            >
+              <img src={listed.logo_url} alt="" class="size-7" />
+              <span class="font-display text-base">{listed.name}</span>
+            </button>
+          </td>
+          <td class="text-right pl-3 text-muted">{listed.games_played}</td>
+          <td class="text-right pl-3 text-muted">{listed.wins}</td>
+          <td class="text-right pl-3 text-muted">{listed.losses}</td>
+          <td class="text-right pl-3 text-muted">{listed.overtime_losses}</td>
+          <td class="text-right pl-3 text-ink">{listed.points}</td>
+          <td class="text-right pl-3 text-muted">{signed(listed.goal_difference)}</td>
+          <td class="text-right pl-3 text-muted">{listed.last_ten}</td>
+          <td class="text-right pl-3 text-muted">{listed.streak}</td>
+        </tr>
+      </tbody>
+    </table>
     """
   end
 
@@ -133,28 +163,39 @@ defmodule AviaryWeb.Components.NhlTables do
             {@team.lines.as_of}
           </p>
           <div class="grid gap-x-10 gap-y-10 sm:grid-cols-2">
-            <div :for={block <- line_blocks(@team.lines)}>
-              <.heading label={block.label} />
-              <ul class="flex justify-center gap-4">
-                <.tile :for={player <- block.forwards} player={player} />
+            <div :for={{line, number} <- Enum.with_index(@team.lines.forwards, 1)}>
+              <.heading label={"Line #{number}"} />
+              <ul class="flex justify-center gap-5">
+                <.tile :for={player <- line} player={player} />
               </ul>
-              <p
-                :if={block.behind != []}
-                class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted text-center mt-5 mb-3"
-              >
-                {block.behind_caption}
-              </p>
-              <ul class="flex justify-center gap-4">
-                <.tile :for={player <- block.behind} player={player} />
+            </div>
+          </div>
+          <div class="grid gap-x-10 gap-y-10 mt-10 grid-cols-2 lg:grid-cols-4">
+            <div :for={{pair, number} <- Enum.with_index(@team.lines.defense, 1)}>
+              <.heading label={"Defense #{number}"} />
+              <ul class="flex justify-center gap-5">
+                <.tile :for={player <- pair} player={player} />
+              </ul>
+            </div>
+            <div :if={@team.lines.goalies != []}>
+              <.heading label="Goalies" />
+              <ul class="flex justify-center gap-5">
+                <.tile :for={player <- @team.lines.goalies} player={player} />
               </ul>
             </div>
           </div>
         </section>
-        <.units :if={@team.lines.power_play != []} label="Power play" units={@team.lines.power_play} />
+        <.units
+          :if={@team.lines.power_play != []}
+          label="Power play"
+          units={@team.lines.power_play}
+          show_position
+        />
         <.units
           :if={@team.lines.penalty_kill != []}
           label="Penalty kill"
           units={@team.lines.penalty_kill}
+          show_position
         />
       <% else %>
         <.units
@@ -257,6 +298,7 @@ defmodule AviaryWeb.Components.NhlTables do
   attr :label, :string, required: true
   attr :aside, :string, default: nil
   attr :units, :list, required: true
+  attr :show_position, :boolean, default: false
 
   defp units(assigns) do
     ~H"""
@@ -264,10 +306,12 @@ defmodule AviaryWeb.Components.NhlTables do
       <.heading label={@label} aside={@aside} />
       <div class="space-y-4">
         <ul :for={unit <- @units} class="flex flex-wrap gap-x-6 gap-y-3">
-          <li :for={player <- unit} class="flex items-center gap-3 w-48">
+          <li :for={player <- forwards_then_defense(unit)} class="flex items-center gap-3 w-48">
             <.headshot player={player} />
             <div>
-              <p :if={player.number} class="font-sans text-xs text-oxblood">#{player.number}</p>
+              <p class="font-sans text-xs text-oxblood">
+                {number_and_position(player, @show_position)}
+              </p>
               <p class="font-display text-ink text-base leading-tight">{player.name}</p>
             </div>
           </li>
@@ -313,25 +357,15 @@ defmodule AviaryWeb.Components.NhlTables do
     """
   end
 
-  defp line_blocks(lines) do
-    behind_rows =
-      lines.defense
-      |> Enum.with_index(1)
-      |> Enum.map(fn {pair, number} -> {"Pair #{number}", pair} end)
-      |> Kernel.++([{"Goalies", lines.goalies}])
+  defp forwards_then_defense(unit), do: Enum.sort_by(unit, &(&1.position == "D"))
 
-    block_count = max(length(lines.forwards), length(behind_rows))
-
-    for index <- 0..(block_count - 1)//1 do
-      {behind_caption, behind} = Enum.at(behind_rows, index, {nil, []})
-
-      %{
-        label: "Line #{index + 1}",
-        forwards: Enum.at(lines.forwards, index, []),
-        behind_caption: behind_caption,
-        behind: behind
-      }
-    end
+  defp number_and_position(player, show_position) do
+    [
+      player.number && "##{player.number}",
+      show_position && Map.get(@position_names, player.position)
+    ]
+    |> Enum.reject(&(&1 in [nil, false]))
+    |> Enum.join(" · ")
   end
 
   defp position_groups, do: @position_groups

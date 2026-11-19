@@ -66,6 +66,20 @@ defmodule Aviary.NhlStandingsTest do
     assert {:ok, [%{teams: [%{id: "montreal-canadiens"}]}]} = Standings.divisions()
   end
 
+  test "lists every team from the top of the league down" do
+    stub_league([
+      "Boston Bruins"
+      |> listed("Bruins", "Atlantic", "Eastern", 1)
+      |> Map.put("leagueSequence", 2),
+      "Edmonton Oilers"
+      |> listed("Oilers", "Pacific", "Western", 1)
+      |> Map.put("leagueSequence", 1)
+    ])
+
+    assert {:ok, [%{name: "Edmonton Oilers", league_rank: 1}, %{name: "Boston Bruins"}]} =
+             Standings.teams()
+  end
+
   test "is an error when the league doesn't answer, and asks again next time" do
     Req.Test.stub(Standings, &Plug.Conn.send_resp(&1, 503, ""))
     assert Standings.divisions() == :error
