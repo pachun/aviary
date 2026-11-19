@@ -106,6 +106,7 @@ defmodule AviaryWeb.Router do
     get "/movies/:id/more-like-this", MovieController, :more_like_this
     get "/trailer", TrailerController, :show
     get "/nhl/games", NhlController, :games
+    get "/nhl/standings", NhlController, :standings
     get "/daily-wire/shows/:show/episodes", DailyWireController, :episodes
     get "/daily-wire/episodes/:slug/playback", DailyWireController, :playback
     post "/daily-wire/episodes/:slug/progress", DailyWireController, :progress

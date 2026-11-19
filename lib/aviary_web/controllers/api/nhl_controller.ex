@@ -20,6 +20,16 @@ defmodule AviaryWeb.API.NhlController do
     json(conn, %{games: Enum.map(Aviary.Nhl.games(), &serialize_game/1)})
   end
 
+  def standings(conn, _params) do
+    case Aviary.Nhl.Standings.divisions() do
+      {:ok, divisions} ->
+        json(conn, %{divisions: Enum.map(divisions, &serialize_division/1)})
+
+      :error ->
+        conn |> put_status(:bad_gateway) |> json(%{error: "standings_unavailable"})
+    end
+  end
+
   def stream(conn, %{"id" => game_id, "feed" => feed_id}) do
     case Aviary.Nhl.playlist(game_id, feed_id) do
       {:ok, _playlist} ->
@@ -103,6 +113,30 @@ defmodule AviaryWeb.API.NhlController do
       homeTeam: serialize_team(game.home_team),
       feeds: Enum.map(game.feeds, &%{id: &1.id, label: &1.label})
     }
+  end
+
+  defp serialize_division(division) do
+    %{
+      name: division.name,
+      conference: division.conference,
+      teams: Enum.map(division.teams, &serialize_standing/1)
+    }
+  end
+
+  defp serialize_standing(team) do
+    team
+    |> serialize_team()
+    |> Map.merge(%{
+      rank: team.rank,
+      gamesPlayed: team.games_played,
+      wins: team.wins,
+      losses: team.losses,
+      overtimeLosses: team.overtime_losses,
+      points: team.points,
+      goalDifference: team.goal_difference,
+      lastTen: team.last_ten,
+      streak: team.streak
+    })
   end
 
   defp serialize_team(team) do
