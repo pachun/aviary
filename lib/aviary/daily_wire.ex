@@ -179,22 +179,24 @@ defmodule Aviary.DailyWire do
 
   defp daily_clip?(_, _), do: false
 
-  defp date_label(timestamp) when is_binary(timestamp) do
+  @doc false
+  def date_label(timestamp) when is_binary(timestamp) do
     case DateTime.from_iso8601(timestamp) do
       {:ok, date, _} -> Calendar.strftime(date, "%a %b %-d, %Y")
       _ -> nil
     end
   end
 
-  defp date_label(_), do: nil
+  def date_label(_), do: nil
 
   @seconds_per_minute 60
   @minimum_duration_minutes 1
 
-  defp duration_label(seconds) when is_number(seconds) and seconds > 0,
+  @doc false
+  def duration_label(seconds) when is_number(seconds) and seconds > 0,
     do: "#{max(@minimum_duration_minutes, round(seconds / @seconds_per_minute))} min"
 
-  defp duration_label(_), do: nil
+  def duration_label(_), do: nil
 
   defp video_url(%{"secureVideoURL" => url}) when is_binary(url) and url != "", do: url
   defp video_url(episode), do: episode["videoURL"]

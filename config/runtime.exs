@@ -68,6 +68,7 @@ config :aviary,
   jellyseerr_url: System.get_env("JELLYSEERR_URL"),
   jellyseerr_api_key: System.get_env("JELLYSEERR_API_KEY"),
   anthropic_api_key: System.get_env("ANTHROPIC_API_KEY"),
+  sections_file: System.get_env("SECTIONS_FILE"),
   # HTTP proxy the NHL schedule scrape goes through, e.g. gluetun's
   # proxy on the VPN, so the stream site sees the VPN's address rather
   # than the household's. Unset means requests go out directly.

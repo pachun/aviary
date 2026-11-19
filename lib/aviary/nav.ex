@@ -43,7 +43,7 @@ defmodule Aviary.Nav do
           Task.async(fn ->
             Aviary.Recommendations.list_active_for_user_excluding_library(user.id)
           end),
-          Task.async(fn -> Aviary.Nhl.games() end)
+          Task.async(fn -> Aviary.Live.events() end)
         ],
         15_000
       )
@@ -55,7 +55,7 @@ defmodule Aviary.Nav do
       shows: shows != [],
       movies: movies != [],
       nhl: games != [],
-      daily_wire: Aviary.DailyWire.allowed?(user)
+      daily_wire: Aviary.Series.allowed?(user)
     }
   end
 

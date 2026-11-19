@@ -1,33 +1,33 @@
 defmodule AviaryWeb.DailyWireLive do
   use AviaryWeb, :live_view
 
-  alias Aviary.DailyWire
+  alias Aviary.Series
   alias AviaryWeb.Components.VideoPlayer
 
   def mount(_params, _session, socket) do
-    if DailyWire.allowed?(socket.assigns.current_user) do
+    if Series.allowed?(socket.assigns.current_user) do
       {:ok,
        socket
        |> assign(
-         page_title: "Daily Wire",
-         shows: DailyWire.shows(),
+         page_title: Series.label(),
+         shows: Series.shows(),
          watching: nil,
          error: nil,
          episode_index: %{}
        )
-       |> assign(show: "the-ben-shapiro-show", next_page: nil, loading: true, empty: true)
+       |> assign(show: first_show(), next_page: nil, loading: true, empty: true)
        |> stream(:episodes, [])
        |> load_page(nil)}
     else
       {:ok,
        socket
-       |> put_flash(:error, "Daily Wire is not connected for this account.")
+       |> put_flash(:error, "#{Series.label()} is not available for this account.")
        |> push_navigate(to: ~p"/home")}
     end
   end
 
   def handle_event("choose_show", %{"show" => show}, socket) do
-    if Enum.any?(DailyWire.shows(), &(&1.slug == show)) do
+    if Enum.any?(Series.shows(), &(&1.slug == show)) do
       {:noreply,
        socket
        |> assign(show: show, next_page: nil, error: nil, empty: true, episode_index: %{})
@@ -52,7 +52,7 @@ defmodule AviaryWeb.DailyWireLive do
     {:noreply,
      socket
      |> assign(:error, nil)
-     |> start_async(:playback, fn -> DailyWire.playback(user, slug) end)}
+     |> start_async(:playback, fn -> Series.playback(user, slug) end)}
   end
 
   def handle_event("close_player", params, socket) do
@@ -93,9 +93,9 @@ defmodule AviaryWeb.DailyWireLive do
   def handle_async(task, {:ok, {:error, reason}}, socket) do
     message =
       if reason in [:reconnect, :not_connected],
-        do: "Daily Wire needs to be reconnected on the server.",
+        do: "#{Series.label()} needs to be reconnected on the server.",
         else:
-          "Daily Wire could not load this #{if task == :playback, do: "video", else: "page"}. Try again."
+          "#{Series.label()} could not load this #{if task == :playback, do: "video", else: "page"}. Try again."
 
     {:noreply, assign(socket, loading: false, error: message)}
   end
@@ -103,7 +103,15 @@ defmodule AviaryWeb.DailyWireLive do
   def handle_async(_, {:exit, {:shutdown, :cancel}}, socket), do: {:noreply, socket}
 
   def handle_async(_, {:exit, _}, socket) do
-    {:noreply, assign(socket, loading: false, error: "Daily Wire is unavailable. Try again.")}
+    {:noreply,
+     assign(socket, loading: false, error: "#{Series.label()} is unavailable. Try again.")}
+  end
+
+  defp first_show do
+    case Series.shows() do
+      [%{slug: slug} | _] -> slug
+      [] -> nil
+    end
   end
 
   defp save_progress(%{assigns: %{watching: nil}} = socket, _), do: socket
@@ -111,7 +119,7 @@ defmodule AviaryWeb.DailyWireLive do
   defp save_progress(socket, params) do
     watching = socket.assigns.watching
 
-    case DailyWire.save_progress(socket.assigns.current_user, watching.id, params) do
+    case Series.save_progress(socket.assigns.current_user, watching.id, params) do
       {:ok, progress} ->
         case socket.assigns.episode_index[watching.id] do
           nil ->
@@ -147,7 +155,7 @@ defmodule AviaryWeb.DailyWireLive do
     socket
     |> cancel_async(:episodes)
     |> assign(:loading, true)
-    |> start_async(:episodes, fn -> DailyWire.episodes(user, show, cursor) end)
+    |> start_async(:episodes, fn -> Series.episodes(user, show, cursor) end)
   end
 
   @full_progress 100

@@ -4,6 +4,11 @@ defmodule AviaryWeb.API.NavController do
   content worth a tab, and which to land on at launch. Reuses the web
   masthead's `Aviary.Nav` so tvOS and web agree on what's shown and the
   default landing (home > shows > movies > nhl > discover).
+
+  `live` and `series` describe the two sections whose name and contents
+  are the server's to define: what to call each, whether the live one
+  comes with standings and team pages, and which shows the series one
+  offers. Each is `false` when the server has nothing for it.
   """
   use AviaryWeb, :controller
 
@@ -16,6 +21,9 @@ defmodule AviaryWeb.API.NavController do
       movies: visibility.movies,
       nhl: visibility.nhl,
       dailyWire: visibility.daily_wire,
+      live: visibility.nhl && %{label: Aviary.Live.label(), sports: Aviary.Live.sports?()},
+      series:
+        visibility.daily_wire && %{label: Aviary.Series.label(), shows: Aviary.Series.shows()},
       landing: landing(visibility)
     })
   end

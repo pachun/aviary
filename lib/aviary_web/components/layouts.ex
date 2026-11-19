@@ -242,14 +242,14 @@ defmodule AviaryWeb.Layouts do
               href={~p"/nhl"}
               active={is_nil(@mobile_back_to) && @current_section == "nhl"}
             >
-              NHL
+              {Aviary.Live.label()}
             </.section_link>
             <.section_link
               :if={Map.get(@nav_visibility, :daily_wire, false)}
               href={~p"/daily-wire"}
               active={is_nil(@mobile_back_to) && @current_section == "daily_wire"}
             >
-              Daily Wire
+              {Aviary.Series.label()}
             </.section_link>
             <.section_link
               href={~p"/discover"}
@@ -361,7 +361,7 @@ defmodule AviaryWeb.Layouts do
             :if={@nav_visibility.nhl}
             href={~p"/nhl"}
             active={@current_section == "nhl"}
-            label="NHL"
+            label={Aviary.Live.label()}
             icon_outline="hero-signal"
             icon_solid="hero-signal-solid"
           />
@@ -369,7 +369,7 @@ defmodule AviaryWeb.Layouts do
             :if={Map.get(@nav_visibility, :daily_wire, false)}
             href={~p"/daily-wire"}
             active={@current_section == "daily_wire"}
-            label="Daily Wire"
+            label={Aviary.Series.label()}
             icon_outline="hero-play-circle"
             icon_solid="hero-play-circle-solid"
           />

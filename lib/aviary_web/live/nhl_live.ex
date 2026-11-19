@@ -19,7 +19,7 @@ defmodule AviaryWeb.NhlLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> assign(page_title: "NHL", watching_game: nil)
+     |> assign(page_title: Aviary.Live.label(), watching_game: nil, sports: Aviary.Live.sports?())
      |> assign(view: "games", divisions: :loading, teams: :loading, team: nil)
      |> assign_games()}
   end
@@ -52,13 +52,21 @@ defmodule AviaryWeb.NhlLive do
   def handle_event("watch_game", %{"game" => game_id, "feed" => feed_id}, socket) do
     watching_game =
       with %{feeds: feeds} = game <- Enum.find(socket.assigns.games, &(&1.id == game_id)),
-           %{} = feed <- Enum.find(feeds, &(&1.id == feed_id)) do
-        playlist = live_playlist_path(game.id, feed.id, socket.assigns.current_user.token)
+           %{} = feed <- Enum.find(feeds, &(&1.id == feed_id)),
+           {:ok, source} <- Aviary.Live.feed(game.id, feed.id) do
+        playlist =
+          case source do
+            {:direct, url} ->
+              url
+
+            :through_aviary ->
+              live_playlist_path(game.id, feed.id, socket.assigns.current_user.token)
+          end
 
         %{
-          id: "nhl-#{game.id}-#{feed.id}",
+          id: "live-#{game.id}-#{feed.id}",
           resume_seconds: 0,
-          title: "#{game.away_team.name} at #{game.home_team.name} (#{feed.label})",
+          title: "#{game.title} (#{feed.label})",
           src: playlist,
           native_src: playlist
         }
@@ -99,23 +107,23 @@ defmodule AviaryWeb.NhlLive do
   def handle_async(:team, _result, socket), do: {:noreply, assign(socket, team: :unavailable)}
 
   defp assign_games(socket) do
-    games = Aviary.Nhl.games()
+    games = Aviary.Live.events()
 
     assign(socket, games: games, start_times: start_times(games))
   end
 
   defp start_times(games) do
     games
-    |> Enum.group_by(& &1.starts_at)
-    |> Enum.sort_by(fn {starts_at, _games} -> starts_at end, &earlier_first/2)
-    |> Enum.map(fn {starts_at, games} -> %{label: clock(starts_at), games: games} end)
+    |> Enum.group_by(&{&1.starts_at, &1.time})
+    |> Enum.sort_by(fn {{starts_at, _time}, _games} -> starts_at end, &earlier_first/2)
+    |> Enum.map(fn {{starts_at, time}, games} ->
+      %{label: if(starts_at, do: clock(starts_at), else: time || "Time TBD"), games: games}
+    end)
   end
 
   defp earlier_first(nil, _), do: false
   defp earlier_first(_, nil), do: true
   defp earlier_first(a, b), do: DateTime.compare(a, b) != :gt
-
-  defp clock(nil), do: "Time TBD"
 
   defp clock(starts_at) do
     {_date, {hour, minute, _second}} =
@@ -150,7 +158,7 @@ defmodule AviaryWeb.NhlLive do
       current_user={@current_user}
       nav_visibility={@nav_visibility}
     >
-      <div class="flex gap-6 pt-2 mb-8">
+      <div :if={@sports} class="flex gap-6 pt-2 mb-8">
         <button
           :for={{view, label} <- views()}
           type="button"
@@ -172,7 +180,7 @@ defmodule AviaryWeb.NhlLive do
       <NhlTables.teams :if={@view == "teams"} teams={@teams} team={@team} />
 
       <div :if={@view == "games"} id="nhl" phx-hook="RefreshWhenVisible" class="space-y-12">
-        <p :if={@games == []} class="font-sans text-muted">No games today.</p>
+        <p :if={@games == []} class="font-sans text-muted">Nothing on today.</p>
 
         <section :for={start_time <- @start_times}>
           <h2 class="font-sans text-[0.78rem] tracking-[0.18em] uppercase text-muted mb-4">
@@ -187,7 +195,7 @@ defmodule AviaryWeb.NhlLive do
                 class="font-display text-ink text-lg leading-tight truncate"
                 style="font-variation-settings: 'opsz' 14;"
               >
-                {game.away_team.name} <span class="text-muted">at</span> {game.home_team.name}
+                {game.title}
               </span>
               <span class="flex gap-3 font-sans uppercase tracking-[0.18em] text-[0.7rem] whitespace-nowrap">
                 <button
