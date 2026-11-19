@@ -55,7 +55,8 @@ defmodule Aviary.Nhl.Schedule do
   defp walk(state) do
     local_now = state.local_now.()
 
-    with false <- Nhl.holding_off_site?(),
+    with nil <- Aviary.Sections.live(),
+         false <- Nhl.holding_off_site?(),
          {:ok, games} <- Nhl.scrape_schedule(local_now) do
       [_today | overnight_dates] = Nhl.schedule_dates(local_now)
       overnight = Enum.filter(state.games, &(&1.date in overnight_dates))

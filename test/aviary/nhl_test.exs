@@ -126,6 +126,25 @@ defmodule Aviary.NhlTest do
       assert Nhl.games() == []
     end
 
+    test "leaves the stream site alone on a server that defines its own live section" do
+      sections_file =
+        Path.join(System.tmp_dir!(), "aviary-sections-#{System.unique_integer([:positive])}.json")
+
+      File.write!(sections_file, Jason.encode!(%{"live" => %{"events" => []}}))
+      Application.put_env(:aviary, :sections_file, sections_file)
+
+      on_exit(fn ->
+        File.rm(sections_file)
+        Application.delete_env(:aviary, :sections_file)
+        Aviary.Cache.invalidate({:sections, sections_file})
+      end)
+
+      stub_site(%{"/" => {200, schedule_dated(Aviary.LocalTime.today())}})
+      walk_site()
+
+      assert Nhl.games() == []
+    end
+
     test "lists today's games with their feeds" do
       stub_site(%{"/" => {200, schedule_dated(Aviary.LocalTime.today())}})
       walk_site()
