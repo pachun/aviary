@@ -3,8 +3,9 @@ defmodule Aviary.DailyWire do
 
   @api "https://middleware-prod.dailywire.com"
   @shows [
-    %{slug: "the-ben-shapiro-show", title: "The Ben Shapiro Show"},
-    %{slug: "sunday-special", title: "The Sunday Special"}
+    %{slug: "the-ben-shapiro-show", title: "Shapiro"},
+    %{slug: "the-matt-walsh-show", title: "Walsh"},
+    %{slug: "the-andrew-klavan-show", title: "Klavan"}
   ]
   @catalog_ttl_ms :timer.minutes(5)
   @request_timeout_ms 15_000

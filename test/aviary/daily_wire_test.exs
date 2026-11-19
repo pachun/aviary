@@ -166,13 +166,13 @@ defmodule Aviary.DailyWireTest do
     assert {:ok, %{episodes: [%{id: "older"}], nextPage: nil}} =
              DailyWire.episodes(user, "the-ben-shapiro-show", cursor)
 
-    assert {:error, :invalid_page} = DailyWire.episodes(user, "sunday-special", cursor)
+    assert {:error, :invalid_page} = DailyWire.episodes(user, "the-matt-walsh-show", cursor)
 
     assert {:error, :invalid_page} =
              DailyWire.episodes(user, "the-ben-shapiro-show", "https://attacker.test")
   end
 
-  test "Sunday Special selects the newest season and orders episodes by date", %{user: user} do
+  test "a show selects the newest season and orders episodes by date", %{user: user} do
     Req.Test.stub(DailyWire, fn conn ->
       case conn.request_path do
         "/middleware/v3/getUserInfo" ->
@@ -215,7 +215,7 @@ defmodule Aviary.DailyWireTest do
       end
     end)
 
-    assert {:ok, %{episodes: [newer, older]}} = DailyWire.episodes(user, "sunday-special")
+    assert {:ok, %{episodes: [newer, older]}} = DailyWire.episodes(user, "the-matt-walsh-show")
     assert newer.id == "newer"
     assert older.id == "older"
     assert newer.dateLabel == "Sat Dec 21, 2024"
@@ -301,7 +301,7 @@ defmodule Aviary.DailyWireTest do
     Req.Test.stub(
       DailyWire,
       &Req.Test.json(&1, %{
-        show: %{slug: "sunday-special"},
+        show: %{slug: "the-matt-walsh-show"},
         playbackPolicy: "DRM",
         videoURL: "https://stream.mux.com/drm.m3u8"
       })
