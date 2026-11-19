@@ -70,6 +70,7 @@ defmodule AviaryWeb.API.MovieController do
       rating: movie.rating,
       resumeSeconds: movie.resume_seconds,
       inLibrary: in_library,
+      canAdd: Aviary.Radarr.configured?(),
       recommendedBy: recommended_by
     }
   end

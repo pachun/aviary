@@ -848,7 +848,7 @@ defmodule AviaryWeb.ShowsDetailLive do
                   center={false}
                 />
 
-                <div class="space-y-2">
+                <div :if={playable_or_addable?(@show)} class="space-y-2">
                   <%!--
                     When this show isn't in the user's library yet,
                     the big CTA is always "Add to library" (regardless
@@ -1460,6 +1460,9 @@ defmodule AviaryWeb.ShowsDetailLive do
       show_timeleft_seconds(show, status)
     )
   end
+
+  defp playable_or_addable?(%{source: :library}), do: true
+  defp playable_or_addable?(_show), do: Aviary.Sonarr.configured?()
 
   defp action_label(%{source: :discover}), do: "Add to library"
 

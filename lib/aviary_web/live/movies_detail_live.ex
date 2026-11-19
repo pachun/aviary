@@ -580,7 +580,7 @@ defmodule AviaryWeb.MoviesDetailLive do
                   across every state so the layout never shifts as
                   the state machine progresses.
                 --%>
-                <div class="space-y-2">
+                <div :if={playable_or_addable?(@movie)} class="space-y-2">
                   <%!--
                     See shows_detail's call site for full context. Big
                     CTA is "Add to library" when this movie isn't in
@@ -829,6 +829,9 @@ defmodule AviaryWeb.MoviesDetailLive do
   # files, fall back to the Play/Resume affordance. Otherwise the
   # label is always "Add to library" — same vocabulary whether the
   # files are on disk yet or not.
+  defp playable_or_addable?(%{source: :library}), do: true
+  defp playable_or_addable?(_movie), do: Aviary.Radarr.configured?()
+
   defp movie_action_label(%{resume_seconds: r}, true) when is_number(r) and r > 0, do: "Resume"
   defp movie_action_label(_movie, true), do: "Play"
   defp movie_action_label(_movie, false), do: "Add to library"

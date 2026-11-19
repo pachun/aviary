@@ -87,6 +87,7 @@ defmodule AviaryWeb.API.ShowController do
       seasonCount: show.season_count,
       rating: show.rating,
       inLibrary: in_library,
+      canAdd: Aviary.Sonarr.configured?(),
       recommendedBy: recommended_by,
       nextUp: serialize_next_up(show.next_up),
       seasons:

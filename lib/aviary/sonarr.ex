@@ -764,6 +764,8 @@ defmodule Aviary.Sonarr do
       :error
   end
 
+  def configured?, do: base_url() != nil and api_key() != nil
+
   defp base_url do
     case Application.get_env(:aviary, :sonarr_url) do
       nil -> nil
