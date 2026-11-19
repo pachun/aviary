@@ -128,8 +128,28 @@ defmodule AviaryWeb.Components.NhlTables do
       </section>
 
       <%= if @team.lines do %>
-        <.units label="Forwards" aside={@team.lines.as_of} units={@team.lines.forwards} />
-        <.units label="Defense and goalies" units={@team.lines.defense ++ [@team.lines.goalies]} />
+        <section>
+          <p :if={@team.lines.as_of} class="font-sans text-sm text-muted mb-4">
+            {@team.lines.as_of}
+          </p>
+          <div class="grid gap-x-10 gap-y-10 sm:grid-cols-2">
+            <div :for={block <- line_blocks(@team.lines)}>
+              <.heading label={block.label} />
+              <ul class="flex justify-center gap-4">
+                <.tile :for={player <- block.forwards} player={player} />
+              </ul>
+              <p
+                :if={block.behind != []}
+                class="font-sans text-[0.65rem] tracking-[0.18em] uppercase text-muted text-center mt-5 mb-3"
+              >
+                {block.behind_caption}
+              </p>
+              <ul class="flex justify-center gap-4">
+                <.tile :for={player <- block.behind} player={player} />
+              </ul>
+            </div>
+          </div>
+        </section>
         <.units :if={@team.lines.power_play != []} label="Power play" units={@team.lines.power_play} />
         <.units
           :if={@team.lines.penalty_kill != []}
@@ -259,6 +279,27 @@ defmodule AviaryWeb.Components.NhlTables do
 
   attr :player, :map, required: true
 
+  defp tile(assigns) do
+    ~H"""
+    <li class="flex w-28 flex-col items-center text-center">
+      <img
+        :if={@player.headshot}
+        src={@player.headshot}
+        alt=""
+        loading="lazy"
+        class="size-20 rounded-full bg-rule object-cover"
+      />
+      <span :if={!@player.headshot} class="size-20 rounded-full bg-rule"></span>
+      <span class="font-sans text-xs text-oxblood mt-2">
+        {if @player.number, do: "##{@player.number}"}
+      </span>
+      <span class="font-display text-ink text-base leading-tight">{@player.name}</span>
+    </li>
+    """
+  end
+
+  attr :player, :map, required: true
+
   defp headshot(assigns) do
     ~H"""
     <img
@@ -270,6 +311,27 @@ defmodule AviaryWeb.Components.NhlTables do
     />
     <span :if={!@player.headshot} class="size-14 shrink-0 rounded-full bg-rule"></span>
     """
+  end
+
+  defp line_blocks(lines) do
+    behind_rows =
+      lines.defense
+      |> Enum.with_index(1)
+      |> Enum.map(fn {pair, number} -> {"Pair #{number}", pair} end)
+      |> Kernel.++([{"Goalies", lines.goalies}])
+
+    block_count = max(length(lines.forwards), length(behind_rows))
+
+    for index <- 0..(block_count - 1)//1 do
+      {behind_caption, behind} = Enum.at(behind_rows, index, {nil, []})
+
+      %{
+        label: "Line #{index + 1}",
+        forwards: Enum.at(lines.forwards, index, []),
+        behind_caption: behind_caption,
+        behind: behind
+      }
+    end
   end
 
   defp position_groups, do: @position_groups
