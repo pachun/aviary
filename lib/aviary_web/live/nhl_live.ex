@@ -4,16 +4,47 @@ defmodule AviaryWeb.NhlLive do
   games come from the schedule `Aviary.Nhl.Schedule` keeps on hand, so
   the page never waits on the stream site; picking a feed opens the
   player over the page.
+
+  Two more views sit beside the games: the standings by division, and a
+  page for each team. Both are fetched when first opened, off the page's
+  own process, so a slow source never holds up the games.
   """
   use AviaryWeb, :live_view
 
+  alias AviaryWeb.Components.NhlTables
   alias AviaryWeb.Components.VideoPlayer
+
+  @views [{"games", "Games"}, {"standings", "Standings"}, {"teams", "Teams"}]
 
   def mount(_params, _session, socket) do
     {:ok,
      socket
      |> assign(page_title: "NHL", watching_game: nil)
+     |> assign(view: "games", divisions: :loading, teams: :loading, team: nil)
      |> assign_games()}
+  end
+
+  def handle_event("choose_view", %{"view" => "standings"}, socket) do
+    {:noreply,
+     socket
+     |> assign(view: "standings")
+     |> start_async(:standings, &Aviary.Nhl.Standings.divisions/0)}
+  end
+
+  def handle_event("choose_view", %{"view" => "teams"}, socket) do
+    {:noreply,
+     socket
+     |> assign(view: "teams")
+     |> start_async(:teams, &Aviary.Nhl.Standings.teams/0)}
+  end
+
+  def handle_event("choose_view", _params, socket), do: {:noreply, assign(socket, view: "games")}
+
+  def handle_event("show_team", %{"team" => team_id}, socket) do
+    {:noreply,
+     socket
+     |> assign(team: {:loading, team_id})
+     |> start_async(:team, fn -> Aviary.Nhl.Team.fetch(team_id) end)}
   end
 
   def handle_event("watch_game", %{"game" => game_id, "feed" => feed_id}, socket) do
@@ -48,6 +79,26 @@ defmodule AviaryWeb.NhlLive do
   def handle_event("report_progress", _, socket), do: {:noreply, socket}
   def handle_event("resync_position", _, socket), do: {:noreply, socket}
   def handle_event("subtitles_changed", _, socket), do: {:noreply, socket}
+
+  def handle_async(:standings, {:ok, {:ok, divisions}}, socket),
+    do: {:noreply, assign(socket, divisions: divisions)}
+
+  def handle_async(:standings, _result, socket),
+    do: {:noreply, assign(socket, divisions: :unavailable)}
+
+  def handle_async(:teams, {:ok, {:ok, teams}}, socket),
+    do: {:noreply, assign(socket, teams: teams)}
+
+  def handle_async(:teams, _result, socket), do: {:noreply, assign(socket, teams: :unavailable)}
+
+  def handle_async(:team, {:ok, {:ok, team}}, socket),
+    do: {:noreply, assign(socket, team: {:shown, team})}
+
+  def handle_async(:team, _result, socket), do: {:noreply, assign(socket, team: :unavailable)}
+
+  defp shown_team_id({:loading, team_id}), do: team_id
+  defp shown_team_id({:shown, team}), do: team.id
+  defp shown_team_id(_team), do: nil
 
   defp assign_games(socket) do
     games = Aviary.Nhl.games()
@@ -91,6 +142,8 @@ defmodule AviaryWeb.NhlLive do
       URI.encode_query(token: token)
   end
 
+  defp views, do: @views
+
   def render(assigns) do
     ~H"""
     <Layouts.app
@@ -99,7 +152,33 @@ defmodule AviaryWeb.NhlLive do
       current_user={@current_user}
       nav_visibility={@nav_visibility}
     >
-      <div id="nhl" phx-hook="RefreshWhenVisible" class="pt-2 space-y-12">
+      <div class="flex gap-6 pt-2 mb-8">
+        <button
+          :for={{view, label} <- views()}
+          type="button"
+          phx-click="choose_view"
+          phx-value-view={view}
+          aria-pressed={@view == view}
+          class={[
+            "font-display text-xl cursor-pointer hover:text-oxblood focus-visible:outline-2 focus-visible:outline-oxblood",
+            @view == view && "text-oxblood",
+            @view != view && "text-muted"
+          ]}
+        >
+          {label}
+        </button>
+      </div>
+
+      <NhlTables.standings :if={@view == "standings"} divisions={@divisions} />
+
+      <NhlTables.teams
+        :if={@view == "teams"}
+        teams={@teams}
+        team={@team}
+        shown_team_id={shown_team_id(@team)}
+      />
+
+      <div :if={@view == "games"} id="nhl" phx-hook="RefreshWhenVisible" class="space-y-12">
         <p :if={@games == []} class="font-sans text-muted">No games today.</p>
 
         <section :for={start_time <- @start_times}>

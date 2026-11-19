@@ -36,6 +36,7 @@ config :aviary,
   jellyseerr_req_options: [plug: {Req.Test, Aviary.Jellyseerr}],
   claude_req_options: [plug: {Req.Test, Aviary.Claude}],
   nhl_standings_req_options: [plug: {Req.Test, Aviary.Nhl.Standings}],
+  nhl_team_req_options: [plug: {Req.Test, Aviary.Nhl.Team}],
   rotten_tomatoes_req_options: [plug: {Req.Test, Aviary.RottenTomatoes}, retry: false]
 
 config :aviary, Aviary.Repo,

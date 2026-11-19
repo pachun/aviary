@@ -30,6 +30,20 @@ defmodule AviaryWeb.API.NhlController do
     end
   end
 
+  def teams(conn, _params) do
+    case Aviary.Nhl.Standings.teams() do
+      {:ok, teams} -> json(conn, %{teams: Enum.map(teams, &serialize_team/1)})
+      :error -> conn |> put_status(:bad_gateway) |> json(%{error: "teams_unavailable"})
+    end
+  end
+
+  def team(conn, %{"id" => team_id}) do
+    case Aviary.Nhl.Team.fetch(team_id) do
+      {:ok, team} -> json(conn, AviaryWeb.API.NhlTeam.serialize(team))
+      :error -> conn |> put_status(:not_found) |> json(%{error: "not_found"})
+    end
+  end
+
   def stream(conn, %{"id" => game_id, "feed" => feed_id}) do
     case Aviary.Nhl.playlist(game_id, feed_id) do
       {:ok, _playlist} ->
@@ -141,6 +155,7 @@ defmodule AviaryWeb.API.NhlController do
 
   defp serialize_team(team) do
     %{
+      id: team.id,
       name: team.name,
       nickname: team.nickname,
       logo: "/api/v1/nhl/logos/#{team.id}?background=dark"

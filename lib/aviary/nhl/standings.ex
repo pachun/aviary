@@ -63,6 +63,9 @@ defmodule Aviary.Nhl.Standings do
 
     %{
       id: team_id(name),
+      abbreviation: get_in(listed, ["teamAbbrev", "default"]),
+      division: listed["divisionName"],
+      logo_url: listed["teamLogo"],
       name: name,
       nickname: get_in(listed, ["teamCommonName", "default"]),
       rank: listed["divisionSequence"],
@@ -81,6 +84,16 @@ defmodule Aviary.Nhl.Standings do
     do: "#{code}#{count}"
 
   defp streak(_listed), do: nil
+
+  @doc """
+  Every team in alphabetical order, as `{:ok, teams}` in the same shape
+  the divisions list them, or `:error`.
+  """
+  def teams do
+    with {:ok, divisions} <- divisions() do
+      {:ok, divisions |> Enum.flat_map(& &1.teams) |> Enum.sort_by(& &1.name)}
+    end
+  end
 
   defp team_id(name) when is_binary(name) do
     name
