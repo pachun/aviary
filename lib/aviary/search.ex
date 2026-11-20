@@ -15,7 +15,13 @@ defmodule Aviary.Search do
 
   alias Aviary.Jellyseerr
 
-  def run(query) when is_binary(query) do
+  def run(query, user) when is_binary(query) do
+    if Aviary.OnThisServer.all_there_is?(),
+      do: user |> Aviary.OnThisServer.search(query) |> Enum.map(&Map.put(&1, :kicker_q, query)),
+      else: across_tmdb(query)
+  end
+
+  defp across_tmdb(query) do
     case Jellyseerr.search(query) do
       {:ok, results} ->
         results

@@ -14,23 +14,31 @@ defmodule AviaryWeb.API.DiscoverController do
   use AviaryWeb, :controller
 
   def index(conn, _params) do
-    rows =
-      Aviary.Discover.services()
-      |> Task.async_stream(
-        fn {label, network_ids} ->
-          %{label: label, items: Enum.map(Aviary.Discover.fetch_row(network_ids), &serialize/1)}
-        end,
-        max_concurrency: 7,
-        timeout: 25_000,
-        on_timeout: :kill_task
-      )
-      |> Enum.flat_map(fn
-        {:ok, row} -> [row]
-        _ -> []
-      end)
-      |> Enum.reject(&(&1.items == []))
+    if Aviary.OnThisServer.all_there_is?(),
+      do: json(conn, %{rows: on_this_server(conn.assigns.current_user)}),
+      else: json(conn, %{rows: across_streaming_services()})
+  end
 
-    json(conn, %{rows: rows})
+  defp on_this_server(user) do
+    for {label, items} <- Aviary.OnThisServer.rows(user),
+        do: %{label: label, items: Enum.map(items, &serialize/1)}
+  end
+
+  defp across_streaming_services do
+    Aviary.Discover.services()
+    |> Task.async_stream(
+      fn {label, network_ids} ->
+        %{label: label, items: Enum.map(Aviary.Discover.fetch_row(network_ids), &serialize/1)}
+      end,
+      max_concurrency: 7,
+      timeout: 25_000,
+      on_timeout: :kill_task
+    )
+    |> Enum.flat_map(fn
+      {:ok, row} -> [row]
+      _ -> []
+    end)
+    |> Enum.reject(&(&1.items == []))
   end
 
   # Shared shape with search results. detail_id is a Jellyfin id when

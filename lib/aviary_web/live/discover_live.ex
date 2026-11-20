@@ -20,19 +20,33 @@ defmodule AviaryWeb.DiscoverLive do
   @retry_delays_ms [2_000, 5_000, 12_000]
 
   def mount(_params, _session, socket) do
+    if Aviary.OnThisServer.all_there_is?(),
+      do: {:ok, show_what_is_on_this_server(socket)},
+      else: {:ok, browse_streaming_services(socket)}
+  end
+
+  defp show_what_is_on_this_server(socket) do
+    rows = Aviary.OnThisServer.rows(socket.assigns.current_user)
+
+    assign(socket,
+      page_title: "Discover",
+      services: Enum.map(rows, fn {label, _items} -> {label, nil} end),
+      rows: Map.new(rows),
+      row_attempts: %{}
+    )
+  end
+
+  defp browse_streaming_services(socket) do
     services = Aviary.Discover.services()
 
-    socket =
-      socket
-      |> assign(
-        page_title: "Discover",
-        services: services,
-        rows: %{},
-        row_attempts: %{}
-      )
-      |> kick_off_row_fetches(services)
-
-    {:ok, socket}
+    socket
+    |> assign(
+      page_title: "Discover",
+      services: services,
+      rows: %{},
+      row_attempts: %{}
+    )
+    |> kick_off_row_fetches(services)
   end
 
   defp kick_off_row_fetches(socket, services) do

@@ -10,8 +10,11 @@ defmodule AviaryWeb.API.SearchController do
   def index(conn, %{"q" => q}) when is_binary(q) do
     items =
       case String.trim(q) do
-        "" -> []
-        trimmed -> trimmed |> Aviary.Search.run() |> Enum.map(&serialize/1)
+        "" ->
+          []
+
+        trimmed ->
+          trimmed |> Aviary.Search.run(conn.assigns.current_user) |> Enum.map(&serialize/1)
       end
 
     json(conn, %{items: items})

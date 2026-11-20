@@ -94,8 +94,9 @@ defmodule AviaryWeb.SearchLive do
 
   defp do_search(socket, q) do
     parent = self()
+    user = socket.assigns.current_user
 
-    Task.start(fn -> send(parent, {:search_result, q, Aviary.Search.run(q)}) end)
+    Task.start(fn -> send(parent, {:search_result, q, Aviary.Search.run(q, user)}) end)
 
     socket
     |> assign(:query, q)
