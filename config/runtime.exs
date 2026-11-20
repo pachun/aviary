@@ -70,6 +70,7 @@ config :aviary,
   anthropic_api_key: System.get_env("ANTHROPIC_API_KEY"),
   sections_file: System.get_env("SECTIONS_FILE"),
   trailers: System.get_env("TRAILERS") != "off",
+  ratings: System.get_env("RATINGS") != "off",
   # HTTP proxy the NHL schedule scrape goes through, e.g. gluetun's
   # proxy on the VPN, so the stream site sees the VPN's address rather
   # than the household's. Unset means requests go out directly.

@@ -42,6 +42,13 @@ defmodule Aviary.RottenTomatoes do
   `nil` (item has no RT page, only one score, or fetch failed).
   """
   def fetch(title, type, year \\ nil, imdb_id \\ nil) when type in [:movie, :tv] do
+    if offered?(), do: looked_up(title, type, year, imdb_id), else: nil
+  end
+
+  @doc "Whether this server shows ratings. On unless it is set up with `RATINGS=off`."
+  def offered?, do: Application.get_env(:aviary, :ratings, true)
+
+  defp looked_up(title, type, year, imdb_id) do
     key = {imdb_id, String.downcase(title), year, type}
     now = System.system_time(:second)
 

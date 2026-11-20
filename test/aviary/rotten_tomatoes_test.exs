@@ -1,7 +1,14 @@
 defmodule Aviary.RottenTomatoesTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Aviary.RottenTomatoes
+
+  test "looks nothing up on a server set up without ratings" do
+    Application.put_env(:aviary, :ratings, false)
+    on_exit(fn -> Application.delete_env(:aviary, :ratings) end)
+
+    assert RottenTomatoes.fetch("His Girl Friday", :movie, 1940) == nil
+  end
 
   test "reads both scores from a page that gives them as percentages" do
     page = """
