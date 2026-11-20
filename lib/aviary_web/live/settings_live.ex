@@ -320,6 +320,12 @@ defmodule AviaryWeb.SettingsLive do
             </div>
             <.storage_legend breakdown={@breakdown} tank_bytes={@tank_bytes} />
           </.section_block>
+
+          <.section_block label="Credits" stacked>
+            <ul id="credits" class="flex flex-col gap-2 font-sans text-[0.85rem] text-muted">
+              <li :for={credit <- Aviary.Credits.all()}>{credit}</li>
+            </ul>
+          </.section_block>
         </div>
       </div>
     </Layouts.app>
@@ -592,10 +598,8 @@ defmodule AviaryWeb.SettingsLive do
     --%>
     <p class="font-sans text-[0.8rem] text-muted tabular-nums mb-4">
       <%= if @tank_bytes do %>
-        {Aviary.Storage.humanize_bytes(@tank_bytes)} total
-        <span class="px-2 text-rule">·</span>
-        {Aviary.Storage.humanize_bytes(@totals.bytes)} used
-        <span class="px-2 text-rule">·</span>
+        {Aviary.Storage.humanize_bytes(@tank_bytes)} total <span class="px-2 text-rule">·</span>
+        {Aviary.Storage.humanize_bytes(@totals.bytes)} used <span class="px-2 text-rule">·</span>
         {free_percent(@totals.bytes, @tank_bytes)}% free
       <% else %>
         {Aviary.Storage.humanize_bytes(@totals.bytes)} used
@@ -638,7 +642,8 @@ defmodule AviaryWeb.SettingsLive do
         <span
           class="block h-full"
           style={"width: #{percent(entry.bytes, @scale_bytes)}%; background: var(--user-#{color_slot(entry.user_id)});"}
-        ></span>
+        >
+        </span>
       <% end %>
     </div>
     """
@@ -673,7 +678,8 @@ defmodule AviaryWeb.SettingsLive do
               class="size-2 rounded-full shrink-0"
               style={"background: var(--user-#{color_slot(entry.user_id)});"}
               aria-hidden="true"
-            ></span>
+            >
+            </span>
             <span class="text-ink truncate">{entry.username}</span>
           </div>
           <div class="flex items-baseline gap-3 tabular-nums shrink-0">

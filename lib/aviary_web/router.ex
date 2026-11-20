@@ -105,6 +105,7 @@ defmodule AviaryWeb.Router do
     get "/movies/:id", MovieController, :show
     get "/movies/:id/more-like-this", MovieController, :more_like_this
     get "/trailer", TrailerController, :show
+    get "/credits", CreditsController, :show
     get "/live/events", LiveController, :events
     get "/live/events/:id/feeds/:feed", LiveController, :feed
     get "/series/shows/:show/episodes", SeriesController, :episodes

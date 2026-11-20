@@ -30,6 +30,20 @@ defmodule Aviary.SectionsTest do
     end
   end
 
+  describe "credits" do
+    test "a server with no sections file credits TMDB alone" do
+      assert [tmdb] = Aviary.Credits.all()
+      assert tmdb =~ "TMDB"
+    end
+
+    test "a server's own credits follow TMDB's", %{path: path} do
+      define(path, %{credits: ["Sintel © Blender Foundation, CC BY 3.0", 7]})
+
+      assert [tmdb, "Sintel © Blender Foundation, CC BY 3.0"] = Aviary.Credits.all()
+      assert tmdb =~ "TMDB"
+    end
+  end
+
   describe "a server that defines its own live section" do
     setup %{path: path} do
       define(path, %{

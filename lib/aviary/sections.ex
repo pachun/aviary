@@ -1,8 +1,8 @@
 defmodule Aviary.Sections do
   @moduledoc """
   Sections a server can define for itself in a JSON file: a list of
-  live events, and a set of series with their episodes. Named by
-  `SECTIONS_FILE`. A server without the file gets its live events from
+  live events, a set of series with their episodes, and credits for
+  the video it carries. Named by `SECTIONS_FILE`. A server without the file gets its live events from
   the NHL schedule and its series from Daily Wire.
 
       {
@@ -14,6 +14,7 @@ defmodule Aviary.Sections do
              "feeds": [{"id": "main", "label": "Watch", "url": "https://…/live.m3u8"}]}
           ]
         },
+        "credits": ["Big Buck Bunny © Blender Foundation, CC BY 3.0"],
         "series": {
           "label": "Shows",
           "shows": [
@@ -35,6 +36,14 @@ defmodule Aviary.Sections do
 
   @doc "The file's `series` section, or `nil` when the server defines none."
   def series, do: section("series")
+
+  @doc "The file's credits, one line each. Empty when the server lists none."
+  def credits do
+    case defined() do
+      %{"credits" => credits} when is_list(credits) -> Enum.filter(credits, &is_binary/1)
+      _ -> []
+    end
+  end
 
   defp section(name) do
     case defined() do
