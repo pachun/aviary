@@ -484,7 +484,7 @@ defmodule Aviary.Catalog do
 
   defp tmdb_trailer_url(%{"relatedVideos" => videos}) when is_list(videos) do
     case Enum.find(videos, &(&1["type"] == "Trailer" and &1["site"] == "YouTube")) do
-      %{"url" => url} when is_binary(url) -> url
+      %{"url" => url} when is_binary(url) -> Aviary.Trailer.link(url)
       _ -> nil
     end
   end
@@ -585,7 +585,7 @@ defmodule Aviary.Catalog do
 
   defp first_trailer_url(trailers) when is_list(trailers) do
     case trailers do
-      [%{"Url" => url} | _] -> url
+      [%{"Url" => url} | _] -> Aviary.Trailer.link(url)
       _ -> nil
     end
   end

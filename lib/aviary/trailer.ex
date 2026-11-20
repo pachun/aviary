@@ -28,6 +28,12 @@ defmodule Aviary.Trailer do
   @player_clients "ios,android"
   @format "b[protocol^=m3u8][height<=1080]/b[protocol^=m3u8]/22/18"
 
+  @doc "Whether this server offers trailers. On unless it is set up with `TRAILERS=off`."
+  def offered?, do: Application.get_env(:aviary, :trailers, true)
+
+  @doc "A title's trailer link, or `nil` on a server that offers none."
+  def link(url), do: if(offered?(), do: url, else: nil)
+
   @doc """
   Resolves a YouTube URL to a playable stream. Returns
   `{:ok, %{url: url, content_type: "hls" | "progressive"}}`, or `:error`
@@ -35,7 +41,7 @@ defmodule Aviary.Trailer do
   `yt-dlp` binary.
   """
   def stream_url(url) when is_binary(url) do
-    if Regex.match?(@youtube, url), do: resolve(url), else: :error
+    if offered?() and Regex.match?(@youtube, url), do: resolve(url), else: :error
   end
 
   def stream_url(_), do: :error
