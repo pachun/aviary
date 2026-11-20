@@ -15,6 +15,7 @@ defmodule AviaryWeb.SettingsLive do
   """
   use AviaryWeb, :live_view
 
+  alias Aviary.Accounts
   alias Aviary.Preferences
   alias Aviary.Storage
 
@@ -47,8 +48,18 @@ defmodule AviaryWeb.SettingsLive do
        totals: totals,
        your_stats: your_stats,
        tank_bytes: tank_bytes,
-       subtitles_default: Preferences.subtitles_default?(current.id)
+       subtitles_default: Preferences.subtitles_default?(current.id),
+       accounts: accounts_managed_by(current),
+       open_account_form: nil,
+       account_error: nil
      )}
+  end
+
+  defp accounts_managed_by(user) do
+    case Accounts.list(user) do
+      {:ok, accounts} -> accounts
+      {:error, _} -> nil
+    end
   end
 
   def handle_event("toggle_subtitles", _params, socket) do
@@ -56,6 +67,101 @@ defmodule AviaryWeb.SettingsLive do
     Preferences.set_subtitles_default(socket.assigns.current_user.id, on)
     {:noreply, assign(socket, :subtitles_default, on)}
   end
+
+  def handle_event("open_account_form", %{"account" => "new"}, socket) do
+    {:noreply, assign(socket, open_account_form: :new, account_error: nil)}
+  end
+
+  def handle_event("open_account_form", %{"account" => account_id}, socket) do
+    {:noreply, assign(socket, open_account_form: account_id, account_error: nil)}
+  end
+
+  def handle_event("close_account_form", _params, socket) do
+    {:noreply, assign(socket, open_account_form: nil, account_error: nil)}
+  end
+
+  def handle_event("add_account", %{"account" => entered}, socket) do
+    case Accounts.add(socket.assigns.current_user, entered["username"], entered["password"]) do
+      {:ok, added} ->
+        {:noreply, socket |> show_accounts_again() |> put_flash(:info, "Added #{added.username}")}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :account_error, explain(reason))}
+    end
+  end
+
+  def handle_event("save_account", %{"account" => entered}, socket) do
+    manager = socket.assigns.current_user
+    account = Enum.find(socket.assigns.accounts, &(&1.id == entered["id"]))
+    username = String.trim(entered["username"])
+    new_password = entered["password"]
+
+    with %{} <- account || {:error, :not_found},
+         :ok <- rename_if_changed(manager, account, username),
+         :ok <- change_password_if_entered(manager, account, new_password) do
+      {:noreply,
+       socket
+       |> show_accounts_again()
+       |> update(:breakdown, &show_new_username(&1, account.id, username))
+       |> put_flash(:info, "Saved #{username}")}
+    else
+      {:error, reason} -> {:noreply, assign(socket, :account_error, explain(reason))}
+    end
+  end
+
+  def handle_event("remove_account", %{"account" => account_id}, socket) do
+    case Accounts.remove(socket.assigns.current_user, account_id) do
+      :ok ->
+        removed = Enum.find(socket.assigns.accounts, &(&1.id == account_id))
+
+        {:noreply,
+         socket
+         |> show_accounts_again()
+         |> update(:breakdown, &Enum.reject(&1, fn entry -> entry.user_id == account_id end))
+         |> put_flash(:info, "Removed #{removed && removed.username}")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, explain(reason))}
+    end
+  end
+
+  defp rename_if_changed(_manager, %{username: username}, username), do: :ok
+
+  defp rename_if_changed(manager, account, username),
+    do: Accounts.rename(manager, account.id, username)
+
+  defp change_password_if_entered(_manager, _account, ""), do: :ok
+
+  defp change_password_if_entered(manager, account, new_password),
+    do: Accounts.change_password(manager, account.id, new_password)
+
+  defp show_accounts_again(socket) do
+    assign(socket,
+      accounts: accounts_managed_by(socket.assigns.current_user),
+      open_account_form: nil,
+      account_error: nil
+    )
+  end
+
+  defp show_new_username(breakdown, account_id, username) do
+    Enum.map(breakdown, fn
+      %{user_id: ^account_id} = entry -> %{entry | username: username}
+      entry -> entry
+    end)
+  end
+
+  defp explain(:username_missing), do: "Enter a username."
+  defp explain(:password_missing), do: "Enter a password."
+  defp explain(:username_taken), do: "Someone already has that username."
+
+  defp explain(:rejected),
+    do: "Jellyfin didn't accept that username. Try plain letters and numbers."
+
+  defp explain(:not_found), do: "That account no longer exists. Reload the page."
+  defp explain(:cannot_remove_yourself), do: "You can't remove your own account."
+  defp explain(:cannot_remove_manager), do: "A Jellyfin administrator can't be removed here."
+  defp explain(:not_allowed), do: "Only the Jellyfin administrator can manage accounts."
+  defp explain(:unreachable), do: "Jellyfin didn't respond. Try again."
 
   def render(assigns) do
     ~H"""
@@ -163,6 +269,15 @@ defmodule AviaryWeb.SettingsLive do
             </div>
           </.section_block>
 
+          <.section_block :if={@accounts} label="Household">
+            <.household
+              accounts={@accounts}
+              open_account_form={@open_account_form}
+              account_error={@account_error}
+              current_user={@current_user}
+            />
+          </.section_block>
+
           <%!--
             Install section: only renders for iOS Safari users who
             haven't yet added the app to their home screen.
@@ -243,6 +358,172 @@ defmodule AviaryWeb.SettingsLive do
       </section>
     <% end %>
     """
+  end
+
+  attr :accounts, :list, required: true
+  attr :open_account_form, :any, required: true
+  attr :account_error, :any, required: true
+  attr :current_user, :map, required: true
+
+  defp household(assigns) do
+    ~H"""
+    <ul id="household-accounts" class="flex flex-col font-sans text-[0.85rem]">
+      <li
+        :for={account <- @accounts}
+        id={"account-#{account.id}"}
+        class="py-3 first:pt-0 border-b border-rule"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex items-center gap-3 min-w-0">
+            <span
+              class="size-2 rounded-full shrink-0"
+              style={"background: var(--user-#{color_slot(account.id)});"}
+              aria-hidden="true"
+            >
+            </span>
+            <span class="text-ink truncate">{account.username}</span>
+            <span :if={account.id == @current_user.id} class="text-muted">you</span>
+          </div>
+          <div class="flex items-center gap-5 shrink-0">
+            <button
+              :if={@open_account_form != account.id}
+              type="button"
+              phx-click="open_account_form"
+              phx-value-account={account.id}
+              aria-label={"Edit #{account.username}"}
+              class={account_action_class()}
+            >
+              Edit
+            </button>
+            <button
+              :if={not account.manager?}
+              type="button"
+              phx-click="remove_account"
+              phx-value-account={account.id}
+              data-confirm={removal_warning(account)}
+              aria-label={"Remove #{account.username}"}
+              class={account_action_class()}
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+
+        <.form
+          :if={@open_account_form == account.id}
+          for={%{}}
+          as={:account}
+          id={"edit-account-#{account.id}"}
+          phx-submit="save_account"
+          class="mt-4 mb-2 flex flex-col gap-3"
+        >
+          <input type="hidden" name="account[id]" value={account.id} />
+          <.account_fields
+            username={account.username}
+            password_label="New password"
+            password_hint="Leave blank to keep the current one"
+            password_required={false}
+            error={@account_error}
+            save_label="Save changes"
+          />
+        </.form>
+      </li>
+    </ul>
+
+    <button
+      :if={@open_account_form != :new}
+      type="button"
+      id="add-account"
+      phx-click="open_account_form"
+      phx-value-account="new"
+      class={["mt-6", account_action_class()]}
+    >
+      Add someone
+    </button>
+
+    <.form
+      :if={@open_account_form == :new}
+      for={%{}}
+      as={:account}
+      id="add-account-form"
+      phx-submit="add_account"
+      class="mt-6 flex flex-col gap-3"
+    >
+      <.account_fields
+        username=""
+        password_label="Password"
+        password_hint="They sign in with this"
+        password_required
+        error={@account_error}
+        save_label="Add to household"
+      />
+    </.form>
+    """
+  end
+
+  attr :username, :string, required: true
+  attr :password_label, :string, required: true
+  attr :password_hint, :string, required: true
+  attr :password_required, :boolean, required: true
+  attr :error, :any, required: true
+  attr :save_label, :string, required: true
+
+  defp account_fields(assigns) do
+    ~H"""
+    <label class="flex flex-col gap-1.5">
+      <span class="text-muted text-[0.8rem]">Username</span>
+      <input
+        type="text"
+        name="account[username]"
+        value={@username}
+        required
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck="false"
+        phx-mounted={JS.focus()}
+        class={account_input_class()}
+      />
+    </label>
+    <label class="flex flex-col gap-1.5">
+      <span class="text-muted text-[0.8rem]">{@password_label}</span>
+      <input
+        type="text"
+        name="account[password]"
+        required={@password_required}
+        placeholder={@password_hint}
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck="false"
+        class={account_input_class()}
+      />
+    </label>
+    <p :if={@error} role="alert" class="text-oxblood">{@error}</p>
+    <div class="mt-1 flex items-center gap-5">
+      <button
+        type="submit"
+        phx-disable-with="Saving…"
+        class="bg-oxblood text-white font-sans text-xs tracking-[0.18em] uppercase font-medium px-5 py-2.5 rounded-sm cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
+      >
+        {@save_label}
+      </button>
+      <button type="button" phx-click="close_account_form" class={account_action_class()}>
+        Cancel
+      </button>
+    </div>
+    """
+  end
+
+  defp account_action_class do
+    "font-sans text-[0.72rem] tracking-[0.18em] uppercase text-ink hover:text-oxblood underline decoration-1 underline-offset-[6px] decoration-rule hover:decoration-oxblood transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-oxblood/40 rounded-sm"
+  end
+
+  defp account_input_class do
+    "w-full max-w-sm bg-surface text-ink placeholder:text-muted font-sans text-base px-3 py-2 rounded-sm border border-rule focus:border-oxblood focus:outline-none transition-colors"
+  end
+
+  defp removal_warning(account) do
+    "Remove #{account.username}? Their library and watch history go with the account, " <>
+      "and anything only they had is deleted from disk after #{Aviary.Deletions.grace_hours()} hours."
   end
 
   # ============================================================

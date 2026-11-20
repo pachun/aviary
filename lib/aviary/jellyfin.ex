@@ -1465,6 +1465,64 @@ defmodule Aviary.Jellyfin do
     Regex.replace(~r/\{\\[^}]*\}/, vtt, "")
   end
 
+  ## Accounts
+
+  def accounts(auth), do: account_request(:get, "/Users", auth)
+
+  def account(account_id, auth), do: account_request(:get, "/Users/" <> account_id, auth)
+
+  def create_account(username, password, auth) do
+    account_request(:post, "/Users/New", auth,
+      json: %{"Name" => username, "Password" => password}
+    )
+  end
+
+  def update_account(account, auth) do
+    account_request(:post, "/Users", auth, params: [userId: account["Id"]], json: account)
+  end
+
+  def set_account_policy(account_id, policy, auth) do
+    account_request(:post, "/Users/" <> account_id <> "/Policy", auth, json: policy)
+  end
+
+  def set_account_configuration(account_id, configuration, auth) do
+    account_request(:post, "/Users/Configuration", auth,
+      params: [userId: account_id],
+      json: configuration
+    )
+  end
+
+  def set_account_password(account_id, password, auth) do
+    account_request(:post, "/Users/Password", auth,
+      params: [userId: account_id],
+      json: %{"NewPw" => password}
+    )
+  end
+
+  def delete_account(account_id, auth) do
+    account_request(:delete, "/Users/" <> account_id, auth)
+  end
+
+  defp account_request(method, path, auth, options \\ []) do
+    request =
+      [
+        method: method,
+        url: base_url() <> path,
+        headers: [{"x-emby-token", auth.token}],
+        receive_timeout: 15_000,
+        retry: false
+      ]
+      |> Keyword.merge(options)
+      |> with_test_options()
+
+    case Req.request(request) do
+      {:ok, %Req.Response{status: status, body: body}} when status in 200..299 -> {:ok, body}
+      {:ok, %Req.Response{status: 400}} -> {:error, :rejected}
+      {:ok, %Req.Response{status: 404}} -> {:error, :not_found}
+      _ -> {:error, :unreachable}
+    end
+  end
+
   ## Internals
 
   defp get!(path, auth, params) do
