@@ -61,7 +61,9 @@ const HlsPlayer = {
       document.head.appendChild(this.referrerMeta)
     }
 
-    if (this.isAppleBrowser() && video.canPlayType("application/vnd.apple.mpegurl")) {
+    if (!this.isHlsStream(src)) {
+      video.src = src
+    } else if (this.isAppleBrowser() && video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = video.dataset.nativeSrc || src
     } else if (window.Hls && window.Hls.isSupported()) {
       const hls = new window.Hls()
@@ -240,6 +242,10 @@ const HlsPlayer = {
     if (this.controlsHideTimer) clearTimeout(this.controlsHideTimer)
     if (this.hls) this.hls.destroy()
     if (this.referrerMeta) this.referrerMeta.remove()
+  },
+
+  isHlsStream(src) {
+    return src.includes(".m3u8")
   },
 
   isIOS() {
