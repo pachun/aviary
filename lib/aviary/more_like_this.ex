@@ -26,11 +26,18 @@ defmodule Aviary.MoreLikeThis do
 
   @doc """
   The row for a show or movie, with Rotten Tomatoes ratings. Empty when
-  nothing can be found for it.
+  nothing can be found for it, and on a server that can't add titles,
+  where a row of titles from elsewhere would lead nowhere.
   """
   def fetch(kind, tmdb_id)
       when kind in [:show, :movie] and (is_binary(tmdb_id) or is_integer(tmdb_id)) and
              tmdb_id != "" do
+    if Aviary.OnThisServer.all_there_is?(), do: [], else: row_for(kind, tmdb_id)
+  end
+
+  def fetch(_kind, _tmdb_id), do: []
+
+  defp row_for(kind, tmdb_id) do
     case kept_row(kind, tmdb_id) do
       %Row{} = row ->
         unless current?(row), do: choose_again_in_background(kind, tmdb_id)
@@ -43,8 +50,6 @@ defmodule Aviary.MoreLikeThis do
         end
     end
   end
-
-  def fetch(_kind, _tmdb_id), do: []
 
   @doc """
   Has Claude choose the row and keeps it. `:error` when Claude can't be

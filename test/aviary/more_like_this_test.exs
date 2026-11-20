@@ -199,6 +199,16 @@ defmodule Aviary.MoreLikeThisTest do
 
   defp set_req_test_to_shared(context), do: Req.Test.set_req_test_to_shared(context)
 
+  test "is empty on a server that can't add titles" do
+    for setting <- [:sonarr_url, :radarr_url] do
+      address = Application.get_env(:aviary, setting)
+      Application.delete_env(:aviary, setting)
+      on_exit(fn -> Application.put_env(:aviary, setting, address) end)
+    end
+
+    assert Aviary.MoreLikeThis.fetch(:movie, "45745") == []
+  end
+
   test "lists what TMDB recommends alongside a show, in its order" do
     stub_recommendations("/api/v1/tv/95396/recommendations", [
       %{
