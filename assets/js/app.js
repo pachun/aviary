@@ -62,7 +62,7 @@ const HlsPlayer = {
     }
 
     if (!this.isHlsStream(src)) {
-      video.src = src
+      this.playWithoutAskingTheHostForCrossOriginAccess(video, src)
     } else if (this.isAppleBrowser() && video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = video.dataset.nativeSrc || src
     } else if (window.Hls && window.Hls.isSupported()) {
@@ -242,6 +242,14 @@ const HlsPlayer = {
     if (this.controlsHideTimer) clearTimeout(this.controlsHideTimer)
     if (this.hls) this.hls.destroy()
     if (this.referrerMeta) this.referrerMeta.remove()
+  },
+
+  // The player asks for cross-origin access so subtitle tracks from
+  // Jellyfin's address load. A plain file on someone else's host rarely
+  // grants it, and the browser then refuses the whole video.
+  playWithoutAskingTheHostForCrossOriginAccess(video, src) {
+    video.removeAttribute("crossorigin")
+    video.src = src
   },
 
   isHlsStream(src) {
