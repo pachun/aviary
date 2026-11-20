@@ -66,7 +66,7 @@ defmodule Aviary.Nav do
   def landing_path(%{home: true}), do: "/home"
   def landing_path(%{shows: true}), do: "/library?type=shows"
   def landing_path(%{movies: true}), do: "/library?type=movies"
-  def landing_path(%{nhl: true}), do: "/nhl"
+  def landing_path(%{nhl: true}), do: "/live"
   def landing_path(_), do: "/discover"
 
   @doc """

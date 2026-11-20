@@ -150,8 +150,8 @@ defmodule AviaryWeb.Router do
       live "/discover", DiscoverLive, :index
       live "/search", SearchLive, :index
       live "/library", LibraryLive, :index
-      live "/nhl", NhlLive, :index
-      live "/daily-wire", DailyWireLive, :index
+      live "/live", NhlLive, :index
+      live "/series", DailyWireLive, :index
       live "/settings", SettingsLive, :index
       live "/shows/:id", ShowsDetailLive, :show
       live "/movies/:id", MoviesDetailLive, :show
