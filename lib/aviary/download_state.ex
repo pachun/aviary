@@ -8,6 +8,9 @@ defmodule Aviary.DownloadState do
   States:
     :playable            file present, ready to watch
     :searching           monitored, no queue record yet
+    :not_found           searched, and no indexer has a copy; grabbed
+                         automatically if one is posted later
+    :unreleased          same, for a movie not yet out for home viewing
     {:downloading, pct}  actively transferring (pct 0..100)
     :imported            downloaded, importing / awaiting library scan
     :stuck               needs manual intervention in Sonarr/Radarr
@@ -81,19 +84,40 @@ defmodule Aviary.DownloadState do
     end
   end
 
+  @search_settling_seconds 120
+
   @doc """
   State for a movie, given a `movie_status` snapshot
-  (`%{has_file, monitored, queue: [...]}`) or nil.
+  (`%{has_file, monitored, queue, released, last_searched_at,
+  latest_history_event}`) or nil.
   """
-  def movie_state(nil), do: :ready
-  def movie_state(%{has_file: true}), do: :playable
+  def movie_state(status, now \\ DateTime.utc_now())
 
-  def movie_state(%{monitored: monitored, queue: queue}) do
-    case queue do
-      [record | _] -> queue_record_state(record)
-      _ -> if monitored, do: :searching, else: :ready
+  def movie_state(nil, _now), do: :ready
+  def movie_state(%{has_file: true}, _now), do: :playable
+  def movie_state(%{queue: %{} = record}, _now), do: queue_record_state(record)
+  def movie_state(%{monitored: false}, _now), do: :ready
+
+  def movie_state(movie, now) do
+    cond do
+      search_still_settling?(movie.last_searched_at, now) -> :searching
+      movie.latest_history_event == "grabbed" -> :searching
+      movie.released -> :not_found
+      true -> :unreleased
     end
   end
+
+  defp search_still_settling?(last_searched_at, now) when is_binary(last_searched_at) do
+    case DateTime.from_iso8601(last_searched_at) do
+      {:ok, searched_at, _offset} ->
+        DateTime.diff(now, searched_at) < @search_settling_seconds
+
+      _ ->
+        true
+    end
+  end
+
+  defp search_still_settling?(_never_searched, _now), do: true
 
   @doc """
   Seconds-until-done for the queue record matching `download_id`

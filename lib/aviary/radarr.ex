@@ -166,8 +166,8 @@ defmodule Aviary.Radarr do
   end
 
   @doc """
-  Returns a `%{radarr_movie_id, monitored, has_file, path, queue}`
-  snapshot for a single movie, keyed by TMDB id. Returns `:not_found`
+  Returns a `%{radarr_movie_id, monitored, has_file, path, queue,
+  released, last_searched_at, latest_history_event}` snapshot for a single movie, keyed by TMDB id. Returns `:not_found`
   when the movie isn't in Radarr — callers treat that as "user
   hasn't pressed Watch yet."
   """
@@ -186,7 +186,10 @@ defmodule Aviary.Radarr do
            path: movie["path"],
            monitored: movie["monitored"] == true,
            has_file: movie["hasFile"] == true,
-           queue: queue
+           queue: queue,
+           released: movie["status"] == "released",
+           last_searched_at: movie["lastSearchTime"],
+           latest_history_event: latest_history_event(movie["id"])
          }}
 
       :not_found ->
@@ -284,6 +287,13 @@ defmodule Aviary.Radarr do
 
       _ ->
         nil
+    end
+  end
+
+  defp latest_history_event(radarr_movie_id) do
+    case get("/history/movie", movieId: radarr_movie_id) do
+      {:ok, [_ | _] = events} -> Enum.max_by(events, & &1["date"])["eventType"]
+      _ -> nil
     end
   end
 

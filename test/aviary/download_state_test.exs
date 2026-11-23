@@ -32,4 +32,58 @@ defmodule Aviary.DownloadStateTest do
 
     assert DownloadState.queue_record_state(record) == :imported
   end
+
+  describe "a wanted movie with no download in flight" do
+    @now ~U[2026-11-23 16:00:00Z]
+    @moments_ago "2026-11-23T15:59:30Z"
+    @hours_ago "2026-11-23T13:45:00Z"
+
+    test "reads as searching before Radarr has searched for it" do
+      assert DownloadState.movie_state(wanted_movie(last_searched_at: nil), @now) == :searching
+    end
+
+    test "reads as searching while Radarr's search is still fresh" do
+      movie = wanted_movie(last_searched_at: @moments_ago)
+
+      assert DownloadState.movie_state(movie, @now) == :searching
+    end
+
+    test "reads as not found once the search has come back empty" do
+      movie = wanted_movie(last_searched_at: @hours_ago)
+
+      assert DownloadState.movie_state(movie, @now) == :not_found
+    end
+
+    test "reads as unreleased when it hasn't come out for home viewing" do
+      movie = wanted_movie(last_searched_at: @hours_ago, released: false)
+
+      assert DownloadState.movie_state(movie, @now) == :unreleased
+    end
+
+    test "reads as searching while a grabbed copy is on its way to the library" do
+      movie = wanted_movie(last_searched_at: @hours_ago, latest_history_event: "grabbed")
+
+      assert DownloadState.movie_state(movie, @now) == :searching
+    end
+  end
+
+  test "a downloading movie reads its progress from Radarr's queue" do
+    movie = wanted_movie(queue: %{"movieId" => 114, "size" => 1_000, "sizeleft" => 580})
+
+    assert DownloadState.movie_state(movie) == {:downloading, 42}
+  end
+
+  defp wanted_movie(overrides) do
+    Map.merge(
+      %{
+        has_file: false,
+        monitored: true,
+        queue: nil,
+        released: true,
+        last_searched_at: nil,
+        latest_history_event: nil
+      },
+      Map.new(overrides)
+    )
+  end
 end

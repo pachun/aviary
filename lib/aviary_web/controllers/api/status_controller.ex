@@ -97,8 +97,8 @@ defmodule AviaryWeb.API.StatusController do
     end
   end
 
-  defp movie_timeleft(%{queue: [%{"movieId" => id} | _], radarr_movie_id: _} = status),
-    do: DownloadState.timeleft_seconds(status.queue, id)
+  defp movie_timeleft(%{queue: %{"movieId" => id} = record}),
+    do: DownloadState.timeleft_seconds([record], id)
 
   defp movie_timeleft(_), do: nil
 

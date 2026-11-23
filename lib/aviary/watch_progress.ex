@@ -6,6 +6,8 @@ defmodule Aviary.WatchProgress do
     :ready (pre-download)    → static estimate from runtime
                                ("Roughly 4 minutes until watchable")
     :searching               → "Searching for a release"
+    :not_found               → no copy exists; downloads if one turns up
+    :unreleased              → downloads once it's out for home viewing
     {:downloading, _}        → live duration from queue.timeleft + import
                                buffer, refreshed each Sonarr/Radarr poll
                                ("Roughly 3 minutes until watchable")
@@ -49,6 +51,12 @@ defmodule Aviary.WatchProgress do
   end
 
   def label(:searching, _runtime, _timeleft), do: "Searching for a release"
+
+  def label(:not_found, _runtime, _timeleft),
+    do: "No copy is available yet. It will download if one turns up"
+
+  def label(:unreleased, _runtime, _timeleft),
+    do: "It will download once it's released for home viewing"
 
   def label({:downloading, _pct}, _runtime, timeleft_sec)
       when is_integer(timeleft_sec) and timeleft_sec > 0 do
