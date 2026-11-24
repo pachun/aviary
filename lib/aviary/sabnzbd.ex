@@ -1,13 +1,46 @@
 defmodule Aviary.Sabnzbd do
   @moduledoc """
-  The one thing aviary asks of SABnzbd directly: move a download to
-  the front of its queue. Sonarr hands every grab over at the same
-  priority, so without this the episode someone is waiting to watch
-  lines up behind whatever the household already had queued.
+  Live download progress and queue priority from SABnzbd. Sonarr treats
+  availability checks as downloads, so progress needs the original phase.
   """
   require Logger
 
   @force_priority 2
+  @queue_timeout_ms 5_000
+
+  def refresh_progress([]), do: []
+
+  def refresh_progress(records) do
+    with {:ok, url, key} <- config(),
+         {:ok, %Req.Response{status: 200, body: %{"queue" => %{"slots" => slots}}}} <-
+           Req.get(
+             [
+               url: url <> "/api",
+               params: [mode: "queue", apikey: key, output: "json"],
+               receive_timeout: @queue_timeout_ms,
+               retry: false
+             ]
+             |> Keyword.merge(Application.get_env(:aviary, :sabnzbd_req_options, []))
+           ) do
+      Enum.map(records, fn record ->
+        case Enum.find(slots, &(&1["nzo_id"] == record["downloadId"])) do
+          %{"status" => "Checking"} ->
+            Map.put(record, :download_state, :searching)
+
+          %{"status" => "Downloading", "percentage" => "100"} ->
+            Map.put(record, :download_state, :imported)
+
+          %{"status" => "Downloading", "percentage" => percent} ->
+            Map.put(record, :download_state, {:downloading, String.to_integer(percent)})
+
+          _ ->
+            record
+        end
+      end)
+    else
+      _ -> records
+    end
+  end
 
   @doc """
   Starts the download with this SABnzbd job id right away, ahead of

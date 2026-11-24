@@ -34,6 +34,8 @@ defmodule Aviary.DownloadState do
 
   def queue_record_state(%{"status" => "failed"}), do: :searching
 
+  def queue_record_state(%{download_state: state}), do: state
+
   def queue_record_state(%{"trackedDownloadState" => state})
       when state in ["importPending", "importing", "importBlocked", "imported"],
       do: :imported

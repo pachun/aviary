@@ -355,7 +355,7 @@ defmodule Aviary.Sonarr do
     case find_series_by_tmdb(tmdb_id) do
       {:ok, series} ->
         episodes = list_episodes(series["id"])
-        queue = list_queue_for_series(series["id"])
+        queue = series["id"] |> list_queue_for_series() |> Aviary.Sabnzbd.refresh_progress()
 
         {:ok,
          %{
