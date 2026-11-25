@@ -33,6 +33,36 @@ defmodule Aviary.DownloadStateTest do
     assert DownloadState.queue_record_state(record) == :imported
   end
 
+  describe "a show's episode" do
+    test "shows the progress of a download Sonarr has even when the episode is unmonitored" do
+      status = %{
+        episodes: %{
+          {1, 1} => %{id: 15252, monitored: false, has_file: false, air_date: "2015-08-28"}
+        },
+        queue: [%{"episodeId" => 15252, "size" => 1_000, "sizeleft" => 580}]
+      }
+
+      assert DownloadState.episode_state(1, 1, status) == {:downloading, 42}
+    end
+
+    test "reads as searching while Sonarr is still setting the show up" do
+      status = %{
+        being_added: true,
+        episodes: %{
+          {1, 1} => %{id: 15252, monitored: false, has_file: false, air_date: "2015-08-28"}
+        },
+        queue: []
+      }
+
+      assert DownloadState.show_overall(status) == :searching
+    end
+
+    test "reads as searching before Sonarr has listed any episodes for a new show" do
+      assert DownloadState.show_overall(%{being_added: true, episodes: %{}, queue: []}) ==
+               :searching
+    end
+  end
+
   describe "a wanted movie with no download in flight" do
     @now ~U[2026-11-23 16:00:00Z]
     @moments_ago "2026-11-23T15:59:30Z"

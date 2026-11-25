@@ -97,7 +97,7 @@ defmodule Aviary.Sonarr do
 
       aired_episodes =
         series["id"]
-        |> wait_for_episodes()
+        |> wait_until_set_up()
         |> Enum.filter(fn ep -> (ep["seasonNumber"] || 0) > 0 and aired?(ep, today) end)
         |> Enum.sort_by(fn ep -> {ep["seasonNumber"], ep["episodeNumber"]} end)
 
@@ -117,6 +117,12 @@ defmodule Aviary.Sonarr do
       _ -> :error
     end
   end
+
+  @doc """
+  Makes sure Sonarr has the series, adding it with nothing monitored
+  if it's new. `{:ok, series}`, or `:error` when Sonarr can't take it.
+  """
+  def track_series(tmdb_id), do: ensure_series(tmdb_id, monitor: "none", search: false)
 
   @standalone_episode_genres ["Game Show", "Talk Show", "News"]
 
@@ -167,6 +173,7 @@ defmodule Aviary.Sonarr do
   """
   def watch_episode(tmdb_id, season_number, episode_number) do
     with {:ok, series} <- ensure_series(tmdb_id, monitor: "none"),
+         [_ | _] <- wait_until_set_up(series["id"]),
          {:ok, episode} <- find_episode(series["id"], season_number, episode_number),
          :ok <- monitor_episodes([episode["id"]], true) do
       command("EpisodeSearch", %{episodeIds: [episode["id"]]})
@@ -367,6 +374,7 @@ defmodule Aviary.Sonarr do
            # right now" instead of waiting for its scheduled scan.
            path: series["path"],
            monitored: series["monitored"] == true,
+           being_added: series["addOptions"] != nil,
            episodes:
              Map.new(episodes, fn ep ->
                {{ep["seasonNumber"], ep["episodeNumber"]},
@@ -482,7 +490,7 @@ defmodule Aviary.Sonarr do
     today = Aviary.LocalTime.today()
 
     sonarr_series_id
-    |> wait_for_episodes()
+    |> wait_until_set_up()
     |> Enum.reject(&special?/1)
     |> Enum.filter(fn ep ->
       ep["monitored"] == true and
@@ -502,14 +510,27 @@ defmodule Aviary.Sonarr do
   # Poll /episode until it returns something or we've waited long
   # enough. Sonarr's refresh typically finishes in ~1s; the cap at 30s
   # is for badly-degraded states (cold Sonarr, slow metadata source).
-  defp wait_for_episodes(sonarr_series_id, attempts \\ 60) do
-    case list_episodes(sonarr_series_id) do
-      [] when attempts > 0 ->
-        Process.sleep(500)
-        wait_for_episodes(sonarr_series_id, attempts - 1)
+  # A newly added series isn't ready until Sonarr has run its own
+  # post-add step, which lists the episodes and then applies the add's
+  # monitoring choice to all of them. Monitoring an episode before that
+  # step is undone by it, so wait for Sonarr to clear the series'
+  # addOptions — its mark that the step is done — and only then read
+  # the episodes. A busy Sonarr can take most of a minute to get there.
+  @set_up_wait_ms :timer.minutes(3)
 
-      result ->
-        result
+  defp wait_until_set_up(sonarr_series_id) do
+    check_every_ms = Application.get_env(:aviary, :sonarr_setup_check_every_ms, 1_000)
+    wait_until_set_up(sonarr_series_id, check_every_ms, div(@set_up_wait_ms, check_every_ms))
+  end
+
+  defp wait_until_set_up(sonarr_series_id, check_every_ms, checks_left) do
+    case get("/series/#{sonarr_series_id}", []) do
+      {:ok, %{"addOptions" => pending}} when not is_nil(pending) and checks_left > 0 ->
+        Process.sleep(check_every_ms)
+        wait_until_set_up(sonarr_series_id, check_every_ms, checks_left - 1)
+
+      _ ->
+        list_episodes(sonarr_series_id)
     end
   end
 

@@ -32,22 +32,13 @@ defmodule AviaryWeb.API.LibraryController do
   page's Watch button so a title added from the tvOS client downloads
   the same way.
   """
+  # Answers once Sonarr has the show, then starts the download in the
+  # background: a busy Sonarr can take most of a minute to list a new
+  # show's episodes, and the app should show the show as searching in
+  # the meantime rather than sit on "Adding…".
   def add(conn, %{"kind" => "show", "id" => id, "season" => season, "episode" => episode})
       when is_integer(season) and is_integer(episode) do
-    user = conn.assigns.current_user
-    tmdb_id = to_string(id)
-
-    Aviary.Library.add(user.id, tmdb_id)
-
-    case Aviary.Sonarr.watch_episode(tmdb_id, season, episode) do
-      {:ok, _} ->
-        Aviary.SkipTheLine.for_episode(tmdb_id, season, episode)
-        Aviary.SeriesFollowup.after_episode_imports(tmdb_id, season, episode)
-        json(conn, %{ok: true})
-
-      _ ->
-        conn |> put_status(:bad_gateway) |> json(%{error: "downloader_unavailable"})
-    end
+    add_show(conn, to_string(id), {season, episode})
   end
 
   # "Add to library" on a show with no episode chosen. Grab the
@@ -58,29 +49,7 @@ defmodule AviaryWeb.API.LibraryController do
   # series if we can't resolve a starting episode (e.g. nothing has
   # aired yet).
   def add(conn, %{"kind" => "show", "id" => id}) do
-    user = conn.assigns.current_user
-    tmdb_id = to_string(id)
-
-    Aviary.Library.add(user.id, tmdb_id)
-
-    case Aviary.Sonarr.starting_episode(tmdb_id) do
-      {:ok, season, episode} ->
-        case Aviary.Sonarr.watch_episode(tmdb_id, season, episode) do
-          {:ok, _} ->
-            Aviary.SkipTheLine.for_episode(tmdb_id, season, episode)
-            Aviary.SeriesFollowup.after_episode_imports(tmdb_id, season, episode)
-            json(conn, %{ok: true})
-
-          _ ->
-            conn |> put_status(:bad_gateway) |> json(%{error: "downloader_unavailable"})
-        end
-
-      :error ->
-        case Aviary.Sonarr.watch_show(tmdb_id) do
-          {:ok, _} -> json(conn, %{ok: true})
-          _ -> conn |> put_status(:bad_gateway) |> json(%{error: "downloader_unavailable"})
-        end
-    end
+    add_show(conn, to_string(id), :starting_episode)
   end
 
   def add(conn, %{"kind" => "movie", "id" => id}) do
@@ -92,6 +61,36 @@ defmodule AviaryWeb.API.LibraryController do
     case Aviary.Radarr.watch_movie(tmdb_id) do
       {:ok, _} -> json(conn, %{ok: true})
       _ -> conn |> put_status(:bad_gateway) |> json(%{error: "downloader_unavailable"})
+    end
+  end
+
+  defp add_show(conn, tmdb_id, chosen_episode) do
+    Aviary.Library.add(conn.assigns.current_user.id, tmdb_id)
+
+    case Aviary.Sonarr.track_series(tmdb_id) do
+      {:ok, _series} ->
+        Task.Supervisor.start_child(Aviary.TaskSupervisor, fn ->
+          start_watching(tmdb_id, chosen_episode)
+        end)
+
+        json(conn, %{ok: true})
+
+      _ ->
+        conn |> put_status(:bad_gateway) |> json(%{error: "downloader_unavailable"})
+    end
+  end
+
+  defp start_watching(tmdb_id, :starting_episode) do
+    case Aviary.Sonarr.starting_episode(tmdb_id) do
+      {:ok, season, episode} -> start_watching(tmdb_id, {season, episode})
+      :error -> Aviary.Sonarr.watch_show(tmdb_id)
+    end
+  end
+
+  defp start_watching(tmdb_id, {season, episode}) do
+    with {:ok, _episode} <- Aviary.Sonarr.watch_episode(tmdb_id, season, episode) do
+      Aviary.SkipTheLine.for_episode(tmdb_id, season, episode)
+      Aviary.SeriesFollowup.after_episode_imports(tmdb_id, season, episode)
     end
   end
 

@@ -70,9 +70,20 @@ defmodule Aviary.DownloadState do
 
   def episode_state(s, e, status) do
     case Map.get(status.episodes, {s, e}) do
-      %{has_file: true} -> :imported
-      %{monitored: true} = episode -> queue_state(status.queue, episode)
-      _ -> :ready
+      %{has_file: true} ->
+        :imported
+
+      %{monitored: true} = episode ->
+        queue_state(status.queue, episode)
+
+      %{id: id} ->
+        case find_record(status.queue, id) do
+          nil -> :ready
+          record -> queue_record_state(record)
+        end
+
+      _ ->
+        :ready
     end
   end
 
@@ -83,10 +94,15 @@ defmodule Aviary.DownloadState do
   def show_overall(nil), do: :ready
 
   def show_overall(status) do
-    case first_episode_key(status) do
-      {s, e} -> episode_state(s, e, status)
-      nil -> :ready
-    end
+    overall =
+      case first_episode_key(status) do
+        {s, e} -> episode_state(s, e, status)
+        nil -> :ready
+      end
+
+    if overall == :ready and Map.get(status, :being_added, false),
+      do: :searching,
+      else: overall
   end
 
   @search_settling_seconds 120
