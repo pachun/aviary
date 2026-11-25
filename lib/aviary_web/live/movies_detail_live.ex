@@ -236,7 +236,11 @@ defmodule AviaryWeb.MoviesDetailLive do
   # the query so the user lands back on their results, not a blank
   # search screen.
   defp kicker("home", _), do: %{label: "Home", path: "/home"}
-  defp kicker("discover", _), do: %{label: "Discover", path: "/discover"}
+  defp kicker("discover", _), do: %{label: "Discover TV", path: "/discover"}
+
+  defp kicker("discover_movies", _),
+    do: %{label: "Discover Movies", path: "/discover/movies"}
+
   defp kicker("library_shows", _), do: %{label: "Shows", path: "/library?type=shows"}
 
   defp kicker("search", q) when is_binary(q) and q != "",

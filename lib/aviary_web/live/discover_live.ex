@@ -29,7 +29,7 @@ defmodule AviaryWeb.DiscoverLive do
     rows = Aviary.OnThisServer.rows(socket.assigns.current_user)
 
     assign(socket,
-      page_title: "Discover",
+      page_title: "Discover TV",
       services: Enum.map(rows, fn {label, _items} -> {label, nil} end),
       rows: Map.new(rows),
       row_attempts: %{}
@@ -41,7 +41,7 @@ defmodule AviaryWeb.DiscoverLive do
 
     socket
     |> assign(
-      page_title: "Discover",
+      page_title: "Discover TV",
       services: services,
       rows: %{},
       row_attempts: %{}

@@ -19,9 +19,43 @@ defmodule AviaryWeb.API.DiscoverController do
       else: json(conn, %{rows: across_streaming_services()})
   end
 
-  defp on_this_server(user) do
-    for {label, items} <- Aviary.OnThisServer.rows(user),
-        do: %{label: label, items: Enum.map(items, &serialize/1)}
+  @doc """
+  Discover Movies — `Aviary.DiscoverMovies`' rows, every one fetched at
+  once, leaving out any that came back empty.
+  """
+  def movies(conn, _params) do
+    user = conn.assigns.current_user
+
+    if Aviary.OnThisServer.all_there_is?(),
+      do: json(conn, %{rows: serialized(Aviary.OnThisServer.movie_rows(user))}),
+      else: json(conn, %{rows: worth_watching_movies(user)})
+  end
+
+  defp on_this_server(user), do: serialized(Aviary.OnThisServer.rows(user))
+
+  defp serialized(rows) do
+    for {label, items} <- rows, do: %{label: label, items: Enum.map(items, &serialize/1)}
+  end
+
+  @movie_rows_at_once 10
+  @movie_row_timeout_ms 40_000
+
+  defp worth_watching_movies(user) do
+    user
+    |> Aviary.DiscoverMovies.rows()
+    |> Task.async_stream(
+      fn {label, row} ->
+        %{label: label, items: Enum.map(Aviary.DiscoverMovies.fetch_row(row), &serialize/1)}
+      end,
+      max_concurrency: @movie_rows_at_once,
+      timeout: @movie_row_timeout_ms,
+      on_timeout: :kill_task
+    )
+    |> Enum.flat_map(fn
+      {:ok, row} -> [row]
+      _ -> []
+    end)
+    |> Enum.reject(&(&1.items == []))
   end
 
   defp across_streaming_services do

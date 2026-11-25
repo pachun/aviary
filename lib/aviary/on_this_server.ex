@@ -20,6 +20,9 @@ defmodule Aviary.OnThisServer do
   @doc "Discover's rows as `{label, items}`, leaving out a kind the server has none of."
   def rows(user), do: rows(Jellyfin.list_shows(user), Jellyfin.list_movies(user))
 
+  @doc "Discover Movies' rows: just the movies on the server."
+  def movie_rows(user), do: rows([], Jellyfin.list_movies(user))
+
   def rows(shows, movies) do
     Enum.reject(
       [

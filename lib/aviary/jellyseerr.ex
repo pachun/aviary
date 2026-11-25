@@ -191,6 +191,15 @@ defmodule Aviary.Jellyseerr do
   end
 
   @doc """
+  One page of TMDB's movie discover results for the given Jellyseerr
+  filters (genre, release window, watch region and providers, sort),
+  as `{:ok, results}` in the same shape as `discover_tv_network/2`.
+  """
+  def discover_movies(params) do
+    cached_discover({:jellyseerr_discover_movies, params}, "/api/v1/discover/movies", params)
+  end
+
+  @doc """
   The titles TMDB recommends alongside a show or movie, most relevant
   first, as `{:ok, results}` in the same shape as
   `discover_tv_network/2`.

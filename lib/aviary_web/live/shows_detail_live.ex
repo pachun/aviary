@@ -320,7 +320,7 @@ defmodule AviaryWeb.ShowsDetailLive do
   end
 
   defp kicker("home", _), do: %{label: "Home", path: "/home"}
-  defp kicker("discover", _), do: %{label: "Discover", path: "/discover"}
+  defp kicker("discover", _), do: %{label: "Discover TV", path: "/discover"}
   defp kicker("library_movies", _), do: %{label: "Movies", path: "/library?type=movies"}
 
   defp kicker("search", q) when is_binary(q) and q != "",

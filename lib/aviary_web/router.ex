@@ -91,6 +91,7 @@ defmodule AviaryWeb.Router do
     get "/household", HouseholdController, :index
     post "/recommend", HouseholdController, :recommend
     get "/discover", DiscoverController, :index
+    get "/discover/movies", DiscoverController, :movies
     get "/search", SearchController, :index
     get "/search/recent", SearchController, :recent
     post "/search/recent", SearchController, :record_recent
@@ -149,6 +150,7 @@ defmodule AviaryWeb.Router do
       on_mount: [{AviaryWeb.UserAuth, :require_authenticated}] do
       live "/home", HomeLive, :index
       live "/discover", DiscoverLive, :index
+      live "/discover/movies", DiscoverMoviesLive, :index
       live "/search", SearchLive, :index
       live "/library", LibraryLive, :index
       live "/live", NhlLive, :index

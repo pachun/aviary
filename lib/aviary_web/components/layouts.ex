@@ -61,7 +61,7 @@ defmodule AviaryWeb.Layouts do
   attr :current_section, :string,
     default: nil,
     doc:
-      "which top-level section is active — \"home\", \"discover\", \"search\", \"library\", or nil"
+      "which top-level section is active — \"home\", \"discover\", \"discover_movies\", \"search\", \"library\", or nil"
 
   attr :current_user, :map,
     default: nil,
@@ -255,7 +255,13 @@ defmodule AviaryWeb.Layouts do
               href={~p"/discover"}
               active={is_nil(@mobile_back_to) && @current_section == "discover"}
             >
-              Discover
+              Discover TV
+            </.section_link>
+            <.section_link
+              href={~p"/discover/movies"}
+              active={is_nil(@mobile_back_to) && @current_section == "discover_movies"}
+            >
+              Discover Movies
             </.section_link>
             <.section_link
               href={~p"/search"}
@@ -376,9 +382,16 @@ defmodule AviaryWeb.Layouts do
           <.tab_bar_link
             href={~p"/discover"}
             active={@current_section == "discover"}
-            label="Discover"
+            label="Discover TV"
             icon_outline="hero-sparkles"
             icon_solid="hero-sparkles-solid"
+          />
+          <.tab_bar_link
+            href={~p"/discover/movies"}
+            active={@current_section == "discover_movies"}
+            label="Discover Movies"
+            icon_outline="hero-star"
+            icon_solid="hero-star-solid"
           />
           <.tab_bar_link
             href={~p"/search"}

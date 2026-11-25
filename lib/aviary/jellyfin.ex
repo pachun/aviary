@@ -340,20 +340,16 @@ defmodule Aviary.Jellyfin do
       @userdata_fresh_ms,
       @userdata_stale_ms,
       fn ->
-        Req.get!(base_url() <> "/Items",
-          params: [
-            userId: auth.id,
-            IncludeItemTypes: "Episode,Movie",
-            Filters: "IsPlayed",
-            SortBy: "DatePlayed",
-            SortOrder: "Descending",
-            Recursive: true,
-            Limit: 30,
-            Fields: "UserData,SeriesId,SeriesPrimaryImageTag,DateCreated"
-          ],
-          headers: [{"x-emby-token", auth.token}],
-          receive_timeout: 15_000
-        ).body
+        get!("/Items", auth,
+          userId: auth.id,
+          IncludeItemTypes: "Episode,Movie",
+          Filters: "IsPlayed",
+          SortBy: "DatePlayed",
+          SortOrder: "Descending",
+          Recursive: true,
+          Limit: 30,
+          Fields: "UserData,SeriesId,SeriesPrimaryImageTag,DateCreated,ProviderIds"
+        )
         |> case do
           %{"Items" => items} when is_list(items) -> items
           _ -> []
