@@ -18,6 +18,9 @@ defmodule Aviary.LocalTime do
   "what day is it" sense only.
   """
 
+  @doc "Returns the current wall-clock time in the deployment's local timezone."
+  def now, do: NaiveDateTime.from_erl!(:calendar.local_time())
+
   @doc "Returns today's Date in the deployment's local timezone."
   def today do
     {{y, m, d}, _} = :calendar.local_time()

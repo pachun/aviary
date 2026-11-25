@@ -8,6 +8,10 @@ defmodule Aviary.Reconcile.Scheduler do
   again, so a monitored episode whose every release failed sits
   "Searching" forever. A daily pass re-fires the searches so the next
   working release gets picked up without anyone tapping the episode.
+  The pass fires every missing episode's search at once, which keeps
+  Sonarr busy for a while, so it runs in the small hours on the local
+  clock — never minutes after a restart, where each deploy would queue
+  another full set ahead of whatever someone just asked to watch.
 
   A finished download Sonarr or Radarr won't import sits in the queue
   forever too, and the webhooks never fire for it. A sweep every few
@@ -26,8 +30,9 @@ defmodule Aviary.Reconcile.Scheduler do
   use GenServer
   require Logger
 
-  @interval_ms 24 * 60 * 60 * 1000
-  @initial_delay_ms 5 * 60 * 1000
+  @daily_pass_time ~T[04:00:00]
+  @seconds_per_day 24 * 60 * 60
+  @ms_per_second 1000
   @sweep_interval_ms 10 * 60 * 1000
   @first_sweep_delay_ms 60 * 1000
 
@@ -37,7 +42,7 @@ defmodule Aviary.Reconcile.Scheduler do
 
   @impl true
   def init(_opts) do
-    schedule_next_pass(@initial_delay_ms)
+    schedule_next_pass()
     schedule_next_sweep(@first_sweep_delay_ms)
     {:ok, %{}}
   end
@@ -46,7 +51,7 @@ defmodule Aviary.Reconcile.Scheduler do
   def handle_info(:reconcile, state) do
     reconcile()
     fill_in_more_like_this_rows()
-    schedule_next_pass(@interval_ms)
+    schedule_next_pass()
     {:noreply, state}
   end
 
@@ -56,8 +61,21 @@ defmodule Aviary.Reconcile.Scheduler do
     {:noreply, state}
   end
 
-  defp schedule_next_pass(delay_ms) do
-    Process.send_after(self(), :reconcile, delay_ms)
+  defp schedule_next_pass do
+    Process.send_after(self(), :reconcile, ms_until_daily_pass(Aviary.LocalTime.now()))
+  end
+
+  @doc "Milliseconds from `now` (local wall-clock time) until the next daily pass."
+  def ms_until_daily_pass(%NaiveDateTime{} = now) do
+    todays_pass = NaiveDateTime.new!(NaiveDateTime.to_date(now), @daily_pass_time)
+    seconds_until_todays_pass = NaiveDateTime.diff(todays_pass, now)
+
+    seconds_until_pass =
+      if seconds_until_todays_pass > 0,
+        do: seconds_until_todays_pass,
+        else: seconds_until_todays_pass + @seconds_per_day
+
+    seconds_until_pass * @ms_per_second
   end
 
   defp schedule_next_sweep(delay_ms) do
