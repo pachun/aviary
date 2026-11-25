@@ -64,8 +64,10 @@ defmodule AviaryWeb.API.StatusController do
   # download client just finished is imported within seconds rather
   # than on the downloader's own once-a-minute check; an import hands
   # off to Aviary.ImportNudge, which paces its own requests to Jellyfin.
+  @kinds_awaiting_the_downloader ["downloading", "verifying", "imported"]
+
   defp nudge_downloads(downloader, kinds, nudge_jellyfin) do
-    if "downloading" in kinds or "imported" in kinds do
+    if Enum.any?(kinds, &(&1 in @kinds_awaiting_the_downloader)) do
       throttle({:dl_refresh, downloader}, 5_000, fn -> refresh_downloader(downloader) end)
     end
 

@@ -174,7 +174,7 @@ defmodule Aviary.Radarr do
   def movie_status(tmdb_id) do
     case find_movie_by_tmdb(tmdb_id) do
       {:ok, movie} ->
-        queue = list_queue_for_movie(movie["id"])
+        queue = movie["id"] |> list_queue_for_movie() |> refresh_progress()
 
         {:ok,
          %{
@@ -289,6 +289,9 @@ defmodule Aviary.Radarr do
         nil
     end
   end
+
+  defp refresh_progress(nil), do: nil
+  defp refresh_progress(record), do: [record] |> Aviary.Sabnzbd.refresh_progress() |> hd()
 
   defp latest_history_event(radarr_movie_id) do
     case get("/history/movie", movieId: radarr_movie_id) do

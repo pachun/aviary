@@ -12,6 +12,9 @@ defmodule Aviary.DownloadState do
                          automatically if one is posted later
     :unreleased          same, for a movie not yet out for home viewing
     {:downloading, pct}  actively transferring (pct 0..100)
+    :verifying           every byte is in; the download client is still
+                         checking, repairing, or unpacking it
+    :retrying            the last copy was broken; looking for another
     :imported            downloaded, importing / awaiting library scan
     :stuck               needs manual intervention in Sonarr/Radarr
     :ready               nothing in flight (not monitored / not added)
@@ -42,16 +45,16 @@ defmodule Aviary.DownloadState do
 
   def queue_record_state(%{"size" => size, "sizeleft" => 0})
       when is_number(size) and size > 0,
-      do: :imported
+      do: :verifying
 
   # Never report 100% while bytes are still in flight — rounding hits
   # 100 in the last fraction of a percent, and "100%" reads as "ready
-  # to watch" when it isn't yet. Roll into :imported at the top of the
-  # bar instead, so the label goes …98% → 99% → Importing → Play.
+  # to watch" when it isn't yet. Roll into :verifying at the top of the
+  # bar instead, so the label goes …98% → 99% → Checking → Play.
   def queue_record_state(%{"size" => size, "sizeleft" => left})
       when is_number(size) and is_number(left) and size > 0 and left > 0 do
     case round((size - left) / size * 100) do
-      pct when pct >= 100 -> :imported
+      pct when pct >= 100 -> :verifying
       pct -> {:downloading, pct}
     end
   end
@@ -102,6 +105,7 @@ defmodule Aviary.DownloadState do
 
   def movie_state(movie, now) do
     cond do
+      movie.latest_history_event == "downloadFailed" -> :retrying
       search_still_settling?(movie.last_searched_at, now) -> :searching
       movie.latest_history_event == "grabbed" -> :searching
       movie.released -> :not_found

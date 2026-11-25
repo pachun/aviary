@@ -2,6 +2,7 @@ defmodule Aviary.Sabnzbd do
   @moduledoc """
   Live download progress and queue priority from SABnzbd. Sonarr treats
   availability checks as downloads, so progress needs the original phase.
+  The same applies to Radarr.
   """
   require Logger
 
@@ -28,7 +29,7 @@ defmodule Aviary.Sabnzbd do
             Map.put(record, :download_state, :searching)
 
           %{"status" => "Downloading", "percentage" => "100"} ->
-            Map.put(record, :download_state, :imported)
+            Map.put(record, :download_state, :verifying)
 
           %{"status" => "Downloading", "percentage" => percent} ->
             Map.put(record, :download_state, {:downloading, String.to_integer(percent)})

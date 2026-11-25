@@ -11,6 +11,8 @@ defmodule Aviary.WatchProgress do
     {:downloading, _}        → live duration from queue.timeleft + import
                                buffer, refreshed each Sonarr/Radarr poll
                                ("Roughly 3 minutes until watchable")
+    :verifying               → "Checking the download"
+    :retrying                → a broken copy was thrown out
     :imported                → "Almost watchable"
     other / no signal        → nil (caller hides the line)
 
@@ -67,6 +69,10 @@ defmodule Aviary.WatchProgress do
   # the queue record just appeared with 0 bytes downloaded). Stay quiet
   # rather than show a misleading "Less than a minute".
   def label({:downloading, _pct}, _runtime, _timeleft), do: nil
+
+  def label(:verifying, _runtime, _timeleft), do: "Checking the download"
+
+  def label(:retrying, _runtime, _timeleft), do: "That copy was broken. Trying another"
 
   def label(:imported, _runtime, _timeleft), do: "Almost watchable"
 
