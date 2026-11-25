@@ -34,6 +34,14 @@ defmodule AviaryWeb.Router do
     get "/manifest.webmanifest", BrandController, :manifest
   end
 
+  ## Public — pages the server's owner publishes for anyone to read.
+  scope "/", AviaryWeb do
+    pipe_through :browser
+
+    get "/privacy", PublishedPageController, :privacy
+    get "/support", PublishedPageController, :support
+  end
+
   ## Public — login form / submit / logout
 
   scope "/", AviaryWeb do
