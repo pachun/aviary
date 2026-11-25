@@ -112,7 +112,7 @@ defmodule Aviary.Catalog do
         title: body["title"],
         year: tmdb_movie_year(body["releaseDate"]),
         runtime_minutes: body["runtime"],
-        official_rating: nil,
+        official_rating: us_age_rating(body),
         genre: tmdb_first_genre(body),
         synopsis: body["overview"],
         trailer_url: tmdb_trailer_url(body),
@@ -514,6 +514,16 @@ defmodule Aviary.Catalog do
   end
 
   defp year_from_date(_), do: nil
+
+  defp us_age_rating(body) do
+    body
+    |> get_in(["releases", "results"])
+    |> List.wrap()
+    |> Enum.filter(&(&1["iso_3166_1"] == "US"))
+    |> Enum.flat_map(&List.wrap(&1["release_dates"]))
+    |> Enum.map(& &1["certification"])
+    |> Enum.find(&(is_binary(&1) and &1 != ""))
+  end
 
   defp tmdb_first_genre(%{"genres" => [%{"name" => name} | _]}) when is_binary(name), do: name
   defp tmdb_first_genre(_), do: nil
