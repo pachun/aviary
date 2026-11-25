@@ -37,8 +37,8 @@ defmodule AviaryWeb.API.DiscoverController do
     for {label, items} <- rows, do: %{label: label, items: Enum.map(items, &serialize/1)}
   end
 
-  @movie_rows_at_once 10
-  @movie_row_timeout_ms 40_000
+  @movie_rows_at_once 3
+  @movie_row_timeout_ms 90_000
 
   defp worth_watching_movies(user) do
     user

@@ -120,15 +120,15 @@ defmodule Aviary.RottenTomatoes do
   end
 
   # Try each candidate slug in order, taking the first that yields both
-  # scores. The base slug handles the mainstream catalog; the
-  # `<slug>_<year>` variant catches titles RT disambiguates by year —
-  # either a same-titled older entry stealing the plain slug (e.g.
-  # "the_fugitive" serves a 1910 silent short, not the 1993 film) or a
-  # 301 to the canonical URL.
+  # scores. The `<slug>_<year>` variant goes first: when RT has a page
+  # for the title in that year, it's this title's, while the plain slug
+  # may belong to a same-titled older film ("the_fugitive" serves a 1910
+  # silent short, "resident_evil" the 2002 film, not the 2026 one). The
+  # plain slug covers the rest of the catalog.
   defp scrape(title, type, year) do
     base = slugify(title)
 
-    [base, year && "#{base}_#{year}"]
+    [year && "#{base}_#{year}", base]
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
     |> Enum.find_value(fn slug -> scrape_url(base_url(type) <> slug) end)
@@ -137,7 +137,7 @@ defmodule Aviary.RottenTomatoes do
   defp scrape_url(url) do
     options =
       Keyword.merge(
-        [headers: [{"user-agent", @ua}], receive_timeout: 8_000],
+        [headers: [{"user-agent", @ua}], receive_timeout: 8_000, retry: false],
         Application.get_env(:aviary, :rotten_tomatoes_req_options, [])
       )
 
@@ -155,7 +155,8 @@ defmodule Aviary.RottenTomatoes do
   end
 
   # imdb_id → RT path ("m/…" or "tv/…") via Wikidata P1258, cached long.
-  # nil (no mapping) is cached too, so we don't re-query every render.
+  # nil (no mapping) is cached too, so we don't re-query every render;
+  # a failed or rate-limited lookup isn't, so it's asked again later.
   defp rt_path(imdb_id) when is_binary(imdb_id) do
     if Regex.match?(~r/^tt\d+$/, imdb_id) do
       now = System.system_time(:second)
@@ -165,9 +166,14 @@ defmodule Aviary.RottenTomatoes do
           path
 
         _ ->
-          path = wikidata_rt_path(imdb_id)
-          :ets.insert(@wikidata_table, {imdb_id, path, now})
-          path
+          case wikidata_rt_path(imdb_id) do
+            {:ok, path} ->
+              :ets.insert(@wikidata_table, {imdb_id, path, now})
+              path
+
+            :error ->
+              nil
+          end
       end
     end
   end
@@ -180,18 +186,25 @@ defmodule Aviary.RottenTomatoes do
     query =
       ~s|SELECT ?rt WHERE { ?item wdt:P345 "#{imdb_id}". ?item wdt:P1258 ?rt. } LIMIT 1|
 
-    case Req.get("https://query.wikidata.org/sparql",
-           params: [query: query, format: "json"],
-           headers: [{"user-agent", @ua}, {"accept", "application/sparql-results+json"}],
-           receive_timeout: 8_000
-         ) do
-      {:ok, %Req.Response{status: 200, body: body}} -> parse_rt_path(body)
-      _ -> nil
+    options =
+      Keyword.merge(
+        [
+          params: [query: query, format: "json"],
+          headers: [{"user-agent", @ua}, {"accept", "application/sparql-results+json"}],
+          receive_timeout: 8_000,
+          retry: false
+        ],
+        Application.get_env(:aviary, :rotten_tomatoes_req_options, [])
+      )
+
+    case Req.get("https://query.wikidata.org/sparql", options) do
+      {:ok, %Req.Response{status: 200, body: body}} -> {:ok, parse_rt_path(body)}
+      _ -> :error
     end
   rescue
     e ->
       Logger.warning("Wikidata RT lookup failed for #{imdb_id}: #{inspect(e)}")
-      nil
+      :error
   end
 
   defp parse_rt_path(body) when is_binary(body) do

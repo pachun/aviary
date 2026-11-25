@@ -30,8 +30,8 @@ defmodule Aviary.DiscoverMovies do
   @newly_released_theatrical_window_days 365
   @last_year_days 365
   @genre_window_days 3 * 365
-  @candidate_pages 1..3
-  @lookups_at_once 8
+  @candidate_pages 1..2
+  @lookups_at_once 4
   @lookup_timeout_ms 15_000
 
   @genres [
