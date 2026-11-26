@@ -18,7 +18,7 @@ defmodule Aviary.DiscoverMoviesTest do
   end
 
   describe "the newly released row" do
-    test "lists movies that came out at home in the last three months, most popular first" do
+    test "lists movies that came out at home in the last three months, best rated first" do
       stub_jellyseerr(
         discovered: [
           movie(1, "Heart of the Beast", 317),
@@ -35,8 +35,8 @@ defmodule Aviary.DiscoverMoviesTest do
       })
 
       assert titles(DiscoverMovies.fetch_row(:newly_released, @today)) == [
-               "The Odyssey",
-               "Heart of the Beast"
+               "Heart of the Beast",
+               "The Odyssey"
              ]
     end
 
@@ -53,7 +53,7 @@ defmodule Aviary.DiscoverMoviesTest do
     end
   end
 
-  test "every row leaves out a movie that critics or audiences rate below 60" do
+  test "a row keeps its poorly rated and unrated movies, after the better rated ones" do
     stub_jellyseerr(
       discovered: [
         movie(6, "Crowd Pleaser", 300),
@@ -75,7 +75,25 @@ defmodule Aviary.DiscoverMoviesTest do
       "well_liked" => {60, 60}
     })
 
-    assert titles(DiscoverMovies.fetch_row(:newly_released, @today)) == ["Well Liked"]
+    assert titles(DiscoverMovies.fetch_row(:newly_released, @today)) == [
+             "Critics Darling",
+             "Crowd Pleaser",
+             "Well Liked",
+             "Unrated"
+           ]
+  end
+
+  test "a row lists every movie it finds, however many there are" do
+    numbers = 1..25
+
+    stub_jellyseerr(
+      discovered: Enum.map(numbers, &movie(&1, "Movie #{&1}", &1)),
+      home_releases: Map.new(numbers, &{&1, ~D[2026-11-01]})
+    )
+
+    stub_ratings(%{})
+
+    assert length(DiscoverMovies.fetch_row(:newly_released, @today)) == Enum.count(numbers)
   end
 
   test "the best of the last year row ranks movies by their Rotten Tomatoes scores" do

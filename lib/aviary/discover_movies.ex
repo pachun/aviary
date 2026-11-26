@@ -3,14 +3,17 @@ defmodule Aviary.DiscoverMovies do
   Discover Movies read-model — the rows the movie side of Discover
   renders, from Jellyseerr's TMDB proxy.
 
-  Every movie in every row can be watched at home today and is well
-  liked: it has a US digital or disc release on or before today, and at
-  least 60 from both Rotten Tomatoes critics and audiences. TMDB's
-  watch-provider filter alone isn't enough to prove a home release — a
-  movie still in theaters can list a digital pre-order — so each
-  candidate's US release dates are checked too. On a server set up
-  without ratings, the Rotten Tomatoes requirement is dropped rather
-  than emptying every row.
+  Every movie in every row can be watched at home today: it has a US
+  digital or disc release on or before today. TMDB's watch-provider
+  filter alone isn't enough to prove a home release — a movie still in
+  theaters can list a digital pre-order — so each candidate's US release
+  dates are checked too.
+
+  A row leads with its best rated movies, by Rotten Tomatoes critics and
+  audiences together, and ends with the ones that have no rating. No
+  movie is left out for its rating: a rating lookup that fails would
+  otherwise empty the row. On a server set up without ratings a row
+  keeps the order TMDB gave it.
 
   Rows: newly released at home, the best of the last year, picks for
   the movie the viewer watched last, then a handful of genres.
@@ -18,13 +21,11 @@ defmodule Aviary.DiscoverMovies do
 
   alias Aviary.{Jellyfin, Jellyseerr, RottenTomatoes, TmdbResult}
 
-  @row_length 20
   @us_region "US"
   @us_home_viewing_providers [2, 3, 7, 8, 9, 10, 15, 192, 337, 350, 386, 531, 1899]
   @digital_release_type 4
   @physical_release_type 5
   @home_release_types [@digital_release_type, @physical_release_type]
-  @least_score_to_feature 60
   @least_votes_to_feature 100
   @newly_released_days 90
   @newly_released_theatrical_window_days 365
@@ -91,6 +92,7 @@ defmodule Aviary.DiscoverMovies do
     |> vetted(today)
     |> Enum.filter(&(Date.compare(&1.home_release, released_at_home_since) != :lt))
     |> Enum.sort_by(& &1.result["popularity"], :desc)
+    |> best_rated_first()
     |> to_items()
   end
 
@@ -102,13 +104,13 @@ defmodule Aviary.DiscoverMovies do
     ]
     |> discovered()
     |> vetted(today)
-    |> Enum.sort_by(&combined_score/1, :desc)
+    |> best_rated_first()
     |> to_items()
   end
 
   def fetch_row({:because_you_watched, tmdb_id}, today) do
     case Jellyseerr.recommendations(:movie, tmdb_id) do
-      {:ok, results} -> results |> vetted(today) |> to_items()
+      {:ok, results} -> results |> vetted(today) |> best_rated_first() |> to_items()
       _ -> []
     end
   end
@@ -122,6 +124,7 @@ defmodule Aviary.DiscoverMovies do
     ]
     |> discovered()
     |> vetted(today)
+    |> best_rated_first()
     |> to_items()
   end
 
@@ -153,7 +156,6 @@ defmodule Aviary.DiscoverMovies do
       {:ok, %{} = candidate} -> [candidate]
       _ -> []
     end)
-    |> Enum.filter(&well_liked?/1)
   end
 
   defp with_home_release_and_rating(result, today) do
@@ -195,18 +197,15 @@ defmodule Aviary.DiscoverMovies do
     RottenTomatoes.fetch(item.title, :movie, item.year, details["imdbId"])
   end
 
-  defp well_liked?(%{rating: %{critic: critic, audience: audience}}),
-    do: critic >= @least_score_to_feature and audience >= @least_score_to_feature
+  @below_every_rating -1
 
-  defp well_liked?(_unrated), do: not RottenTomatoes.offered?()
+  defp best_rated_first(candidates), do: Enum.sort_by(candidates, &combined_score/1, :desc)
 
   defp combined_score(%{rating: %{critic: critic, audience: audience}}), do: critic + audience
-  defp combined_score(_unrated), do: 0
+  defp combined_score(_unrated), do: @below_every_rating
 
   defp to_items(candidates) do
-    candidates
-    |> Enum.take(@row_length)
-    |> Enum.map(fn candidate ->
+    Enum.map(candidates, fn candidate ->
       candidate.result
       |> TmdbResult.marquee_item(:movie)
       |> Map.put(:rating, candidate.rating)
