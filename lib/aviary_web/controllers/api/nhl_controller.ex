@@ -14,8 +14,19 @@ defmodule AviaryWeb.API.NhlController do
   to reach the stream host itself. A household router that blocks the
   host's name (eero's filtering did, on 2026-10-22) then blocks nothing,
   and aviary resolves the name through public DNS.
+
+  A server that defines its own live section has none of this: every
+  address here answers that it does not exist.
   """
   use AviaryWeb, :controller
+
+  plug :exist_only_where_live_is_the_nhl_schedule
+
+  defp exist_only_where_live_is_the_nhl_schedule(conn, _options) do
+    if Aviary.Live.sports?(),
+      do: conn,
+      else: conn |> put_status(:not_found) |> json(%{error: "not_found"}) |> halt()
+  end
 
   def standings(conn, _params) do
     case Aviary.Nhl.Standings.divisions() do

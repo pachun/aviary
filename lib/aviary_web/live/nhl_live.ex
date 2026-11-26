@@ -24,6 +24,12 @@ defmodule AviaryWeb.NhlLive do
      |> assign_games()}
   end
 
+  @only_with_the_nhl_schedule ["choose_view", "show_teams", "show_team"]
+
+  def handle_event(event, _params, %{assigns: %{sports: false}} = socket)
+      when event in @only_with_the_nhl_schedule,
+      do: {:noreply, socket}
+
   def handle_event("choose_view", %{"view" => "standings"}, socket) do
     {:noreply,
      socket
