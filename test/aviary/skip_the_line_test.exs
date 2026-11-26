@@ -29,6 +29,19 @@ defmodule Aviary.SkipTheLineTest do
     refute_receive {:sabnzbd, _}, 50
   end
 
+  test "promotes a grab once while it downloads" do
+    stub_sonarr(
+      history: in_order([[grab("nzo-1")], [grab("nzo-1")], [grab("nzo-1")], [imported()]])
+    )
+
+    stub_sabnzbd()
+
+    SkipTheLine.for_episode(@tmdb_id, 1, 1, poll_every_ms: 1)
+
+    assert_receive {:sabnzbd, %{"value" => "nzo-1"}}, 1_000
+    refute_receive {:sabnzbd, _}, 50
+  end
+
   test "promotes the replacement when a grab fails and Sonarr grabs again" do
     stub_sonarr(
       history:
@@ -124,7 +137,7 @@ defmodule Aviary.SkipTheLineTest do
 
     Req.Test.stub(Sabnzbd, fn conn ->
       send(test, {:sabnzbd, conn.query_params})
-      Req.Test.json(conn, %{"status" => true, "position" => 0})
+      Req.Test.json(conn, %{"position" => 0})
     end)
   end
 

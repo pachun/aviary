@@ -7,6 +7,7 @@ defmodule Aviary.Sabnzbd do
   require Logger
 
   @force_priority 2
+  @first_queue_position 0
   @queue_timeout_ms 5_000
 
   def refresh_progress([]), do: []
@@ -50,7 +51,8 @@ defmodule Aviary.Sabnzbd do
   """
   def move_to_front(nzo_id) do
     with {:ok, url, key} <- config(),
-         {:ok, %Req.Response{status: 200, body: %{"status" => true}}} <-
+         {:ok, %Req.Response{status: 200, body: %{"position" => position}}}
+         when position >= @first_queue_position <-
            Req.get(
              [
                url: url <> "/api",
