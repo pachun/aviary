@@ -24,6 +24,14 @@ defmodule Aviary.SectionsTest do
       assert Live.sports?()
     end
 
+    test "offers its live section even on a day with no games" do
+      Aviary.Cache.invalidate_match({:nhl, :_})
+      Req.Test.stub(Aviary.Nhl, &Req.Test.html(&1, "<table></table>"))
+
+      assert Live.events() == []
+      assert Live.offered?()
+    end
+
     test "calls its series section Daily Wire and lists those shows" do
       assert Series.label() == "Daily Wire"
       assert [%{slug: "the-ben-shapiro-show", title: "Shapiro"} | _] = Series.shows()
@@ -65,6 +73,14 @@ defmodule Aviary.SectionsTest do
     test "names the section and offers no standings" do
       assert Live.label() == "Live"
       refute Live.sports?()
+    end
+
+    test "offers the section while it has an event", %{path: path} do
+      assert Live.offered?()
+
+      define(path, %{live: %{label: "Live", events: []}})
+
+      refute Live.offered?()
     end
 
     test "lists its events without giving away where the feeds are" do

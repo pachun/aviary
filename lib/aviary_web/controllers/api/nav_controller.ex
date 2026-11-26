@@ -3,7 +3,8 @@ defmodule AviaryWeb.API.NavController do
   Top-level navigation hints for native clients — which sections have
   content worth a tab, and which to land on at launch. Reuses the web
   masthead's `Aviary.Nav` so tvOS and web agree on what's shown and the
-  default landing (home > shows > movies > nhl > discover).
+  default landing (home > shows > movies > nhl on a day with something
+  live > discover).
 
   `live` and `series` describe the two sections whose name and contents
   are the server's to define: what to call each, whether the live one
@@ -29,6 +30,6 @@ defmodule AviaryWeb.API.NavController do
   defp landing(%{home: true}), do: "home"
   defp landing(%{shows: true}), do: "shows"
   defp landing(%{movies: true}), do: "movies"
-  defp landing(%{nhl: true}), do: "nhl"
+  defp landing(%{something_live_today: true}), do: "nhl"
   defp landing(_), do: "discover"
 end

@@ -25,6 +25,13 @@ defmodule Aviary.Live do
   def sports?, do: Sections.live() == nil
 
   @doc """
+  Whether the section has anything to open. The NHL schedule always
+  does, since its standings and team pages are there on a day with no
+  games; a server's own section does only while it lists an event.
+  """
+  def offered?, do: sports?() or events() != []
+
+  @doc """
   The events, each `%{id, title, time, starts_at, images, feeds}` with
   feeds as `%{id, label}`.
   """

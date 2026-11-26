@@ -7,8 +7,9 @@ defmodule Aviary.Nav do
   that work even for a brand-new user with nothing in their library.
   Home, Shows, Movies, and NHL are conditional on whether their
   sections would actually have anything to render; an empty tab is
-  worse than no tab. NHL shows on game days and is gone the rest of the
-  year.
+  worse than no tab. NHL stays up on a day with no games, for its
+  standings and team pages; a server's own live section shows only
+  while it lists an event.
 
   All four underlying fetches happen in parallel via Task.await_many,
   so the wall-clock is bounded by the slowest single one (typically
@@ -25,7 +26,7 @@ defmodule Aviary.Nav do
   points.
   """
   def visibility(user) do
-    [home_items, upcoming, shows, movies, recs, games] =
+    [home_items, upcoming, shows, movies, recs, {live_offered, live_events}] =
       Task.await_many(
         [
           Task.async(fn -> Home.continue_watching(user) end),
@@ -43,7 +44,7 @@ defmodule Aviary.Nav do
           Task.async(fn ->
             Aviary.Recommendations.list_active_for_user_excluding_library(user.id)
           end),
-          Task.async(fn -> Aviary.Live.events() end)
+          Task.async(fn -> {Aviary.Live.offered?(), Aviary.Live.events()} end)
         ],
         15_000
       )
@@ -54,7 +55,8 @@ defmodule Aviary.Nav do
       home: home_items != [] or upcoming != [] or recs != [],
       shows: shows != [],
       movies: movies != [],
-      nhl: games != [],
+      nhl: live_offered,
+      something_live_today: live_events != [],
       daily_wire: Aviary.Series.allowed?(user)
     }
   end
@@ -66,7 +68,7 @@ defmodule Aviary.Nav do
   def landing_path(%{home: true}), do: "/home"
   def landing_path(%{shows: true}), do: "/library?type=shows"
   def landing_path(%{movies: true}), do: "/library?type=movies"
-  def landing_path(%{nhl: true}), do: "/live"
+  def landing_path(%{something_live_today: true}), do: "/live"
   def landing_path(_), do: "/discover"
 
   @doc """
