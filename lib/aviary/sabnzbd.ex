@@ -6,7 +6,7 @@ defmodule Aviary.Sabnzbd do
   """
   require Logger
 
-  @force_priority 2
+  @high_priority 1
   @first_queue_position 0
   @queue_timeout_ms 5_000
 
@@ -45,11 +45,13 @@ defmodule Aviary.Sabnzbd do
   end
 
   @doc """
-  Starts the download with this SABnzbd job id right away, ahead of
-  everything else in the queue. `:ok` once SABnzbd accepted it,
-  `:error` when it didn't or SABnzbd isn't configured.
+  Raises this SABnzbd job to high priority, ahead of movies (normal)
+  and shows' back catalogs (low). SABnzbd keeps high-priority jobs in
+  the order they were raised, so whoever started watching first
+  downloads first. `:ok` once SABnzbd accepted it, `:error` when it
+  didn't or SABnzbd isn't configured.
   """
-  def move_to_front(nzo_id) do
+  def move_ahead_of_movies_and_back_catalogs(nzo_id) do
     with {:ok, url, key} <- config(),
          {:ok, %Req.Response{status: 200, body: %{"position" => position}}}
          when position >= @first_queue_position <-
@@ -60,7 +62,7 @@ defmodule Aviary.Sabnzbd do
                  mode: "queue",
                  name: "priority",
                  value: nzo_id,
-                 value2: @force_priority,
+                 value2: @high_priority,
                  apikey: key,
                  output: "json"
                ],
@@ -75,7 +77,7 @@ defmodule Aviary.Sabnzbd do
         :error
 
       other ->
-        Logger.warning("sabnzbd could not move #{nzo_id} to the front: #{inspect(other)}")
+        Logger.warning("sabnzbd could not raise #{nzo_id} to high priority: #{inspect(other)}")
         :error
     end
   rescue

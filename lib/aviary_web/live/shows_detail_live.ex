@@ -1749,14 +1749,11 @@ defmodule AviaryWeb.ShowsDetailLive do
           {Aviary.Sonarr.watch_show(show.tmdb_id), "Adding #{show.title} to your library…"}
 
         :episode ->
-          # Two-stage download: this single episode now, then once
-          # the file lands SeriesFollowup broadens to the rest of the
-          # series. Lets the targeted episode get the entire download
-          # pipe without making the user click again for the rest.
-          # See Aviary.SeriesFollowup for the polling/timeout shape.
+          # This episode at high priority, the rest of the series
+          # behind it at low priority. See Aviary.SeriesFollowup.
           result = Aviary.Sonarr.watch_episode(show.tmdb_id, season, episode)
           Aviary.SkipTheLine.for_episode(show.tmdb_id, season, episode)
-          Aviary.SeriesFollowup.after_episode_imports(show.tmdb_id, season, episode)
+          Aviary.SeriesFollowup.queue_the_rest(show.tmdb_id)
           {result, "Grabbing S#{season} E#{episode} of #{show.title}…"}
       end
 

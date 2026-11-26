@@ -42,12 +42,11 @@ defmodule AviaryWeb.API.LibraryController do
   end
 
   # "Add to library" on a show with no episode chosen. Grab the
-  # starting episode first and let SeriesFollowup broaden to the rest
-  # once it lands — the same two-stage flow tapping a single episode
-  # uses, so the show is watchable in minutes instead of burying
-  # episode one behind a whole-series download. Falls back to the whole
-  # series if we can't resolve a starting episode (e.g. nothing has
-  # aired yet).
+  # starting episode at high priority and queue the rest behind it —
+  # the same flow tapping a single episode uses, so the show is
+  # watchable in minutes instead of burying episode one behind a
+  # whole-series download. Falls back to the whole series if we can't
+  # resolve a starting episode (e.g. nothing has aired yet).
   def add(conn, %{"kind" => "show", "id" => id}) do
     add_show(conn, to_string(id), :starting_episode)
   end
@@ -90,7 +89,7 @@ defmodule AviaryWeb.API.LibraryController do
   defp start_watching(tmdb_id, {season, episode}) do
     with {:ok, _episode} <- Aviary.Sonarr.watch_episode(tmdb_id, season, episode) do
       Aviary.SkipTheLine.for_episode(tmdb_id, season, episode)
-      Aviary.SeriesFollowup.after_episode_imports(tmdb_id, season, episode)
+      Aviary.SeriesFollowup.queue_the_rest(tmdb_id)
     end
   end
 

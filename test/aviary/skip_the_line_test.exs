@@ -6,12 +6,12 @@ defmodule Aviary.SkipTheLineTest do
   @tmdb_id "42009"
   @sonarr_series_id 7
   @sonarr_episode_id 99
-  @front_of_the_queue "2"
+  @ahead_of_movies_and_back_catalogs "1"
 
   setup :set_req_test_to_shared
   setup :fresh_sonarr_caches
 
-  test "moves the grab to the front of SABnzbd's queue once Sonarr makes it" do
+  test "moves the grab ahead of movies and back catalogs once Sonarr makes it" do
     stub_sonarr(history: in_order([[], [grab("nzo-1")], [imported(), grab("nzo-1")]]))
     stub_sabnzbd()
 
@@ -22,7 +22,7 @@ defmodule Aviary.SkipTheLineTest do
                       "mode" => "queue",
                       "name" => "priority",
                       "value" => "nzo-1",
-                      "value2" => @front_of_the_queue
+                      "value2" => @ahead_of_movies_and_back_catalogs
                     }},
                    1_000
 

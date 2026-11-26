@@ -1,11 +1,12 @@
 defmodule Aviary.SkipTheLine do
   @moduledoc """
-  Puts the episode someone is waiting to watch at the front of the
-  download line. Sonarr hands every grab to SABnzbd at the same
-  priority, so a show's first episode otherwise waits behind whatever
-  the household already had queued: Black Mirror's first episode once
-  sat four minutes behind another show's back catalog before its
-  eighteen-second download began.
+  Puts the episode someone is waiting to watch ahead of movies and
+  shows' back catalogs. Sonarr hands TV grabs to SABnzbd at low
+  priority, so without this a show's first episode would wait behind
+  whatever the household already had queued: Black Mirror's first
+  episode once sat four minutes behind another show's back catalog
+  before its eighteen-second download began. Episodes raised this way
+  download in the order people started watching them.
 
   Sonarr takes a few seconds to settle on a release, so this watches
   the episode's history for the grab and promotes it the moment it
@@ -23,7 +24,7 @@ defmodule Aviary.SkipTheLine do
 
   @doc """
   Watches, in the background, for Sonarr to grab this episode and moves
-  the grab to the front of SABnzbd's queue. Returns the watcher's pid.
+  the grab ahead of movies and back catalogs. Returns the watcher's pid.
   """
   def for_episode(tmdb_id, season, episode, options \\ []) do
     poll_every_ms = Keyword.get(options, :poll_every_ms, @poll_every_ms)
@@ -98,8 +99,8 @@ defmodule Aviary.SkipTheLine do
 
         remember(state, download_id)
 
-      Sabnzbd.move_to_front(download_id) == :ok ->
-        Logger.info("skip_the_line: moved #{describe(state)} to the front of SABnzbd's queue")
+      Sabnzbd.move_ahead_of_movies_and_back_catalogs(download_id) == :ok ->
+        Logger.info("skip_the_line: moved #{describe(state)} ahead of movies and back catalogs")
         remember(state, download_id)
 
       true ->

@@ -85,8 +85,8 @@ defmodule Aviary.Sonarr do
   @doc """
   Resolves the episode "add the whole show" should grab first. For a
   series watched in order that is the first aired episode (lowest real
-  season, earliest episode); SeriesFollowup broadens to the rest once
-  it lands. For a show whose episodes stand alone (see
+  season, earliest episode); SeriesFollowup queues the rest behind
+  it. For a show whose episodes stand alone (see
   `standalone_episodes?/1`) it is the most recently aired episode, and
   nothing broadens afterward. Returns `{:ok, season, episode}` or
   `:error` (e.g. nothing aired yet, or Sonarr unreachable).
